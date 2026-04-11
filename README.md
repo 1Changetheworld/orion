@@ -30,6 +30,8 @@ Orion flips this. The brain is **your data** — memory, knowledge, skills, iden
 
 **You don't need API keys.** Orion runs on flat-rate subscriptions or free models. No per-token billing. No metered usage. The marginal cost of every request is zero.
 
+**You can use it where ChatGPT is banned.** Companies block cloud AI because every prompt leaves the network. Orion in Stealth Mode with local Ollama models runs entirely on your hardware. Zero data leaves the device. No cloud calls. No telemetry. Your IT department can verify — nothing goes out. AI without the data leak.
+
 ---
 
 ## How It Works
@@ -86,6 +88,8 @@ Orion treats AI models as fuel. Bring whatever you have:
 - No model → dispatch commands still instant, no generative AI
 
 Orion auto-routes: simple tasks go to free models, complex tasks go to the best available fuel. You don't configure this.
+
+**Visual fuel indicator:** A glow appears around whatever AI model window is currently powering Orion. Claude active? Cyan glow. ChatGPT? Green. Local Ollama? Purple. You always know at a glance what's fueling your brain without checking settings.
 
 ---
 

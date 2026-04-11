@@ -1,0 +1,9 @@
+*.pyc
+.orion/
+__pycache__/
+conversations/
+graph_memory.json
+knowledge/
+memory/
+orion_user_config.json
+orion_user_config.json
