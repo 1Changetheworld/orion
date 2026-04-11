@@ -95,29 +95,29 @@ Seven ways to reach the same brain. A fact learned over a phone call is recalled
 
 | Interface | Status | Description |
 |-----------|--------|-------------|
-| Phone | +1 (808) 724-7946 | Real phone number. Call from any phone. Orion answers. |
-| Telegram | 50+ commands | Full command suite plus natural language |
-| iMessage | Native macOS | Text Orion from your iPhone |
-| Terminal / CLI | Any AI tool | Open any terminal — Orion's context is pre-loaded |
-| Dashboard | atlascommand.vip | Pixel art operations center with live agent visualization |
-| Webhook | POST :5555 | Programmatic access for any automation |
+| Phone | Real number | Call from any phone. Orion answers with synthesized speech. |
+| Telegram | 50+ commands | Full command suite plus natural language processing |
+| iMessage | Native macOS | Text Orion from your iPhone — same brain as every other interface |
+| Terminal / CLI | Any AI tool | Open any terminal — Orion's context is pre-loaded. No setup. |
+| Dashboard | Web UI | Pixel art operations center with live agent visualization |
+| Webhook | `POST /chat` | Programmatic access — any script or automation can talk to Orion |
 | Any AI Tool | Zero-prompt | Open ChatGPT, Claude, Gemini — Orion is already there |
 
 ---
 
 ## Operational Modes
 
-| Mode | Status | What It Does |
-|------|--------|-------------|
-| Standard | Active | Conversational AI + command execution |
-| Deep Dive | Active | Extended reasoning, multi-source research |
-| Builder | Active | End-to-end project execution from a single prompt |
-| Absorption | Partial | Indexes new tools and repos into the knowledge base |
-| Defense | Partial | Hardens security on untrusted networks |
-| Hive Mind | Concept | Parallel dispatch across multiple devices |
-| Stealth | Concept | Zero cloud calls, local only, no telemetry |
-| The Ant | Concept | Hive-like mass search for deep investigation |
-| Autonomous | Concept | Camera-enabled self-directed operation |
+| Mode | Status | What It Does | Example |
+|------|--------|-------------|---------|
+| Standard | Active | Conversational AI + command execution | *"Check my server status and restart the web container"* |
+| Deep Dive | Active | Extended reasoning, multi-source research | *"Research every competitor in the AI memory space and summarize their funding, features, and gaps"* |
+| Builder | Active | End-to-end project execution from a single prompt | *"Build a REST API for user authentication with JWT tokens, tests, and deploy it"* |
+| Absorption | Partial | Indexes new tools and repos into the knowledge base | *Orion scans GitHub trending, reads READMEs, embeds useful tools into its knowledge — gets smarter overnight* |
+| Defense | Partial | Hardens security on untrusted networks | *Connect to hotel WiFi — Orion auto-tightens firewall rules, enforces VPN, blocks inbound connections* |
+| Hive Mind | Concept | Parallel dispatch across multiple devices | *"Scan all 4 devices for vulnerabilities simultaneously" — each device works independently, results merge* |
+| Stealth | Concept | Zero cloud calls, local only, no telemetry | *All traffic stays on-device. No logs. No external connections. Nothing leaves the machine.* |
+| The Ant | Concept | Hive-like mass search for deep investigation | *"Find everything about this company" — branches into dozens of search paths like ants, synthesizes findings* |
+| Autonomous | Concept | Camera-enabled self-directed operation | *Orion sees through a camera, decides what to do, and acts without user input — monitoring, hardware control* |
 
 ---
 

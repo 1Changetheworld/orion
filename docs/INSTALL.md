@@ -139,7 +139,7 @@ Once the wizard completes:
 ```
 Orion is active.
 
-Brain:     orion_server.py running on :5555
+Brain:     orion_server.py running
 Memory:    graph (0 nodes) + vector (0 points) — grows with use
 Fuel:      Claude CLI detected, Ollama detected (phi3:mini, mistral:7b)
 Dispatch:  20 commands ready
