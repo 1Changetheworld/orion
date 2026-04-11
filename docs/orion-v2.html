@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORION — The World's First Portable AI Brain</title>
+<meta name="description" content="Your AI. Your Hardware. Your Brain. Orion is a portable intelligence layer that works with any AI model, on any device, with persistent memory that belongs to you.">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg:#09090b; --bg2:#0f0f13; --bg3:#16161d; --card:#111116; --border:#23232d; --border-h:#3a3a4a;
+    --accent:#06b6d4; --accent2:#22d3ee; --accent-d:rgba(6,182,212,0.12);
+    --purple:#8b5cf6; --purple2:#a78bfa; --purple-d:rgba(139,92,246,0.12);
+    --green:#22c55e; --orange:#f59e0b; --red:#ef4444; --blue:#3b82f6; --pink:#ec4899; --teal:#14b8a6;
+    --text:#e4e4e7; --text2:#a1a1aa; --text3:#71717a;
+    --glow:0 0 20px rgba(6,182,212,0.15); --glow-s:0 0 8px rgba(6,182,212,0.25);
+  }
+  *{margin:0;padding:0;box-sizing:border-box} html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,sans-serif;font-size:16px;line-height:1.7}
+
+  nav{position:fixed;top:0;left:0;width:260px;height:100vh;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;z-index:1000;padding:20px 0;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+  nav::-webkit-scrollbar{width:3px} nav::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  .nav-top{text-align:center;padding:12px 20px 20px;border-bottom:1px solid var(--border);margin-bottom:12px}
+  .nav-top h2{font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent)}
+  .nav-top p{font-size:11px;color:var(--text3);margin-top:2px}
+  .ns{padding:4px 20px;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:3px;color:var(--text3);text-transform:uppercase;margin-top:14px}
+  nav a{display:block;padding:6px 20px 6px 26px;color:var(--text2);text-decoration:none;font-size:13px;font-weight:500;border-left:2px solid transparent;transition:all 0.15s}
+  nav a:hover{color:var(--accent);background:var(--accent-d);border-left-color:var(--accent)}
+  nav a .n{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);margin-right:8px}
+
+  main{margin-left:260px;min-height:100vh}
+  .ch{padding:50px 70px 70px;border-bottom:1px solid var(--border);max-width:1050px}
+
+  .hero{max-width:none;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:60px 40px;position:relative;background:radial-gradient(ellipse at 30% 50%,rgba(6,182,212,0.06) 0%,transparent 60%),radial-gradient(ellipse at 70% 30%,rgba(139,92,246,0.04) 0%,transparent 50%),var(--bg)}
+  .hero-label{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:5px;color:var(--accent2);text-transform:uppercase;margin-bottom:32px;opacity:0.8}
+  .hero h1{font-family:'Orbitron',sans-serif;font-size:clamp(36px,5vw,60px);font-weight:800;letter-spacing:5px;color:var(--text);margin-bottom:16px}
+  .hero h1 span{background:linear-gradient(90deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .hero .sub{font-size:18px;color:var(--text2);max-width:760px;margin-bottom:48px;font-weight:300;line-height:1.7}
+  .hero-nums{display:flex;gap:40px;flex-wrap:wrap;justify-content:center}
+  .hero-num{text-align:center} .hero-num .v{font-family:'Orbitron',sans-serif;font-size:32px;font-weight:700;color:var(--accent)} .hero-num .l{font-size:11px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-top:2px}
+  .hero-foot{margin-top:50px;font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+
+  h2{font-family:'Orbitron',sans-serif;font-size:22px;font-weight:700;letter-spacing:2px;color:var(--text);margin-bottom:6px}
+  .cl{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:4px;color:var(--text3);text-transform:uppercase;margin-bottom:6px;display:block}
+  h3{font-family:'Orbitron',sans-serif;font-size:15px;font-weight:600;letter-spacing:1.5px;color:var(--accent2);margin:36px 0 14px;text-transform:uppercase}
+  h4{font-size:16px;font-weight:700;color:var(--text);margin:24px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+  .lead{font-size:17px;color:var(--text2);font-weight:300;margin-bottom:28px;line-height:1.8}
+  p{margin-bottom:14px} strong{color:var(--accent2);font-weight:600} em{color:var(--orange);font-style:normal;font-weight:500}
+  a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:22px 24px;margin:16px 0;transition:border-color 0.2s}
+  .card:hover{border-color:var(--border-h)}
+  .card.hl{border-color:var(--accent);box-shadow:var(--glow)}
+  .card.g{border-left:3px solid var(--green)} .card.o{border-left:3px solid var(--orange)} .card.r{border-left:3px solid var(--red)} .card.p{border-left:3px solid var(--purple)} .card.b{border-left:3px solid var(--blue)} .card.pk{border-left:3px solid var(--pink)} .card.t{border-left:3px solid var(--teal)} .card.c{border-left:3px solid var(--accent)}
+  .ct{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0}
+
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  thead{background:var(--bg3)} th{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)}
+  td{padding:9px 14px;border-bottom:1px solid var(--border);color:var(--text2)} tr:hover td{background:rgba(6,182,212,0.02)}
+
+  pre{background:#0c0c10;border:1px solid var(--border);border-radius:5px;padding:18px 22px;overflow-x:auto;margin:14px 0;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;color:var(--text2)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--accent-d);padding:1px 6px;border-radius:3px;color:var(--accent2)}
+  pre code{background:none;padding:0;color:inherit;font-size:12.5px}
+
+  .badge{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 8px;border-radius:3px;font-weight:600;letter-spacing:1px;text-transform:uppercase}
+  .badge.live{background:rgba(34,197,94,0.12);color:var(--green);border:1px solid rgba(34,197,94,0.25)}
+  .badge.plan{background:rgba(245,158,11,0.12);color:var(--orange);border:1px solid rgba(245,158,11,0.25)}
+  .badge.built{background:rgba(59,130,246,0.12);color:var(--blue);border:1px solid rgba(59,130,246,0.25)}
+  .badge.unique{background:rgba(139,92,246,0.15);color:var(--purple2);border:1px solid rgba(139,92,246,0.3)}
+  .badge.first{background:rgba(6,182,212,0.15);color:var(--accent2);border:1px solid rgba(6,182,212,0.3)}
+
+  .co{border-left:3px solid var(--accent);padding:14px 22px;margin:18px 0;background:var(--accent-d);border-radius:0 5px 5px 0;color:var(--text2);font-size:15px}
+  .co.purple{border-left-color:var(--purple);background:var(--purple-d)}
+  .ascii{font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.45;color:var(--accent2);background:#0c0c10;padding:22px;border-radius:6px;border:1px solid var(--border);overflow-x:auto;white-space:pre;margin:16px 0}
+  .stats{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}
+  .stat{flex:1;min-width:140px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:16px;text-align:center}
+  .stat .v{font-family:'Orbitron',sans-serif;font-size:26px;font-weight:700;color:var(--accent)} .stat .l{font-size:11px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-top:3px}
+  ul.fl{list-style:none} ul.fl li{padding:7px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:10px} ul.fl li::before{content:'\25B8';color:var(--accent);font-size:11px;flex-shrink:0}
+
+  .ff{background:linear-gradient(135deg,rgba(6,182,212,0.08),rgba(139,92,246,0.06));border:1px solid rgba(6,182,212,0.2);border-radius:8px;padding:28px;margin:24px 0;position:relative;overflow:hidden}
+  .ff::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--purple),var(--accent))}
+  .ff .ff-label{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:8px}
+  .ff .ff-num{font-family:'Orbitron',sans-serif;font-size:38px;font-weight:800;color:var(--text);margin-bottom:6px}
+  .ff .ff-text{color:var(--text2);font-size:15px}
+
+  .compare-row{display:flex;gap:16px;margin:16px 0;flex-wrap:wrap}
+  .compare-col{flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:20px}
+  .compare-col h4{border:none;margin-top:0;font-size:14px;padding:0}
+  .compare-col.you{border-color:var(--accent);box-shadow:var(--glow)}
+
+  .tl{position:relative;padding-left:28px;margin:18px 0} .tl::before{content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;background:var(--border)}
+  .tl-i{position:relative;margin-bottom:22px} .tl-i::before{content:'';position:absolute;left:-24px;top:7px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .tl-i.done::before{background:var(--green)} .tl-i.now::before{background:var(--orange);box-shadow:0 0 8px rgba(245,158,11,0.5)} .tl-i.fut::before{background:var(--text3)}
+  .tl-i .d{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3)} .tl-i .t{font-weight:700;color:var(--text);font-size:15px} .tl-i .ds{color:var(--text2);font-size:13px}
+
+  .founder-quote{border-left:3px solid var(--accent);padding:18px 24px;margin:20px 0;background:var(--accent-d);border-radius:0 6px 6px 0;font-style:italic;font-size:16px;color:var(--text);line-height:1.8}
+  .founder-quote .fq-attr{font-style:normal;font-size:12px;color:var(--text3);margin-top:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px}
+
+  .wizard-tier{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:28px;text-align:center;transition:all 0.2s}
+  .wizard-tier:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .wizard-tier .tier-name{font-family:'Orbitron',sans-serif;font-size:14px;letter-spacing:2px;color:var(--accent);margin-bottom:6px}
+  .wizard-tier .tier-for{font-size:13px;color:var(--text3);margin-bottom:16px}
+  .wizard-tier ul{text-align:left;list-style:none;font-size:13px;color:var(--text2)}
+  .wizard-tier ul li{padding:4px 0} .wizard-tier ul li::before{content:'+ ';color:var(--accent)}
+
+  .fuel-bar{background:var(--bg3);border-radius:20px;height:28px;overflow:hidden;margin:8px 0;position:relative}
+  .fuel-fill{height:100%;border-radius:20px;display:flex;align-items:center;padding:0 12px;font-size:11px;font-family:'JetBrains Mono',monospace;color:#fff;font-weight:600}
+  .fuel-fill.f1{background:linear-gradient(90deg,#22c55e,#16a34a);width:100%}
+  .fuel-fill.f2{background:linear-gradient(90deg,#3b82f6,#2563eb);width:75%}
+  .fuel-fill.f3{background:linear-gradient(90deg,#f59e0b,#d97706);width:45%}
+  .fuel-fill.f4{background:linear-gradient(90deg,#ef4444,#dc2626);width:20%}
+
+  .scroll-top{position:fixed;bottom:24px;right:24px;width:40px;height:40px;background:var(--bg2);border:1px solid var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);font-size:18px;z-index:999;text-decoration:none;transition:all 0.2s}
+  .scroll-top:hover{border-color:var(--accent);box-shadow:var(--glow-s);text-decoration:none}
+
+  @media(max-width:768px){nav{display:none}main{margin-left:0}.ch{padding:32px 20px 50px}.g2,.g3{grid-template-columns:1fr}.compare-row{flex-direction:column}.hero-nums{gap:20px}.hero h1{letter-spacing:2px}.stats{flex-direction:column}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-top"><h2>ORION</h2><p>Portable AI Brain</p></div>
+  <div class="ns">The Product</div>
+  <a href="#hero"><span class="n">00</span> Cover</a>
+  <a href="#ch1"><span class="n">01</span> The Problem</a>
+  <a href="#ch2"><span class="n">02</span> The Solution</a>
+  <a href="#ch3"><span class="n">03</span> How It Works</a>
+  <div class="ns">The Experience</div>
+  <a href="#ch4"><span class="n">04</span> The Fuel System</a>
+  <a href="#ch5"><span class="n">05</span> Setup Wizard</a>
+  <a href="#ch6"><span class="n">06</span> 7 Interfaces</a>
+  <div class="ns">Why It Matters</div>
+  <a href="#ch7"><span class="n">07</span> What Makes It Different</a>
+  <a href="#ch8"><span class="n">08</span> Intelligence, Not Wrappers</a>
+  <a href="#ch9"><span class="n">09</span> The Toolkit</a>
+  <div class="ns">Capabilities</div>
+  <a href="#ch10"><span class="n">10</span> Operational Modes</a>
+  <div class="ns">Vision</div>
+  <a href="#ch11"><span class="n">11</span> Future: Hardware Intelligence</a>
+  <a href="#ch12"><span class="n">12</span> Founder</a>
+  <a href="#ch13"><span class="n">13</span> The Evolution</a>
+  <div class="ns">For Investors</div>
+  <a href="#ch14"><span class="n">14</span> Market &amp; Revenue</a>
+  <a href="#ch15"><span class="n">15</span> Transparency</a>
+  <a href="#ch16"><span class="n">16</span> Roadmap</a>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<!-- HERO                                                          -->
+<!-- ============================================================ -->
+<section class="hero" id="hero">
+  <div class="hero-label">The World's First Portable AI Brain</div>
+  <h1>Your AI. Your Brain.<br><span>Plug In Anywhere.</span></h1>
+  <p class="sub">Orion is a portable intelligence layer that lives on a drive. Plug it into any computer. It detects whatever AI model is available &mdash; Claude, ChatGPT, Ollama, Gemini &mdash; and uses it as fuel. The model is borrowed muscle. The brain is yours. No API keys required.</p>
+  <div class="hero-nums">
+    <div class="hero-num"><div class="v">$0</div><div class="l">Per Request</div></div>
+    <div class="hero-num"><div class="v">0</div><div class="l">API Keys Needed</div></div>
+    <div class="hero-num"><div class="v">7</div><div class="l">Interfaces</div></div>
+    <div class="hero-num"><div class="v">9</div><div class="l">Operational Modes</div></div>
+    <div class="hero-num"><div class="v">~200</div><div class="l">Lines of Code</div></div>
+    <div class="hero-num"><div class="v">0</div><div class="l">Framework Dependencies</div></div>
+  </div>
+  <div class="hero-foot">Orion &mdash; April 2026 &mdash; James England</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH1 — THE PROBLEM                                             -->
+<!-- ============================================================ -->
+<section class="ch" id="ch1">
+  <span class="cl">Chapter 01</span>
+  <h2>The Problem</h2>
+  <p class="lead">Your AI memory is rented. Not owned. And you probably don't realize it yet.</p>
+
+  <p>Right now, millions of people talk to ChatGPT every day. It remembers their name, their projects, their preferences. It feels personal. It feels like <em>theirs</em>.</p>
+  <p>But it's not.</p>
+  <p>Every conversation, every preference, every piece of context lives on <strong>someone else's server</strong>. If OpenAI changes their pricing, you pay or lose it. If you want to try Claude because it's better at writing, you start from scratch. If the service goes down, your "AI memory" goes with it.</p>
+  <p>You don't own your AI brain. You're renting a room in someone else's house.</p>
+
+  <div class="g2">
+    <div class="card r">
+      <div class="ct">What Happens Today</div>
+      <ul class="fl">
+        <li>Switch from ChatGPT to Claude &mdash; lose all your conversations</li>
+        <li>Use AI on your phone AND laptop &mdash; two separate contexts</li>
+        <li>Service goes down &mdash; your "memory" is inaccessible</li>
+        <li>Company changes pricing &mdash; pay up or lose everything</li>
+        <li>Want to use AI offline &mdash; impossible with cloud services</li>
+        <li>Your data trains their models &mdash; you're the product</li>
+      </ul>
+    </div>
+    <div class="card g">
+      <div class="ct">What Should Happen</div>
+      <ul class="fl">
+        <li>Switch models freely &mdash; your memory comes with you</li>
+        <li>Use AI anywhere &mdash; same brain, same context, always</li>
+        <li>Service goes down &mdash; you keep working offline</li>
+        <li>You own your data &mdash; on your hardware, in your hands</li>
+        <li>No internet? AI still works with local models</li>
+        <li>Your data is yours &mdash; nobody else touches it</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ff">
+    <div class="ff-label">The Core Issue</div>
+    <div class="ff-num">AI Amnesia</div>
+    <div class="ff-text">Today's AI models are smart but forgetful. They reset every session, fragment across platforms, and lock your data behind corporate walls. Intelligence without memory isn't intelligence &mdash; it's a parlor trick you rent by the month.</div>
+  </div>
+
+  <div class="card hl" style="margin-top:24px">
+    <div class="ct">And Then There's The Cost</div>
+    <p style="color:var(--text2);font-size:15px;margin-bottom:12px">Every AI platform charges per API call. Build an agent? Pay per token. Run a workflow? Pay per request. Integrate into your app? Pay per query. The industry has normalized the idea that AI access requires API keys and metered billing.</p>
+    <p style="color:var(--text);font-size:15px;font-weight:600;margin:0">Orion requires zero API keys. Zero per-request costs. It runs on flat-rate subscriptions you might already pay for &mdash; or on free models with no subscription at all. This is not a small difference. This changes who can build with AI and what they can afford to build.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH2 — THE SOLUTION                                            -->
+<!-- ============================================================ -->
+<section class="ch" id="ch2">
+  <span class="cl">Chapter 02</span>
+  <h2>The Solution</h2>
+  <p class="lead">A portable AI brain that belongs to you. It travels on a drive. It uses whatever model is available as fuel. It never forgets.</p>
+
+  <p>Orion separates <strong>intelligence from compute</strong>. The brain &mdash; your memory, knowledge, skills, preferences, and identity &mdash; lives wherever you want it. You don't need a special drive. You don't need special hardware. Install Orion on the computer you already use, and it unifies every AI model on that machine into one persistent brain. Want to take it further? Put it on a portable drive, and your brain travels with you to any device.</p>
+
+  <p>Either way: swap the engine anytime. The brain stays the same.</p>
+
+  <div class="co">Think of it this way: Chevron doesn't build jet engines. It makes the fuel. The engine is Boeing's problem. Similarly, Claude and ChatGPT don't build your brain &mdash; they provide the compute power. Orion is the brain. The model is just fuel.</div>
+
+  <h3>How It Works (30 Seconds)</h3>
+  <div class="ascii">
+  1. PLUG IN                    2. DETECT                     3. ADAPT
+  +-----------+                +-----------+                 +-----------+
+  | Connect   |    -------->   | Orion     |    -------->    | Routes    |
+  | drive to  |                | scans for |                 | to best   |
+  | any       |                | available |                 | available |
+  | computer  |                | AI models |                 | model     |
+  +-----------+                +-----------+                 +-----------+
+
+  4. RUN
+  +-----------+
+  | Full AI   |   Your memory. Your skills. Your knowledge.
+  | brain     |   Same personality. Same context.
+  | active    |   Doesn't matter what computer or what model.
+  +-----------+</div>
+
+  <div class="g3">
+    <div class="card hl">
+      <div class="ct">Persistent Memory</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Graph memory tracks relationships between concepts. Vector search finds relevant knowledge instantly. Every conversation makes the brain smarter. Nothing is ever lost.</p>
+    </div>
+    <div class="card hl">
+      <div class="ct">Model Agnostic</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Claude Opus at home. ChatGPT free on a plane. Local Ollama in a cabin with no internet. Orion adapts automatically. The brain doesn't care what fuels it.</p>
+    </div>
+    <div class="card hl">
+      <div class="ct">You Own Everything</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">No cloud account. No vendor lock-in. No data on someone else's server. The drive IS the brain. Pull it out, take it with you, plug it in somewhere else. Done.</p>
+    </div>
+  </div>
+
+  <div class="ff">
+    <div class="ff-label">The Difference</div>
+    <div class="ff-num">Ownership</div>
+    <div class="ff-text">Every other AI product gives you a username and password to access intelligence stored on their servers. Orion gives you a drive. The intelligence is physically in your hands. If every cloud provider shut down tomorrow, Orion keeps running.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH3 — HOW IT WORKS                                            -->
+<!-- ============================================================ -->
+<section class="ch" id="ch3">
+  <span class="cl">Chapter 03</span>
+  <h2>How It Works</h2>
+  <p class="lead">The brain is ~200 lines of Python with zero AI framework dependencies. Every component is replaceable. Every line is auditable. The entire system can be understood in a single reading.</p>
+
+  <h3>Two Layers</h3>
+  <div class="g2">
+    <div class="card c">
+      <div class="ct">Layer 1: The Brain (Original)</div>
+      <p style="color:var(--text2);font-size:14px;margin-bottom:12px">This is what nobody else has built. The intelligence layer that makes Orion unique:</p>
+      <ul class="fl">
+        <li><strong>Identity</strong> &mdash; hardcoded, not a prompt. Orion always knows who it is</li>
+        <li><strong>Memory</strong> &mdash; graph (50+ nodes of relationships) + vector (1,058+ searchable knowledge points)</li>
+        <li><strong>Fuel System</strong> &mdash; auto-detects available models, routes to the best one</li>
+        <li><strong>Dispatch</strong> &mdash; 20 instant commands, executes in under 2 seconds without invoking any AI model</li>
+        <li><strong>Skills</strong> &mdash; 20 learned capabilities that grow with every interaction</li>
+        <li><strong>Personality</strong> &mdash; contextual understanding, measured tone, human-like analogies</li>
+      </ul>
+    </div>
+    <div class="card p">
+      <div class="ct">Layer 2: The Toolkit (Curated)</div>
+      <p style="color:var(--text2);font-size:14px;margin-bottom:12px">Existing tools that Orion knows how to orchestrate. Like a human isn't defined by the hammer they own &mdash; they're defined by the brain that knows when and how to use it:</p>
+      <ul class="fl">
+        <li><strong>Security</strong> &mdash; nmap, nikto, nuclei, sqlmap (dispatched to isolated Kali device)</li>
+        <li><strong>OSINT</strong> &mdash; maigret, blackbird, ghunt (people and domain investigation)</li>
+        <li><strong>Offline Knowledge</strong> &mdash; Project NOMAD (Wikipedia, maps, medical references)</li>
+        <li><strong>Desktop Control</strong> &mdash; cursor movement, app control, vision agent</li>
+        <li><strong>Email, Docker, SSH</strong> &mdash; system management across connected devices</li>
+        <li><strong>52 OpenClaw skills</strong> &mdash; browser automation, forms, web interaction</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="co">Layer 1 is what Orion invented. Layer 2 is what Orion learned to use. The distinction matters: when someone says "nmap already exists," the answer is "yes &mdash; and so did touchscreens before the iPhone. The innovation is the integration."</div>
+
+  <h3>Architecture</h3>
+  <div class="ascii">
+  USER INPUT (any interface)
+       |
+       v
+  ORION BRAIN (orion_server.py, :5555)
+  [identity: hardcoded]
+  [memory: graph + vector search]
+  [router: Python classifier]
+       |
+       +--- command -----> DISPATCH (instant, &lt;2s, no AI needed)
+       |                   /status, /email, /scan, /docker...
+       |
+       +--- greeting ----> LOCAL MODEL (phi3:mini, free, fast)
+       |
+       +--- complex -----> FUEL ADAPTER (best available model)
+                           |
+                  +--------+--------+
+                  |        |        |
+             Claude CLI  Ollama   ChatGPT
+             (subscription) (local)  (free tier)
+             $0/request   $0       $0</div>
+
+  <div class="stats">
+    <div class="stat"><div class="v">~200</div><div class="l">Lines of Python</div></div>
+    <div class="stat"><div class="v">0</div><div class="l">AI Frameworks</div></div>
+    <div class="stat"><div class="v">4</div><div class="l">Source Files</div></div>
+    <div class="stat"><div class="v">&lt;2s</div><div class="l">Dispatch Speed</div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH4 — FUEL SYSTEM                                             -->
+<!-- ============================================================ -->
+<section class="ch" id="ch4">
+  <span class="cl">Chapter 04</span>
+  <h2>The Fuel System</h2>
+  <p class="lead">Bring whatever AI subscription you have. Or don't bring one at all. Orion runs on premium, regular, or fumes.</p>
+
+  <p>Most AI products lock you into one model. Use ChatGPT? You're stuck with GPT. Use Claude? You're stuck with Anthropic. Want to switch? Start over.</p>
+  <p>Orion treats models like fuel. <strong>You bring whatever you have.</strong> The brain adapts.</p>
+
+  <h3>Fuel Gauge</h3>
+  <div class="card hl" style="padding:28px">
+    <p style="color:var(--text);font-weight:600;margin-bottom:4px">Claude Pro ($20-200/mo) &mdash; Premium Fuel</p>
+    <div class="fuel-bar"><div class="fuel-fill f1">FULL POWER &mdash; Opus reasoning, unlimited requests, $0/each</div></div>
+    <p style="color:var(--text);font-weight:600;margin-bottom:4px;margin-top:16px">ChatGPT Plus ($20/mo) &mdash; High Octane</p>
+    <div class="fuel-bar"><div class="fuel-fill f2">STRONG &mdash; GPT-4 level reasoning, good for most tasks</div></div>
+    <p style="color:var(--text);font-weight:600;margin-bottom:4px;margin-top:16px">Free Tiers (ChatGPT/Gemini/Ollama) &mdash; Regular</p>
+    <div class="fuel-bar"><div class="fuel-fill f3">CAPABLE &mdash; limited throughput, still functional</div></div>
+    <p style="color:var(--text);font-weight:600;margin-bottom:4px;margin-top:16px">Offline (no internet, local model only) &mdash; Fumes</p>
+    <div class="fuel-bar"><div class="fuel-fill f4">DEGRADED &mdash; basic queries, cached knowledge</div></div>
+  </div>
+
+  <div class="co">Here's what makes this powerful: a user at home with Claude Pro gets full Opus-level reasoning for $0 per request. They go to a coffee shop and switch to free ChatGPT. The brain doesn't skip a beat &mdash; same memory, same personality, just a different engine. They fly to a cabin with no internet. Orion drops to local Ollama. Slower, simpler, but still <em>their</em> brain. Nobody else has to know the fuel changed.</div>
+
+  <h3>What This Means for Users</h3>
+  <div class="g3">
+    <div class="card g">
+      <div class="ct">The Power User</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Pays for Claude Pro. Gets unlimited Opus reasoning at $0/request through the CLI subscription. Runs two terminals simultaneously &mdash; both are Orion. Complex analysis, code generation, research &mdash; all premium fuel.</p>
+    </div>
+    <div class="card b">
+      <div class="ct">The Smart Saver</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Alternates between free tiers. Uses ChatGPT free for conversations, Gemini free for web search, local Ollama for private queries. Never pays a dollar. Brain still grows, memory still persists, skills still work.</p>
+    </div>
+    <div class="card p">
+      <div class="ct">The Traveler</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Claude Opus at home office. ChatGPT on hotel wifi. Offline Ollama on a plane. Orion seamlessly transitions between fuel sources based on what's available. The user doesn't configure anything &mdash; the fuel system auto-detects.</p>
+    </div>
+  </div>
+
+  <div class="ff">
+    <div class="ff-label">Key Insight</div>
+    <div class="ff-num">$0 Required</div>
+    <div class="ff-text">You do not need a paid AI subscription to use Orion. Free ChatGPT, free Gemini, free local Ollama models &mdash; all valid fuel. Premium subscriptions make it faster and smarter, but the brain works with anything. This is AI without a paywall.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH5 — SETUP WIZARD                                            -->
+<!-- ============================================================ -->
+<section class="ch" id="ch5">
+  <span class="cl">Chapter 05</span>
+  <h2>Setup Wizard</h2>
+  <p class="lead">Plug in. Pick your tier. Orion activates. Three presets, one experience.</p>
+
+  <div class="g3">
+    <div class="wizard-tier">
+      <div class="tier-name">Personal</div>
+      <div class="tier-for">For everyone. Your mom. Your friend. You.</div>
+      <ul>
+        <li>Portable AI brain</li>
+        <li>Persistent memory across models</li>
+        <li>Plug in your AI subscription (or use free)</li>
+        <li>Simple. Clean. Just works.</li>
+      </ul>
+    </div>
+    <div class="wizard-tier" style="border-color:var(--accent)">
+      <div class="tier-name">Developer</div>
+      <div class="tier-for">Engineers, builders, tinkerers</div>
+      <ul>
+        <li>Everything in Personal</li>
+        <li>Multi-model fuel routing</li>
+        <li>CLI + API access</li>
+        <li>Custom skill creation</li>
+        <li>Device mesh support</li>
+      </ul>
+    </div>
+    <div class="wizard-tier">
+      <div class="tier-name">Full Arsenal</div>
+      <div class="tier-for">Power users, security pros, infrastructure ops</div>
+      <ul>
+        <li>Everything in Developer</li>
+        <li>Security scanning &amp; OSINT</li>
+        <li>Multi-device orchestration</li>
+        <li>Offline knowledge server (NOMAD)</li>
+        <li>Desktop/cursor control</li>
+        <li>Hardware intelligence pipelines</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="co">The average person picks Personal and gets an AI brain that remembers them across every model they use. They never see a terminal. They never configure a model. They just plug in and talk. The complexity exists for those who want it &mdash; hidden from those who don't.</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH6 — INTERFACES                                              -->
+<!-- ============================================================ -->
+<section class="ch" id="ch6">
+  <span class="cl">Chapter 06</span>
+  <h2>7 Interfaces, One Brain</h2>
+  <p class="lead">Call it. Text it. Type to it. Every interface reaches the same brain with the same memory. A fact learned over a phone call is recalled in a text message ten minutes later.</p>
+
+  <div class="g2">
+    <div class="card c">
+      <div class="ct">Phone</div>
+      <p style="font-weight:700;margin-bottom:6px">+1 (808) 724-7946 <span class="badge live">live</span></p>
+      <p style="margin:0;color:var(--text2);font-size:14px">A real phone number. Call from any phone on Earth. Orion answers with synthesized speech, processes your request, and responds. If you hang up before the answer is ready, it sends the result to Telegram automatically.</p>
+    </div>
+    <div class="card c">
+      <div class="ct">Telegram</div>
+      <p style="font-weight:700;margin-bottom:6px">50+ Commands <span class="badge live">live</span></p>
+      <p style="margin:0;color:var(--text2);font-size:14px">Full command suite plus natural language. Dispatch security scans, check system status, ask complex questions. Always-on daemon with autonomous security agent mode.</p>
+    </div>
+    <div class="card c">
+      <div class="ct">iMessage</div>
+      <p style="font-weight:700;margin-bottom:6px">Native macOS <span class="badge live">live</span></p>
+      <p style="margin:0;color:var(--text2);font-size:14px">Text Orion from your iPhone. It reads the message, processes it through the brain, and can compose and send emails, look up information, or execute commands &mdash; all from a text message.</p>
+    </div>
+    <div class="card c">
+      <div class="ct">Terminal / CLI</div>
+      <p style="font-weight:700;margin-bottom:6px">Claude Code, Codex, Gemini CLI <span class="badge live">live</span></p>
+      <p style="margin:0;color:var(--text2);font-size:14px">Open any terminal on any device. Orion's context is pre-loaded through native mechanisms. No pasting. No "you are Orion" preamble. Just open and type &mdash; full identity, full context, zero setup.</p>
+    </div>
+    <div class="card c">
+      <div class="ct">Dashboard</div>
+      <p style="font-weight:700;margin-bottom:6px">atlascommand.vip <span class="badge live">live</span></p>
+      <p style="margin:0;color:var(--text2);font-size:14px">Pixel art operations center where AI agents appear as animated characters. They walk, type at desks, and react to real system events polled every 2 seconds. Not a static page &mdash; a live visualization of your AI at work.</p>
+    </div>
+    <div class="card c">
+      <div class="ct">Any AI Tool</div>
+      <p style="font-weight:700;margin-bottom:6px">Zero-Prompt Identity <span class="badge first">first of its kind</span></p>
+      <p style="margin:0;color:var(--text2);font-size:14px">Open ChatGPT, Claude, Gemini, Codex &mdash; any AI tool on any device in the mesh. Orion's identity is pre-configured through each tool's native context mechanism. The AI already knows who it is, who you are, and what you're working on. No setup.</p>
+    </div>
+  </div>
+
+  <div class="ff">
+    <div class="ff-label">Cross-Interface Memory</div>
+    <div class="ff-num">Seamless</div>
+    <div class="ff-text">Ask Orion to research something over a phone call. Check the results in Telegram. Continue the work in a terminal. Every interface reads from and writes to the same memory. You never repeat yourself. You never re-explain context. The brain remembers everything.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH7 — WHAT MAKES IT DIFFERENT                                 -->
+<!-- ============================================================ -->
+<section class="ch" id="ch7">
+  <span class="cl">Chapter 07</span>
+  <h2>What Makes Orion Different</h2>
+  <p class="lead">There are AI memory tools. Agent frameworks. Model routers. Personal assistants. None of them do what Orion does &mdash; because Orion is not one of those things. It is all of them unified under a single portable identity.</p>
+
+  <h3>Competitive Landscape</h3>
+  <table>
+    <thead>
+      <tr><th>Capability</th><th>Mem0<br><span style="font-weight:400;font-size:9px;letter-spacing:0">$6.2M raised</span></th><th>Letta<br><span style="font-weight:400;font-size:9px;letter-spacing:0">$10M raised</span></th><th>Khoj<br><span style="font-weight:400;font-size:9px;letter-spacing:0">~$1M raised</span></th><th>Open Interpreter<br><span style="font-weight:400;font-size:9px;letter-spacing:0">YC W24</span></th><th style="color:var(--accent)">Orion</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Persistent memory</td><td style="color:var(--green)">Yes</td><td style="color:var(--green)">Yes</td><td style="color:var(--green)">Yes</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+      <tr><td>Model-agnostic</td><td style="color:var(--orange)">Partial</td><td style="color:var(--orange)">Partial</td><td style="color:var(--orange)">Partial</td><td style="color:var(--green)">Yes</td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+      <tr><td>Portable (physical drive)</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+      <tr><td>Real phone number</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+      <tr><td>7+ interfaces, shared brain</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--orange)">2-3</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+      <tr><td>$0/request architecture</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+      <tr><td>Offline capability</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--green)">Yes</td><td style="color:var(--orange)">Local only</td><td style="color:var(--green)"><strong>5-tier</strong></td></tr>
+      <tr><td>Self-healing infrastructure</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>12 automations</strong></td></tr>
+      <tr><td>Security scanning</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--red)">No</td><td style="color:var(--green)"><strong>18 tools</strong></td></tr>
+      <tr><td>Zero framework dependencies</td><td style="color:var(--orange)">Own SDK</td><td style="color:var(--red)">Heavy</td><td style="color:var(--orange)">Moderate</td><td style="color:var(--orange)">Moderate</td><td style="color:var(--green)"><strong>Zero</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div class="ff">
+    <div class="ff-label">The Scorecard</div>
+    <div class="ff-num">10 of 10</div>
+    <div class="ff-text">Orion implements all ten capabilities. The best-funded competitor implements three. The gap is not incremental &mdash; it is categorical. These companies raised a combined $20M+ for pieces of what Orion delivers as a complete system.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH8 — INTELLIGENCE, NOT WRAPPERS                              -->
+<!-- ============================================================ -->
+<section class="ch" id="ch8">
+  <span class="cl">Chapter 08</span>
+  <h2>Intelligence, Not Wrappers</h2>
+  <p class="lead">If Orion just loaded context into ChatGPT, people would say "that's just ChatGPT with a system prompt." And they'd be right &mdash; until they see what happens when you switch models and the memory, skills, and tools carry over.</p>
+
+  <p>The question people will ask: <em>"What IS Orion? Is it just a bunch of other people's tools stitched together?"</em></p>
+  <p>No. And here's the distinction that matters:</p>
+
+  <div class="co purple">
+    <strong style="color:var(--purple2)">The iPhone Analogy</strong><br>
+    Phones existed before the iPhone. Touchscreens existed. Cameras existed. Music players existed. Steve Jobs didn't invent any of those. He integrated them into an experience that changed the world. Nobody said "the iPhone is just a bunch of Nokia's stuff" &mdash; because the integration WAS the invention.
+  </div>
+
+  <p>Orion's brain is original code. ~200 lines of Python. Zero dependencies on LangChain, LlamaIndex, CrewAI, Mem0, or any AI framework. The memory system is custom-built. The fuel routing is custom-built. The dispatch system is custom-built. The personality layer is custom-built.</p>
+  <p>The models (Claude, ChatGPT, Ollama) provide compute power. Like Chevron provides fuel. Chevron didn't build the jet engine &mdash; and OpenAI didn't build Orion's brain.</p>
+
+  <h3>What Real Intelligence Looks Like</h3>
+  <p>A generic AI responds to prompts. Orion understands context and applies it with personality.</p>
+
+  <div class="g2">
+    <div class="card r">
+      <div class="ct">Generic AI Response</div>
+      <p style="margin:0;color:var(--text2);font-size:14px;font-style:italic">"Here are the steps to change your oil: 1. Lift the car. 2. Locate the drain plug. 3. Remove the plug and drain..."</p>
+      <p style="margin:8px 0 0;color:var(--text3);font-size:12px">Factually correct. Zero context. Could be anyone asking about any car.</p>
+    </div>
+    <div class="card g">
+      <div class="ct">Orion Response</div>
+      <p style="margin:0;color:var(--text2);font-size:14px;font-style:italic">"Sir, the VR30DDTT takes 5.1 quarts of 0W-20 &mdash; but with the catless downpipes you installed, I'd check for exhaust soot contamination at the drain plug. Last oil analysis from March showed slightly elevated iron levels. Consider shortening the interval to 4,000 miles until we see if the new tune corrects the fuel trim issue we flagged."</p>
+      <p style="margin:8px 0 0;color:var(--text3);font-size:12px">Knows the car. Knows the mods. Remembers past data. Applies judgment. This is what accumulated intelligence produces.</p>
+    </div>
+  </div>
+
+  <div class="co">The difference is not the model &mdash; both responses could come from the same Claude Opus. The difference is the <strong>brain feeding the model</strong>. Orion's memory of past oil analyses, knowledge of the specific engine modifications, and understanding of the owner's technical level produces a response no generic AI can match. The model is the voice. The brain is the mind.</div>
+
+  <h3>The Self-Improvement Loop</h3>
+  <p>ChatGPT doesn't get smarter when you use it. Claude doesn't learn your tools. They reset every session. Orion doesn't.</p>
+  <div class="card hl">
+    <div class="ct">Continuous Growth</div>
+    <ul class="fl">
+      <li>Every conversation adds to memory &mdash; facts, preferences, project state</li>
+      <li>Every new tool indexed becomes a skill Orion can use</li>
+      <li>Every successful task becomes a pattern for future tasks</li>
+      <li>Absorption Mode scans GitHub trending, indexes new tools, embeds knowledge</li>
+      <li>The models stay the same &mdash; Orion evolves</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH9 — THE TOOLKIT                                             -->
+<!-- ============================================================ -->
+<section class="ch" id="ch9">
+  <span class="cl">Chapter 09</span>
+  <h2>The Toolkit</h2>
+  <p class="lead">What Orion can do &mdash; out of the box. Each capability is a tool that the brain knows how to use. Users choose which tools to enable through the setup wizard.</p>
+
+  <div class="g3">
+    <div class="card c">
+      <div class="ct">Security Scanning</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">18 tools dispatched to an isolated security device. Port scanning, vulnerability assessment, SSL analysis, web application testing, AI-powered result interpretation. Say "scan my website" and get an analyzed report, not raw output.</p>
+    </div>
+    <div class="card b">
+      <div class="ct">OSINT Investigation</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Username searches across hundreds of platforms. Email verification. Domain reconnaissance. AI-compiled intelligence reports. Authorized testing and personal security awareness.</p>
+    </div>
+    <div class="card p">
+      <div class="ct">Device Mesh Control</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">SSH into connected devices. Manage Docker containers. Control desktop cursors. Deploy agents across multiple machines. One command center, many devices.</p>
+    </div>
+    <div class="card t">
+      <div class="ct">Offline Knowledge (NOMAD)</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Full offline Wikipedia, maps, medical references, educational courses. Built on open-source Kiwix. When internet drops, Orion supplements its knowledge with 6M+ cached articles. Works in a cabin, on a plane, anywhere.</p>
+    </div>
+    <div class="card g">
+      <div class="ct">Email &amp; Communication</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Send emails from text messages. Compose professional communications with AI. Dispatch from any interface &mdash; text "send an email to..." and Orion composes, formats, and sends. Confirmed working.</p>
+    </div>
+    <div class="card o">
+      <div class="ct">Self-Healing Infrastructure</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">12 automation scripts monitor continuously. Docker watchdog auto-restarts crashed services. Network watchdog detects device disconnections. Anomaly detector flags unusual metrics. All without human intervention.</p>
+    </div>
+  </div>
+
+  <div class="co">Every tool in this list is optional. A user who just wants a portable AI brain picks "Personal" in the setup wizard and never sees any of this. A security professional picks "Full Arsenal" and gets all 18 scanning tools pre-configured. The brain is the constant &mdash; the toolkit is configurable.</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH10 — OPERATIONAL MODES                                      -->
+<!-- ============================================================ -->
+<section class="ch" id="ch10">
+  <span class="cl">Chapter 10</span>
+  <h2>Operational Modes</h2>
+  <p class="lead">Orion doesn't just answer questions. It shifts behavior based on context. Nine modes change how the brain thinks, what models it uses, and how it interacts with the world.</p>
+
+  <div class="g3">
+    <div class="card g">
+      <div class="ct">Standard <span class="badge live">active</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Conversational AI plus command execution. All interfaces active. Memory read/write. The baseline state.</p>
+    </div>
+    <div class="card b">
+      <div class="ct">Absorption <span class="badge built">partial</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Discovers, downloads, and indexes new tools and repositories. Scans GitHub trending, embeds knowledge into the vector database. The mode that makes Orion smarter over time. Currently triggered manually &mdash; autonomous scheduling in development.</p>
+    </div>
+    <div class="card p">
+      <div class="ct">Hive Mind <span class="badge plan">concept</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Parallel dispatch across multiple devices simultaneously. A single prompt fans out to every connected machine. Each agent works independently, results are aggregated. For users: a terminal presents each agent's work as it completes &mdash; making multi-agent orchestration simple and visible.</p>
+    </div>
+    <div class="card r">
+      <div class="ct">Defense <span class="badge built">partial</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Activates on untrusted networks. Tightens firewalls. Enforces VPN. Blocks inbound connections. Defense scripts exist &mdash; full automatic activation in development.</p>
+    </div>
+    <div class="card" style="border-left:3px solid var(--text3)">
+      <div class="ct">Stealth <span class="badge plan">concept</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Zero cloud API calls. Local models only. No logging, no telemetry, no external connections. Everything stays on-device. For when privacy is non-negotiable.</p>
+    </div>
+    <div class="card o">
+      <div class="ct">Deep Dive <span class="badge live">active</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Extended reasoning mode. Web search, repository analysis, multi-source synthesis. Heavy model usage. Results stored for future reference.</p>
+    </div>
+  </div>
+  <div class="g3">
+    <div class="card c">
+      <div class="ct">Builder <span class="badge live">active</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">End-to-end project execution. Scaffolds, codes, tests, deploys, and documents. Full tool access &mdash; filesystem, git, Docker, SSH mesh, package managers. Ship a complete project from a single prompt.</p>
+    </div>
+    <div class="card pk">
+      <div class="ct">The Ant <span class="badge plan">concept</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Hive-like mass search agent. Deployed for deep investigation, it branches across sources like ants fanning out from a colony. Each path reports back. The brain synthesizes. Designed for when a simple search isn't enough.</p>
+    </div>
+    <div class="card" style="border-left:3px solid var(--green)">
+      <div class="ct">Autonomous <span class="badge plan">concept</span></div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Camera-enabled self-directed operation. Orion sees, decides, and acts without user input. Intended for monitoring, hardware control, and autonomous agent deployment. Requires vision hardware.</p>
+    </div>
+  </div>
+
+  <div class="co">Modes are not mutually exclusive. Defense can run underneath Standard. Absorption can run as a background process during Builder. The mode system is behavioral, not a state machine &mdash; multiple modes can be active simultaneously with priority resolution.</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH11 — HARDWARE INTELLIGENCE                                  -->
+<!-- ============================================================ -->
+<section class="ch" id="ch11">
+  <span class="cl">Chapter 11</span>
+  <h2>Future: Hardware Intelligence</h2>
+  <p class="lead">The same brain that interprets AI conversations can interpret real-world sensor data. These are designed capabilities &mdash; the hardware is commodity, the integration layer is Orion. <span class="badge plan">designed</span></p>
+
+  <div class="g2">
+    <div class="card c">
+      <div class="ct">Car Intelligence</div>
+      <h4 style="border:none;margin-top:0;padding:0">AI-Powered Vehicle Diagnostics</h4>
+      <p style="color:var(--text2);font-size:14px">A $100 Bluetooth OBD-II adapter streams engine data to Orion. Instead of cryptic sensor readings, the brain interprets: "3 knock events on bank 1 at 5,200 RPM under 18 PSI boost &mdash; consistent with the lean condition from last 3 runs. Recommend 2% fuel enrichment above 4,800 RPM."</p>
+      <p style="color:var(--text2);font-size:14px">The hardware exists. The AI exists. <strong>The integration layer that makes it accessible to non-engineers does not exist.</strong> That's the product.</p>
+      <p style="color:var(--text3);font-size:12px;margin:0">Hardware cost: ~$135 total. Software cost: $0 (runs on existing Orion infrastructure).</p>
+    </div>
+    <div class="card p">
+      <div class="ct">Biosignal Intelligence</div>
+      <h4 style="border:none;margin-top:0;padding:0">AI-Powered Body Monitoring</h4>
+      <p style="color:var(--text2);font-size:14px">ECG, muscle activity, stress response, blood oxygen, temperature, movement &mdash; all capturable with sensors under $15 each from Amazon. A Raspberry Pi hub collects the data. Orion interprets cross-signal correlations that no consumer wearable provides.</p>
+      <p style="color:var(--text2);font-size:14px">A Fitbit reads two signals. This reads seven. For less money. With AI interpretation that finds patterns across all signals simultaneously.</p>
+      <p style="color:var(--text3);font-size:12px;margin:0">Full body monitoring setup: ~$120. Competes with $300+ wearables that read fewer signals.</p>
+    </div>
+  </div>
+
+  <div class="co purple">
+    <strong style="color:var(--purple2)">The Opportunity:</strong> The hardware to monitor engines and bodies is commodity. The AI to interpret that data exists. What does NOT exist is the integration layer that makes raw sensor data meaningful to a non-engineer. Orion is that layer. Each of these is a standalone product &mdash; and a proof point for the platform.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH11 — FOUNDER                                                -->
+<!-- ============================================================ -->
+<section class="ch" id="ch12">
+  <span class="cl">Chapter 12</span>
+  <h2>Founder</h2>
+  <p class="lead">Built by James England. Started in early 2026. Nine versions in eight weeks. No CS degree. No venture funding. Just a vision that AI should belong to the people who use it.</p>
+
+  <div class="founder-quote">
+    "The memory IS the intelligence. Any model that loads Orion's memory becomes Orion. The model is just compute power. The brain is the data."
+    <div class="fq-attr">&mdash; James England, 2026</div>
+  </div>
+  <p>This statement defined the core architecture. Memory was separated from the model entirely. Orion's identity lives in vectors and structured files &mdash; not in a model's context window. Swap the model, keep the brain.</p>
+
+  <div class="founder-quote">
+    "AI is really just tasks compiled together and data built over time. That's something that already existed &mdash; but it was put into a way to be presented as AI and more usable for people. After I realized that, I built Orion."
+    <div class="fq-attr">&mdash; James England, 2026</div>
+  </div>
+  <p>The insight that AI isn't magic &mdash; it's accumulated data and orchestrated tools &mdash; led to a system that doesn't try to compete with models. It uses them. The brain grows independently of any single model's capabilities.</p>
+
+  <div class="founder-quote">
+    "Someone asked Steve Jobs an insulting question about what he'd built. He explained: it's been done before, but he focused on the customer experience. That's what we're doing. Focus on the experience first, then build the product."
+    <div class="fq-attr">&mdash; James England, 2026</div>
+  </div>
+  <p>This drove the setup wizard design. The iPhone wasn't the first smartphone. It was the first one your mom could use. Orion isn't the first AI tool. It's the first one that works the same way whether you're a developer or someone who just uses ChatGPT.</p>
+
+  <h3>The Journey</h3>
+  <p>Started using AI to create in 2026. Built a triad system using three AI models &mdash; one for memory, one for the brain, one for hands. Built consumer apps. Created a 5-device server mesh. Built an AI agent that could answer phone calls, dispatch security scans, and manage infrastructure. Realized the agent needed a brain that outlived any single model. Built Orion.</p>
+  <p>Nine versions in a few months. On consumer hardware. With no team. No CS degree. No funding.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH12 — EVOLUTION                                              -->
+<!-- ============================================================ -->
+<section class="ch" id="ch13">
+  <span class="cl">Chapter 13</span>
+  <h2>The Evolution</h2>
+  <p class="lead">Nine versions in eight weeks. Each solved a specific limitation of the one before it.</p>
+
+  <div class="tl">
+    <div class="tl-i done">
+      <div class="d">Feb 2026</div>
+      <div class="t">v1-v3: Shell Scripts</div>
+      <div class="ds">12 numbered automations for health checks, backups, monitoring. Cron jobs reporting to Telegram. No AI brain &mdash; just scheduled tasks.</div>
+    </div>
+    <div class="tl-i done">
+      <div class="d">Mar 2026</div>
+      <div class="t">v4: n8n Orchestration</div>
+      <div class="ds">Automations migrated into workflows. Unified webhook. 40+ Telegram commands. Phone calls via Telnyx. Still no persistent memory across interfaces.</div>
+    </div>
+    <div class="tl-i done">
+      <div class="d">Mar 30</div>
+      <div class="t">v5: File Bridge + $0/Request</div>
+      <div class="ds">Claude CLI via subscription = unlimited requests at $0 each. 10 tools, 6 sub-agent domains, 1,058 knowledge chunks. All interfaces wired to one brain. The architecture worked. The memory didn't persist.</div>
+    </div>
+    <div class="tl-i done">
+      <div class="d">Apr 2</div>
+      <div class="t">Renamed to Orion</div>
+      <div class="ds">Atlas held up the sky &mdash; fixed, immovable. Orion is a constellation visible from anywhere on Earth. The name reflects the shift: portable intelligence that follows its owner everywhere.</div>
+    </div>
+    <div class="tl-i done">
+      <div class="d">Apr 8</div>
+      <div class="t">Brain v6: The Clean Module</div>
+      <div class="ds">Third-party frameworks stripped out. ~200 lines of original Python. Custom graph memory. Custom fuel system. Custom dispatch. Zero dependencies. "The model is fuel. The brain is Orion."</div>
+    </div>
+    <div class="tl-i now">
+      <div class="d">Apr 2026</div>
+      <div class="t">Public Launch</div>
+      <div class="ds">GitHub release. LinkedIn presence. Portfolio site. The world learns Orion exists.</div>
+    </div>
+  </div>
+
+  <div class="ff">
+    <div class="ff-label">Build Velocity</div>
+    <div class="ff-num">9 Versions, 8 Weeks</div>
+    <div class="ff-text">From cron scripts to the world's first portable AI brain. On consumer hardware. With no team. No funding. No CS degree. Just velocity and vision.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH13 — MARKET & REVENUE                                       -->
+<!-- ============================================================ -->
+<section class="ch" id="ch14">
+  <span class="cl">Chapter 14</span>
+  <h2>Market &amp; Revenue</h2>
+  <p class="lead">The AI memory and infrastructure market is proven. Mem0 raised $6.2M for a memory library. Letta raised $10M for persistent agents. Orion delivers more than both &mdash; combined.</p>
+
+  <h3>Product Tiers</h3>
+  <table>
+    <thead><tr><th>Tier</th><th>Audience</th><th>What They Get</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Free / Open Source</strong></td><td>Developers</td><td>Full brain code, self-host on your hardware, community support, GitHub repo</td></tr>
+      <tr><td><strong>Orion Pro</strong></td><td>Individuals</td><td>Managed hosting, setup wizard, auto-updates, priority support, cloud backup of your brain</td></tr>
+      <tr><td><strong>Orion Team</strong></td><td>Teams &amp; Small Business</td><td>Multi-user brains, shared memory, team workflows, admin dashboard</td></tr>
+      <tr><td><strong>Enterprise</strong></td><td>Corporations</td><td>Custom deployment, dedicated support, SLA, on-premise install, compliance</td></tr>
+      <tr><td><strong>AI Literacy Platform</strong></td><td>Everyone</td><td>Learn to use AI by career field. Your Orion brain builds as you learn. The on-ramp.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="g2">
+    <div class="card g">
+      <div class="ct">The Funnel</div>
+      <h4 style="border:none;margin-top:0;padding:0">AI Literacy &rarr; Orion Pro &rarr; Orion Team &rarr; Enterprise</h4>
+      <p style="color:var(--text2);font-size:14px;margin:0">Users enter through the AI Literacy Platform &mdash; a Duolingo-style app that teaches them to delegate tasks to AI, structured by career field. A doctor learns healthcare AI workflows. A teacher builds AI lesson plans. A general user learns to ask better questions. As they learn, their Orion brain builds in the background &mdash; preferences, communication style, workflows, all stored. By graduation, they have a personalized AI brain and a reason to upgrade to Orion Pro. This is both a standalone product and the largest customer acquisition channel.</p>
+    </div>
+    <div class="card b">
+      <div class="ct">Early Revenue</div>
+      <h4 style="border:none;margin-top:0;padding:0">Agency + Deployments</h4>
+      <p style="color:var(--text2);font-size:14px;margin:0">While the platform scales: custom Orion deployments for businesses at $500-2,000 each. "We build an AI brain for your company using YOUR existing AI subscriptions." 85-90% margins. This generates cash flow while the product grows its user base.</p>
+    </div>
+  </div>
+
+  <h3>Who This Is For</h3>
+  <div class="g2">
+    <div class="card c">
+      <div class="ct">Developers &amp; AI Engineers</div>
+      <h4 style="border:none;margin-top:0;padding:0">Launch Audience</h4>
+      <p style="color:var(--text2);font-size:14px;margin:0">People who already run multiple models and feel the pain of fragmented AI. They find Orion on GitHub, deploy it on their hardware, and immediately understand the value. They're on HackerNews, r/selfhosted, r/LocalLLaMA. They don't need convincing &mdash; they need a README and a repo.</p>
+    </div>
+    <div class="card p">
+      <div class="ct">Enterprises &amp; Teams</div>
+      <h4 style="border:none;margin-top:0;padding:0">Growth Audience</h4>
+      <p style="color:var(--text2);font-size:14px;margin:0">Companies paying thousands per month in AI API costs. They want a unified brain for their workflows without vendor lock-in. Orion's $0/request architecture and self-hosted model saves them real money. Custom deployments via the AI Agency model.</p>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card t">
+      <div class="ct">Everyone Else</div>
+      <h4 style="border:none;margin-top:0;padding:0">Mass Market (Future)</h4>
+      <p style="color:var(--text2);font-size:14px;margin:0">People who "just use ChatGPT." They don't know they need Orion yet. They enter through the <strong>AI Literacy Platform</strong> &mdash; a Duolingo-style app that teaches them to use AI effectively for their career. As they learn, their Orion brain builds in the background. By the time they graduate, they have a personalized AI brain and a reason to keep it. This is the on-ramp for hundreds of millions of people who use AI but don't understand it.</p>
+    </div>
+    <div class="card o">
+      <div class="ct">AI Literacy Platform</div>
+      <h4 style="border:none;margin-top:0;padding:0">The Funnel</h4>
+      <p style="color:var(--text2);font-size:14px;margin:0">Career-specific AI training. Modes for: General (everyone), Healthcare, Legal, Education, Engineering, Business. Free tier teaches basics. Pro tier teaches advanced delegation and workflow automation &mdash; powered by Orion. Users learn to communicate with AI while simultaneously building the very brain that will serve them. This is both a standalone product and the biggest customer acquisition channel for the platform.</p>
+    </div>
+  </div>
+
+  <h3>Why Now</h3>
+  <div class="card hl">
+    <ul class="fl">
+      <li><strong>AI fragmentation is accelerating</strong> &mdash; Claude, GPT, Gemini, Llama, Mistral all have users. Nobody connects them.</li>
+      <li><strong>Privacy concerns are peaking</strong> &mdash; users increasingly want AI without giving data to corporations.</li>
+      <li><strong>Local models are finally good enough</strong> &mdash; phi3, Llama 3, Mistral run on consumer hardware. Offline AI is real.</li>
+      <li><strong>The subscription trap is visible</strong> &mdash; $20/mo to ChatGPT + $20/mo to Claude + $20/mo to Gemini. Users feel the pain.</li>
+      <li><strong>No one owns the integration layer</strong> &mdash; Mem0 does memory. LiteLLM does routing. Nobody does both + interfaces + portability.</li>
+    </ul>
+  </div>
+
+  <h3>IP Protection</h3>
+  <p><strong>License: AGPL-3.0</strong> &mdash; the strongest open-source protection for SaaS. Anyone who takes Orion's code and hosts it as a service is legally required to open-source their changes. The code is open. The accumulated intelligence (memory, knowledge, skills) is private. First-mover advantage, community, and brand are the moat.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH14 — ROADMAP                                                -->
+<!-- ============================================================ -->
+<section class="ch" id="ch15">
+  <span class="cl">Chapter 15</span>
+  <h2>Transparency</h2>
+  <p class="lead">What Orion can't do yet. What's rough. What's honest. Building trust requires showing the edges, not just the highlights.</p>
+
+  <h3>Current Limitations</h3>
+  <table>
+    <thead><tr><th>Area</th><th>Limitation</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Portable Soul</td><td>The drive-based auto-detect system is designed but not fully implemented. Today, setup requires manual configuration on each new device.</td><td><span class="badge plan">in progress</span></td></tr>
+      <tr><td>Setup Wizard</td><td>Does not exist yet as a downloadable product. Currently requires technical knowledge to deploy.</td><td><span class="badge plan">building</span></td></tr>
+      <tr><td>Response Speed</td><td>Complex queries through the file bridge take 10-30 seconds. Dispatch commands are instant (&lt;2s), but deep reasoning has latency.</td><td><span class="badge built">known tradeoff</span></td></tr>
+      <tr><td>Memory Capacity</td><td>Knowledge base is limited by disk space and vector database size. Currently 1,058 indexed chunks. Not infinite &mdash; but growing.</td><td><span class="badge built">scaling</span></td></tr>
+      <tr><td>Multi-User</td><td>Built for a single user. No multi-tenancy, no shared accounts, no team features. This is a personal brain, not a SaaS platform &mdash; yet.</td><td><span class="badge plan">future</span></td></tr>
+      <tr><td>Phone Calls</td><td>30-second timeout on long queries due to carrier limitations. Short commands work well. Complex reasoning may time out.</td><td><span class="badge built">known issue</span></td></tr>
+      <tr><td>Offline Mode</td><td>Works, but significantly degraded. Small local models only. No web search. Cached knowledge only. Functional, not powerful.</td><td><span class="badge built">by design</span></td></tr>
+      <tr><td>Worker Architecture</td><td>The Claude CLI bridge requires a GUI terminal window to remain open. Not fully headless or production-grade yet.</td><td><span class="badge plan">rearchitecting</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="co">These are not excuses &mdash; they're the roadmap. Every limitation listed here is a known problem with a planned solution. Transparency builds credibility. If someone finds a flaw we didn't disclose, that's a trust problem. If we disclosed it first, it's a development priority.</div>
+
+  <h3>What Orion Is Not</h3>
+  <div class="g2">
+    <div class="card r">
+      <div class="ct">Not a replacement for ChatGPT</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">Orion uses models like ChatGPT as fuel. It doesn't replace them &mdash; it sits above them. If you're happy using ChatGPT alone and never switch models, Orion's value is lower for you today. Its value grows the moment you want persistence, portability, or multi-model access.</p>
+    </div>
+    <div class="card r">
+      <div class="ct">Not finished</div>
+      <p style="margin:0;color:var(--text2);font-size:14px">This is an active build. The brain works. The interfaces work. The architecture is proven. But the consumer experience &mdash; the setup wizard, the one-click install, the polish &mdash; is not there yet. What exists is a functional system, not a polished product. That's next.</p>
+    </div>
+  </div>
+
+  <div class="card hl" style="margin-top:24px">
+    <div class="ct">What Solves This</div>
+    <p style="color:var(--text2);font-size:14px;margin:0">Funding, contributors, and community. The brain is built. The architecture is proven over nine iterations in eight weeks. What's needed now is the resources to build the consumer experience &mdash; the setup wizard, the AI Literacy platform, the polished mobile interface &mdash; and the team to scale it. Every limitation above has a clear technical path to resolution. The foundation is solid. The product needs investment to reach the people who need it.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CH16 — ROADMAP                                                -->
+<!-- ============================================================ -->
+<section class="ch" id="ch16">
+  <span class="cl">Chapter 16</span>
+  <h2>Roadmap</h2>
+
+  <div class="tl">
+    <div class="tl-i done">
+      <div class="t">Brain v6 &mdash; Complete</div>
+      <div class="ds">Custom Python brain, fuel system, graph memory, vector search, dispatch, 20 skills. Running on 4-device mesh. 7 interfaces active.</div>
+    </div>
+    <div class="tl-i now">
+      <div class="t">Public Launch &mdash; Now</div>
+      <div class="ds">GitHub release, LinkedIn/X presence, portfolio site, demo video, community building.</div>
+    </div>
+    <div class="tl-i fut">
+      <div class="t">Setup Wizard &mdash; Next</div>
+      <div class="ds">Downloadable product with 3-tier setup. Plug in, pick your profile, activate.</div>
+    </div>
+    <div class="tl-i fut">
+      <div class="t">Portable Soul &mdash; Coming</div>
+      <div class="ds">Drive auto-detection on any OS. Plug in, Orion activates. No configuration.</div>
+    </div>
+    <div class="tl-i fut">
+      <div class="t">Hardware Intelligence &mdash; Designed</div>
+      <div class="ds">Car diagnostics, biosignal monitoring, offline navigation. Hardware is commodity &mdash; the software is the product.</div>
+    </div>
+    <div class="tl-i fut">
+      <div class="t">AI Literacy Platform &mdash; Planned</div>
+      <div class="ds">Learn how to delegate to AI. Career-specific modes. Like Duolingo for the AI era. As users learn, they build their Orion brain.</div>
+    </div>
+  </div>
+
+  <div class="ff">
+    <div class="ff-label">Status</div>
+    <div class="ff-num">Built. Shipping.</div>
+    <div class="ff-text">The brain exists. The interfaces work. The architecture is proven. Now it goes public.</div>
+  </div>
+
+  <div style="text-align:center;padding:40px 0">
+    <p style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:16px">GET INVOLVED</p>
+    <p style="color:var(--text2);font-size:15px;margin-bottom:24px">GitHub &bull; LinkedIn &bull; X/Twitter</p>
+    <p style="color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace">james@orion &mdash; 2026</p>
+  </div>
+</section>
+
+</main>
+
+<a href="#hero" class="scroll-top">&uarr;</a>
+</body>
+</html>
