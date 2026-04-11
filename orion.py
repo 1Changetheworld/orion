@@ -172,22 +172,42 @@ def fuel_ollama(prompt, model="orion"):
         return f"[Ollama error: {e}]"
 
 
+def _get_cmd_path(cmd):
+    """Find full path to a command, checking common locations."""
+    found = shutil.which(cmd)
+    if found:
+        return found
+    # Check npm global
+    npm_paths = [
+        os.path.expandvars(r"%APPDATA%\npm\\" + cmd + ".cmd"),
+        os.path.expandvars(r"%APPDATA%\npm\\" + cmd),
+        os.path.expanduser(f"~/.local/bin/{cmd}"),
+    ]
+    for p in npm_paths:
+        if os.path.exists(p):
+            return p
+    return cmd
+
+
+def _run_cli(cmd_args, timeout=120):
+    """Run a CLI command with proper Windows hiding."""
+    kwargs = {"capture_output": True, "text": True, "timeout": timeout}
+    if platform.system() == "Windows":
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0
+        kwargs["startupinfo"] = si
+        kwargs["creationflags"] = 0x08000000
+        # Use shell=True on Windows to resolve .cmd files
+        kwargs["shell"] = True
+    return subprocess.run(cmd_args, **kwargs)
+
+
 def fuel_claude(prompt):
     """Send prompt to Claude CLI."""
     try:
-        si = None
-        cf = 0
-        if platform.system() == "Windows":
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 0
-            cf = 0x08000000
-
-        result = subprocess.run(
-            ["claude", "-p", prompt, "--no-input"],
-            capture_output=True, text=True, timeout=120,
-            startupinfo=si, creationflags=cf
-        )
+        cmd = _get_cmd_path("claude")
+        result = _run_cli([cmd, "-p", prompt])
         if result.returncode == 0:
             return result.stdout.strip()
         else:
@@ -199,19 +219,8 @@ def fuel_claude(prompt):
 def fuel_codex(prompt):
     """Send prompt to Codex CLI."""
     try:
-        si = None
-        cf = 0
-        if platform.system() == "Windows":
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 0
-            cf = 0x08000000
-
-        result = subprocess.run(
-            ["codex", "-q", prompt],
-            capture_output=True, text=True, timeout=120,
-            startupinfo=si, creationflags=cf
-        )
+        cmd = _get_cmd_path("codex")
+        result = _run_cli([cmd, "exec", prompt])
         if result.returncode == 0:
             return result.stdout.strip()
         else:
@@ -223,19 +232,8 @@ def fuel_codex(prompt):
 def fuel_gemini(prompt):
     """Send prompt to Gemini CLI."""
     try:
-        si = None
-        cf = 0
-        if platform.system() == "Windows":
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 0
-            cf = 0x08000000
-
-        result = subprocess.run(
-            ["gemini", "-p", prompt],
-            capture_output=True, text=True, timeout=120,
-            startupinfo=si, creationflags=cf
-        )
+        cmd = _get_cmd_path("gemini")
+        result = _run_cli([cmd, "-p", prompt])
         if result.returncode == 0:
             return result.stdout.strip()
         else:
@@ -381,7 +379,7 @@ def select_fuel(available):
 
     # Display CLI tools
     if cli_keys:
-        print(f"{CYAN}  CLI Models:{RESET}")
+        print(f"{CYAN}  CLI Models (requires internet):{RESET}")
         for i, key in enumerate(cli_keys):
             info = available[key]
             print(f"    {info['color']}[{i+1}]{RESET}  {info['name']}")
@@ -390,7 +388,7 @@ def select_fuel(available):
     # Display Ollama models
     if ollama_keys:
         offset = len(cli_keys)
-        print(f"{PURPLE}  Ollama Models:{RESET}")
+        print(f"{PURPLE}  Ollama Models (OFFLINE - runs on your hardware):{RESET}")
         for i, key in enumerate(ollama_keys):
             info = available[key]
             model_name = key.replace("ollama:", "")
