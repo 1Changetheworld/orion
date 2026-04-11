@@ -631,6 +631,8 @@ class SetupWizard:
                  font=tkfont.Font(family="Consolas", size=11), fg=GREEN, bg=CARD).pack(anchor="w", padx=10, pady=(4, 2))
         tk.Label(how_frame, text="Pick your fuel source, and start talking.",
                  font=self.small_font, fg=TEXT2, bg=CARD).pack(anchor="w", padx=10)
+        tk.Label(how_frame, text="Type /help for commands.  /downloadmemory to import existing AI history.",
+                 font=self.small_font, fg=TEXT3, bg=CARD).pack(anchor="w", padx=10, pady=(4, 0))
 
         tk.Label(frame, text="", bg=BG).pack(pady=4)
 
@@ -747,9 +749,9 @@ class FuelGlowIndicator:
         self.menu_win.configure(bg=BORDER)
 
         # Position above the indicator
-        x = self.root.winfo_x()
-        y = self.root.winfo_y() - 160
-        self.menu_win.geometry(f"260x155+{x}+{y}")
+        x = self.root.winfo_x() - 60
+        y = self.root.winfo_y() - 170
+        self.menu_win.geometry(f"320x165+{x}+{y}")
 
         inner = tk.Frame(self.menu_win, bg=BG, padx=1, pady=1)
         inner.pack(fill="both", expand=True, padx=1, pady=1)
@@ -759,8 +761,8 @@ class FuelGlowIndicator:
 
         # Menu buttons
         buttons = [
-            ("Turn Off Orion", self.turn_off_orion, RED),
-            ("Safely Remove Drive", self.safe_remove_drive, ORANGE),
+            ("Turn Off ORION (close all windows)", self.turn_off_orion, RED),
+            ("Safely Remove ORION Drive", self.safe_remove_drive, ORANGE),
             ("Open Settings", self.open_settings, ACCENT),
             ("Close Menu", self.close_menu, TEXT3),
         ]
@@ -783,15 +785,29 @@ class FuelGlowIndicator:
             self.menu_open = False
 
     def turn_off_orion(self):
-        """Save progress and shut down Orion."""
+        """Save progress, close all Orion terminals, and shut down."""
         self.close_menu()
-        self.status_label.config(text="Saving progress...")
+        self.status_label.config(text="Saving and closing all windows...")
         self.root.update()
 
-        # Save any in-memory state
         self.save_state()
 
-        # Brief pause so user sees the save message
+        # Kill any running orion.py processes (terminals using Orion)
+        if platform.system() == "Windows":
+            try:
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = 0
+                # Kill python processes running orion.py
+                subprocess.run(
+                    ["powershell", "-WindowStyle", "Hidden", "-Command",
+                     "Get-Process python -ErrorAction SilentlyContinue | "
+                     "Where-Object { $_.CommandLine -match 'orion.py' } | Stop-Process -Force"],
+                    startupinfo=si, creationflags=0x08000000, timeout=5
+                )
+            except:
+                pass
+
         self.root.after(500, self.root.destroy)
 
     def safe_remove_drive(self):
