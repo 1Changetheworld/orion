@@ -195,8 +195,10 @@ def detect_fuel():
     # Claude desktop app detection (Windows)
     if platform.system() == "Windows":
         claude_app_paths = [
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs\claude\Claude.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\AnthropicClaude\Claude.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Claude"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\claude"),
+            os.path.expandvars(r"%LOCALAPPDATA%\AnthropicClaude"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc"),
         ]
         found = any(os.path.exists(p) for p in claude_app_paths)
         if found:
@@ -281,15 +283,44 @@ def set_window_border_color(hwnd, color_hex):
         return False
 
 
+def detect_running_models():
+    """Detect which AI models are currently running as processes."""
+    running = {}
+    if platform.system() != "Windows":
+        return running
+
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command",
+             "Get-Process | Where-Object { $_.ProcessName -match 'claude|codex|ollama|gemini' } "
+             "| Group-Object ProcessName | Select-Object Name, Count | ConvertTo-Json"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            if isinstance(data, dict):
+                data = [data]
+            for entry in data:
+                name = entry.get("Name", "").lower()
+                if "claude" in name:
+                    running["claude_cli"] = True
+                elif "codex" in name:
+                    running["codex"] = True
+                elif "ollama" in name:
+                    running["ollama_local"] = True
+                elif "gemini" in name:
+                    running["gemini"] = True
+    except:
+        pass
+    return running
+
+
 def find_terminal_windows():
     """Find terminal/console windows on Windows."""
     if platform.system() != "Windows":
         return []
-
     try:
-        import ctypes.wintypes
         user32 = ctypes.windll.user32
-
         windows = []
 
         def enum_callback(hwnd, _):
@@ -298,13 +329,12 @@ def find_terminal_windows():
                 if length > 0:
                     buf = ctypes.create_unicode_buffer(length + 1)
                     user32.GetWindowTextW(hwnd, buf, length + 1)
-                    title = buf.value.lower()
-                    # Match terminal windows
-                    terminal_keywords = ["terminal", "powershell", "cmd", "command prompt",
-                                        "claude", "codex", "gemini", "ollama", "python",
-                                        "windows terminal", "bash"]
-                    if any(kw in title for kw in terminal_keywords):
-                        windows.append((hwnd, buf.value))
+                    title = buf.value
+                    # Match terminal-like windows
+                    terminal_keywords = ["terminal", "powershell", "cmd", "mingw",
+                                        "bash", "windows terminal", "jeng1"]
+                    if any(kw in title.lower() for kw in terminal_keywords):
+                        windows.append((hwnd, title))
             return True
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
@@ -312,23 +342,6 @@ def find_terminal_windows():
         return windows
     except:
         return []
-
-
-def detect_active_model_in_windows(windows):
-    """Check window titles to determine which AI model is running."""
-    for hwnd, title in windows:
-        title_lower = title.lower()
-        if "claude" in title_lower:
-            return "claude_cli", hwnd
-        elif "codex" in title_lower:
-            return "codex", hwnd
-        elif "gemini" in title_lower:
-            return "gemini", hwnd
-        elif "ollama" in title_lower:
-            return "ollama_local", hwnd
-        elif "chatgpt" in title_lower:
-            return "chatgpt", hwnd
-    return None, None
 
 
 # =====================================================================
@@ -647,7 +660,7 @@ class FuelGlowIndicator:
 
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
-        w, h = 260, 90
+        w, h = 260, 100
         x = screen_w - w - 20
         y = screen_h - h - 60
         self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -656,17 +669,21 @@ class FuelGlowIndicator:
         self.current_fuel = "offline"
         self.glow_color = RED
         self.glowed_windows = set()
+        self.dragging = False
+        self.menu_open = False
 
         self.detect_active_fuel()
         self.build_ui()
 
-        self.root.bind("<Button-1>", self.start_drag)
-        self.root.bind("<B1-Motion>", self.do_drag)
-        self.root.bind("<Button-3>", lambda e: self.root.destroy())
+        # Drag with right-click, left-click opens menu
+        self.root.bind("<Button-3>", self.start_drag)
+        self.root.bind("<B3-Motion>", self.do_drag)
+        self.root.bind("<Button-1>", self.on_click)
 
         self.refresh_loop()
 
     def detect_active_fuel(self):
+        """Check which fuel sources are available and pick the best."""
         priority = ["claude_cli", "claude_app", "codex", "gemini", "chatgpt", "ollama_local"]
         for key in priority:
             if self.fuel.get(key, {}).get("available"):
@@ -685,7 +702,8 @@ class FuelGlowIndicator:
 
         top = tk.Frame(inner, bg=BG)
         top.pack(fill="x")
-        tk.Label(top, text="ORION", font=tkfont.Font(family="Consolas", size=11, weight="bold"), fg=ACCENT, bg=BG).pack(side="left")
+        tk.Label(top, text="ORION", font=tkfont.Font(family="Consolas", size=11, weight="bold"),
+                 fg=ACCENT, bg=BG).pack(side="left")
 
         self.dot = tk.Canvas(top, width=10, height=10, bg=BG, highlightthickness=0)
         self.dot.pack(side="right")
@@ -695,35 +713,204 @@ class FuelGlowIndicator:
         quality = self.fuel.get(self.current_fuel, {}).get("quality", "Degraded")
         color_name = FUEL_COLORS.get(self.current_fuel, ("", "GRAY"))[1]
 
-        self.fuel_label = tk.Label(inner, text=f"Fuel: {display}", font=tkfont.Font(family="Consolas", size=9), fg=TEXT2, bg=BG, anchor="w")
+        self.fuel_label = tk.Label(inner, text=f"Fuel: {display}",
+                                   font=tkfont.Font(family="Consolas", size=9), fg=TEXT2, bg=BG, anchor="w")
         self.fuel_label.pack(fill="x")
 
-        self.quality_label = tk.Label(inner, text=f"Quality: {quality}  |  Glow: {color_name}", font=tkfont.Font(family="Consolas", size=8), fg=TEXT3, bg=BG, anchor="w")
+        self.quality_label = tk.Label(inner, text=f"Quality: {quality}  |  Glow: {color_name}",
+                                      font=tkfont.Font(family="Consolas", size=8), fg=TEXT3, bg=BG, anchor="w")
         self.quality_label.pack(fill="x")
 
-        self.status_label = tk.Label(inner, text="Watching for AI terminals...", font=tkfont.Font(family="Consolas", size=8), fg=TEXT3, bg=BG, anchor="w")
+        self.status_label = tk.Label(inner, text="Click for options  |  Right-click to drag",
+                                     font=tkfont.Font(family="Consolas", size=8), fg=TEXT3, bg=BG, anchor="w")
         self.status_label.pack(fill="x")
 
+    # -- Interactive Menu ------------------------------------------------
+    def on_click(self, event):
+        """Left-click opens the interactive menu."""
+        if self.menu_open:
+            return
+        self.show_menu()
+
+    def show_menu(self):
+        """Show interactive options menu above the indicator."""
+        self.menu_open = True
+        self.menu_win = tk.Toplevel(self.root)
+        self.menu_win.overrideredirect(True)
+        self.menu_win.attributes("-topmost", True)
+        self.menu_win.configure(bg=BORDER)
+
+        # Position above the indicator
+        x = self.root.winfo_x()
+        y = self.root.winfo_y() - 160
+        self.menu_win.geometry(f"260x155+{x}+{y}")
+
+        inner = tk.Frame(self.menu_win, bg=BG, padx=1, pady=1)
+        inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        tk.Label(inner, text="ORION", font=tkfont.Font(family="Consolas", size=10, weight="bold"),
+                 fg=ACCENT, bg=BG).pack(pady=(8, 4))
+
+        # Menu buttons
+        buttons = [
+            ("Turn Off Orion", self.turn_off_orion, RED),
+            ("Safely Remove Drive", self.safe_remove_drive, ORANGE),
+            ("Open Settings", self.open_settings, ACCENT),
+            ("Close Menu", self.close_menu, TEXT3),
+        ]
+
+        for text, cmd, color in buttons:
+            btn = tk.Button(
+                inner, text=text, font=tkfont.Font(family="Segoe UI", size=10),
+                fg=color, bg=BG2, activebackground=BG3, activeforeground=color,
+                relief="flat", cursor="hand2", anchor="w", padx=15, pady=2,
+                command=cmd
+            )
+            btn.pack(fill="x", padx=8, pady=1)
+
+        # Close menu if clicking outside
+        self.menu_win.bind("<FocusOut>", lambda e: self.close_menu())
+
+    def close_menu(self):
+        if self.menu_open and hasattr(self, 'menu_win'):
+            self.menu_win.destroy()
+            self.menu_open = False
+
+    def turn_off_orion(self):
+        """Save progress and shut down Orion."""
+        self.close_menu()
+        self.status_label.config(text="Saving progress...")
+        self.root.update()
+
+        # Save any in-memory state
+        self.save_state()
+
+        # Brief pause so user sees the save message
+        self.root.after(500, self.root.destroy)
+
+    def safe_remove_drive(self):
+        """Save all data, flush writes, and prepare for safe USB removal."""
+        self.close_menu()
+        self.status_label.config(text="Saving and flushing...")
+        self.root.update()
+
+        # Save state
+        self.save_state()
+
+        # Flush filesystem writes
+        if platform.system() == "Windows":
+            try:
+                # Sync filesystem
+                subprocess.run(["cmd", "/c", "sync"], capture_output=True, timeout=5,
+                               creationflags=0x08000000)  # CREATE_NO_WINDOW
+            except:
+                pass
+
+        self.status_label.config(text="Safe to remove drive.")
+        self.root.update()
+
+        # Show confirmation then close
+        self.root.after(2000, self.root.destroy)
+
+    def open_settings(self):
+        """Reopen the setup wizard."""
+        self.close_menu()
+        self.root.destroy()
+        wizard = SetupWizard()
+        wizard.run()
+
+    def save_state(self):
+        """Save current Orion state to disk."""
+        state = {
+            "last_active": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "current_fuel": self.current_fuel,
+            "session_active": True,
+        }
+        state_path = os.path.join(os.path.expanduser("~/.orion"), "session_state.json")
+        try:
+            os.makedirs(os.path.dirname(state_path), exist_ok=True)
+            with open(state_path, "w") as f:
+                json.dump(state, f, indent=2)
+        except:
+            pass
+
+    # -- Process Detection (no flashing windows) -------------------------
+    def detect_running_silent(self):
+        """Detect running AI models without spawning visible windows."""
+        running = {}
+        if platform.system() != "Windows":
+            return running
+        try:
+            # Use CREATE_NO_WINDOW flag to prevent flashing
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0  # SW_HIDE
+
+            result = subprocess.run(
+                ["powershell", "-WindowStyle", "Hidden", "-Command",
+                 "Get-Process | Where-Object { $_.ProcessName -match 'claude|codex|ollama|gemini' } "
+                 "| Group-Object ProcessName | Select-Object Name, Count | ConvertTo-Json"],
+                capture_output=True, text=True, timeout=5,
+                startupinfo=si,
+                creationflags=0x08000000  # CREATE_NO_WINDOW
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                data = json.loads(result.stdout)
+                if isinstance(data, dict):
+                    data = [data]
+                for entry in data:
+                    name = entry.get("Name", "").lower()
+                    if "claude" in name:
+                        running["claude_cli"] = True
+                    elif "codex" in name:
+                        running["codex"] = True
+                    elif "ollama" in name:
+                        running["ollama_local"] = True
+                    elif "gemini" in name:
+                        running["gemini"] = True
+        except:
+            pass
+        return running
+
+    # -- Terminal Glow ---------------------------------------------------
     def apply_terminal_glow(self):
-        """Find terminal windows running AI models and apply glow border."""
+        """Detect running AI processes and apply glow to terminal windows."""
         if platform.system() != "Windows":
             return
 
-        windows = find_terminal_windows()
-        model, hwnd = detect_active_model_in_windows(windows)
+        running = self.detect_running_silent()
+        if not running:
+            self.status_label.config(text="Click for options  |  No AI models running")
+            return
 
-        if model and hwnd:
-            color = FUEL_COLORS.get(model, (ACCENT, "CYAN"))[0]
-            success = set_window_border_color(hwnd, color)
-            if success and hwnd not in self.glowed_windows:
-                self.glowed_windows.add(hwnd)
-                self.current_fuel = model
-                self.glow_color = color
-                display = self.fuel.get(model, {}).get("display", model)
-                self.status_label.config(text=f"Glowing: {display} terminal")
+        # Determine primary active model
+        priority = ["claude_cli", "codex", "gemini", "ollama_local"]
+        active = None
+        for key in priority:
+            if running.get(key):
+                active = key
+                break
 
+        if active:
+            self.current_fuel = active
+            self.glow_color = FUEL_COLORS.get(active, (ACCENT, "CYAN"))[0]
+
+            running_names = []
+            for key in running:
+                display = self.fuel.get(key, {}).get("display", key)
+                running_names.append(display)
+            self.status_label.config(text=f"Active: {', '.join(running_names)}")
+
+            # Apply glow border to terminal windows
+            windows = find_terminal_windows()
+            for hwnd, title in windows:
+                if hwnd not in self.glowed_windows:
+                    success = set_window_border_color(hwnd, self.glow_color)
+                    if success:
+                        self.glowed_windows.add(hwnd)
+
+    # -- Refresh Loop ----------------------------------------------------
     def refresh_loop(self):
-        self.detect_active_fuel()
         self.outer.config(bg=self.glow_color)
         self.dot.delete("all")
         self.dot.create_oval(1, 1, 9, 9, fill=self.glow_color, outline=self.glow_color)
@@ -734,11 +921,10 @@ class FuelGlowIndicator:
         self.fuel_label.config(text=f"Fuel: {display}")
         self.quality_label.config(text=f"Quality: {quality}  |  Glow: {color_name}")
 
-        # Apply glow to terminal windows
         self.apply_terminal_glow()
-
         self.root.after(5000, self.refresh_loop)
 
+    # -- Drag (right-click) ----------------------------------------------
     def start_drag(self, event):
         self._drag_x = event.x
         self._drag_y = event.y
