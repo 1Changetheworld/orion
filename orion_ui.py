@@ -620,16 +620,22 @@ class SetupWizard:
                 tk.Label(frame, text=f"  + {name}", font=self.small_font, fg=GREEN, bg=BG).pack(anchor="w", padx=(10, 0))
             tk.Label(frame, text="Open any AI tool now -- Orion is already loaded.", font=self.small_font, fg=TEXT2, bg=BG).pack(anchor="w", pady=(4, 0))
 
-        tk.Label(frame, text="", bg=BG).pack(pady=8)
+        # How to start
+        tk.Label(frame, text="", bg=BG).pack()
+        how_frame = tk.Frame(frame, bg=CARD, highlightbackground=ACCENT, highlightthickness=1)
+        how_frame.pack(fill="x", pady=5, ipadx=12, ipady=8)
+
+        tk.Label(how_frame, text="TO START ORION:", font=tkfont.Font(family="Consolas", size=10, weight="bold"),
+                 fg=ACCENT, bg=CARD).pack(anchor="w", padx=10)
+        tk.Label(how_frame, text='Open any terminal and type:  ORION',
+                 font=tkfont.Font(family="Consolas", size=11), fg=GREEN, bg=CARD).pack(anchor="w", padx=10, pady=(4, 2))
+        tk.Label(how_frame, text="Pick your fuel source, and start talking.",
+                 font=self.small_font, fg=TEXT2, bg=CARD).pack(anchor="w", padx=10)
+
+        tk.Label(frame, text="", bg=BG).pack(pady=4)
 
         btn_frame = tk.Frame(frame, bg=BG)
         btn_frame.pack()
-
-        tk.Button(
-            btn_frame, text="Launch Fuel Indicator", font=self.body_font,
-            fg=BG, bg=ACCENT, relief="flat", padx=20, pady=8, cursor="hand2",
-            command=self.launch_glow
-        ).pack(side="left", padx=5)
 
         tk.Button(
             btn_frame, text="Close", font=self.body_font,

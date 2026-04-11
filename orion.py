@@ -245,19 +245,55 @@ def fuel_gemini(prompt):
 
 
 FUEL_MAP = {
-    "claude": {"fn": fuel_claude, "name": "Claude CLI", "color": CYAN, "cmd": "claude"},
-    "ollama": {"fn": lambda p: fuel_ollama(p, "orion"), "name": "Ollama (Orion)", "color": PURPLE, "cmd": "ollama"},
+    "claude": {"fn": fuel_claude, "name": "Claude", "color": CYAN, "cmd": "claude"},
     "codex": {"fn": fuel_codex, "name": "Codex", "color": GREEN, "cmd": "codex"},
     "gemini": {"fn": fuel_gemini, "name": "Gemini", "color": YELLOW, "cmd": "gemini"},
 }
 
 
+def detect_ollama_models():
+    """Detect installed Ollama models and return as fuel options."""
+    models = {}
+    if not shutil.which("ollama"):
+        return models
+    try:
+        si = None
+        cf = 0
+        if platform.system() == "Windows":
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0
+            cf = 0x08000000
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=10,
+                                startupinfo=si, creationflags=cf)
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n")[1:]:
+                if line.strip():
+                    name = line.split()[0]
+                    size = line.split()[2] + " " + line.split()[3] if len(line.split()) > 3 else ""
+                    # Prioritize orion-branded models
+                    models[f"ollama:{name}"] = {
+                        "fn": lambda p, m=name: fuel_ollama(p, m),
+                        "name": f"Ollama - {name}",
+                        "color": PURPLE,
+                        "cmd": "ollama",
+                        "size": size,
+                    }
+    except:
+        pass
+    return models
+
+
 def detect_available_fuel():
-    """Detect which fuel sources are available."""
+    """Detect all available fuel sources."""
     available = {}
+    # CLI tools
     for key, info in FUEL_MAP.items():
         if shutil.which(info["cmd"]):
             available[key] = info
+    # Ollama models
+    ollama_models = detect_ollama_models()
+    available.update(ollama_models)
     return available
 
 
@@ -288,35 +324,95 @@ def load_history_count():
     return len(history)
 
 
+def apply_glow_to_current_terminal():
+    """Apply Orion's glow border to the current terminal window."""
+    if platform.system() != "Windows":
+        return
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if hwnd:
+            dwmapi = ctypes.windll.dwmapi
+            # Cyan glow: #06b6d4
+            r, g, b = 0x06, 0xb6, 0xd4
+            colorref = ctypes.c_int(r | (g << 8) | (b << 16))
+            dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(colorref), ctypes.sizeof(colorref))
+            dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(colorref), ctypes.sizeof(colorref))
+    except:
+        pass
+
+
+def launch_fuel_indicator():
+    """Launch the fuel indicator widget in background."""
+    try:
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "orion_ui.py")
+        if os.path.exists(script):
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0
+            subprocess.Popen(
+                ["pythonw", script, "--glow"],
+                cwd=os.path.dirname(script),
+                startupinfo=si,
+                creationflags=0x08000000
+            )
+    except:
+        pass
+
+
 def select_fuel(available):
-    """Let user pick fuel or auto-select."""
+    """Let user pick fuel with grouped display."""
     if len(available) == 0:
         print(f"{RED}  No AI models detected. Install Ollama (ollama.com) for free local AI.{RESET}")
         sys.exit(1)
 
-    if len(available) == 1:
-        key = list(available.keys())[0]
+    # Separate CLI tools from Ollama models
+    cli_keys = [k for k in available if not k.startswith("ollama:")]
+    ollama_keys = [k for k in available if k.startswith("ollama:")]
+
+    # Sort ollama: put orion-branded first
+    ollama_keys.sort(key=lambda k: (0 if "orion" in k else 1, k))
+
+    all_keys = cli_keys + ollama_keys
+
+    if len(all_keys) == 1:
+        key = all_keys[0]
         return key, available[key]
 
-    print(f"{CYAN}  Available Fuel Sources:{RESET}")
-    print()
-    keys = list(available.keys())
-    for i, key in enumerate(keys):
-        info = available[key]
-        print(f"    {info['color']}[{i+1}]{RESET}  {info['name']}")
+    # Display CLI tools
+    if cli_keys:
+        print(f"{CYAN}  CLI Models:{RESET}")
+        for i, key in enumerate(cli_keys):
+            info = available[key]
+            print(f"    {info['color']}[{i+1}]{RESET}  {info['name']}")
+        print()
+
+    # Display Ollama models
+    if ollama_keys:
+        offset = len(cli_keys)
+        print(f"{PURPLE}  Ollama Models:{RESET}")
+        for i, key in enumerate(ollama_keys):
+            info = available[key]
+            model_name = key.replace("ollama:", "")
+            size = info.get("size", "")
+            label = f"{model_name}"
+            if "orion" in model_name:
+                label = f"{model_name} {DIM}(Orion-branded){RESET}"
+            print(f"    {PURPLE}[{offset+i+1}]{RESET}  {label}  {DIM}{size}{RESET}")
+        print()
+
     print(f"    {DIM}[0]{RESET}  {DIM}Auto (best available){RESET}")
     print()
 
     while True:
         try:
-            choice = input(f"  Select fuel [0-{len(keys)}]: ").strip()
+            choice = input(f"  Select fuel [0-{len(all_keys)}]: ").strip()
             if choice == "" or choice == "0":
-                # Auto: pick first (highest priority)
-                key = keys[0]
+                key = all_keys[0]
                 return key, available[key]
             idx = int(choice) - 1
-            if 0 <= idx < len(keys):
-                key = keys[idx]
+            if 0 <= idx < len(all_keys):
+                key = all_keys[idx]
                 return key, available[key]
         except (ValueError, EOFError):
             pass
@@ -328,6 +424,12 @@ def run_conversation(fuel_key, fuel_info):
     fuel_fn = fuel_info["fn"]
     fuel_name = fuel_info["name"]
     fuel_color = fuel_info["color"]
+
+    # Apply glow to this terminal window
+    apply_glow_to_current_terminal()
+
+    # Launch fuel indicator widget
+    launch_fuel_indicator()
 
     show_banner(fuel_name, fuel_color)
 
