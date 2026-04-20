@@ -13,13 +13,23 @@
 # ----------------------------------------------------------------
 
 model_list:
-  # Local Orion model (offline-capable, always available when Ollama is up)
+  # Primary local reasoning fuel: DeepSeek-R1-Distill + Orion SYSTEM prompt.
+  # Identity delivered via the Modelfile at modelfiles/Modelfile.orion-deepseek.
+  # Full <think> reasoning capability preserved. Build with:
+  #     ollama create orion-deepseek -f modelfiles/Modelfile.orion-deepseek
+  - model_name: orion-deepseek
+    litellm_params:
+      model: ollama/orion-deepseek
+      api_base: http://localhost:11434
+
+  # Identity-in-weights fallback: Mistral 7B fine-tuned with QLoRA. Faster,
+  # weaker reasoning. Use when reasoning budget is tight or DeepSeek is down.
   - model_name: orion-local
     litellm_params:
       model: ollama/orion-local
       api_base: http://localhost:11434
 
-  # DeepSeek-R1-Distill - reasoning-grade local offline fuel
+  # Raw DeepSeek - for A/B comparing against orion-deepseek
   - model_name: deepseek-local
     litellm_params:
       model: ollama/deepseek-r1:7b
