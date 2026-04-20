@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORION — Technical Architecture (Real)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&display=swap');
+  :root {
+    --bg:#0a0a0f; --bg2:#111118; --bg3:#1a1a24; --card:#13131b; --border:#252530;
+    --cyan:#06b6d4; --cyan2:#22d3ee; --cyan-d:rgba(6,182,212,0.08);
+    --purple:#8b5cf6; --green:#22c55e; --orange:#f59e0b; --red:#ef4444; --blue:#3b82f6;
+    --text:#e4e4e7; --text2:#a1a1aa; --text3:#71717a;
+    --glow:0 0 20px rgba(6,182,212,0.1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:15px;line-height:1.7;padding:40px}
+  .container{max-width:1100px;margin:0 auto}
+
+  .header{text-align:center;padding:40px 0 50px;border-bottom:1px solid var(--border);margin-bottom:50px}
+  .header h1{font-family:'Orbitron',sans-serif;font-size:28px;letter-spacing:4px;margin-bottom:8px}
+  .header h1 span{color:var(--cyan)}
+  .header .sub{color:var(--text3);font-size:13px;font-family:'JetBrains Mono',monospace}
+  .header .honest{color:var(--orange);font-size:14px;margin-top:12px;font-weight:500}
+
+  .toc{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px 30px;margin-bottom:50px}
+  .toc h3{font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:3px;color:var(--text3);margin-bottom:12px}
+  .toc a{display:block;color:var(--text2);text-decoration:none;padding:4px 0;font-size:14px}
+  .toc a:hover{color:var(--cyan)}
+  .toc .num{color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:12px;margin-right:8px}
+
+  section{margin-bottom:60px;padding-bottom:40px;border-bottom:1px solid var(--border)}
+  h2{font-family:'Orbitron',sans-serif;font-size:18px;letter-spacing:2px;color:var(--cyan);margin-bottom:20px}
+  h3{font-size:16px;font-weight:600;color:var(--text);margin:28px 0 12px}
+  h4{font-size:14px;font-weight:600;color:var(--cyan2);margin:20px 0 8px}
+
+  .diagram{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:28px;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre;color:var(--text2)}
+  .diagram .highlight{color:var(--cyan)}
+  .diagram .dim{color:var(--text3)}
+  .diagram .warn{color:var(--orange)}
+  .diagram .good{color:var(--green)}
+  .diagram .bad{color:var(--red)}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px 24px;margin:16px 0}
+  .card.honest{border-left:3px solid var(--orange)}
+  .card.works{border-left:3px solid var(--green)}
+  .card.broken{border-left:3px solid var(--red)}
+  .card.building{border-left:3px solid var(--blue)}
+
+  .label{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;display:block}
+  .label.green{color:var(--green)} .label.orange{color:var(--orange)} .label.red{color:var(--red)} .label.blue{color:var(--blue)} .label.purple{color:var(--purple)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  @media(max-width:768px){.grid{grid-template-columns:1fr} body{padding:20px}}
+
+  .metric{display:inline-block;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;margin:4px;font-family:'JetBrains Mono',monospace;font-size:13px}
+  .metric .v{color:var(--cyan);font-weight:600} .metric .l{color:var(--text3);font-size:11px}
+
+  code{font-family:'JetBrains Mono',monospace;background:var(--bg2);padding:2px 6px;border-radius:3px;font-size:13px;color:var(--cyan2)}
+  p{margin-bottom:12px}
+  strong{color:var(--text);font-weight:600}
+  .dim{color:var(--text3)}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>ORION <span>ARCHITECTURE</span></h1>
+  <div class="sub">Technical Documentation &mdash; What Actually Happens</div>
+  <div class="honest">No marketing. No fluff. Real mechanics.</div>
+</div>
+
+<div class="toc">
+  <h3>CONTENTS</h3>
+  <a href="#overview"><span class="num">01</span> System Overview &mdash; What Orion Actually Is</a>
+  <a href="#dataflow"><span class="num">02</span> Data Flow &mdash; What Happens When You Talk</a>
+  <a href="#memory"><span class="num">03</span> Memory System &mdash; How It Stores and Recalls</a>
+  <a href="#synthesis"><span class="num">04</span> Synthesis Engine &mdash; Pattern Matching vs Understanding</a>
+  <a href="#heartbeat"><span class="num">05</span> Heartbeat &mdash; The Brain's Autonomous Loop</a>
+  <a href="#mcp"><span class="num">06</span> MCP Server &mdash; How AI Models Connect</a>
+  <a href="#interfaces"><span class="num">07</span> All Communication Points &mdash; Same Brain</a>
+  <a href="#independence"><span class="num">08</span> Independence &mdash; What's Ours vs What's Borrowed</a>
+  <a href="#nobody"><span class="num">09</span> What No Other System Does</a>
+  <a href="#how-built"><span class="num">10</span> How This Was Built &mdash; AI Building AI</a>
+  <a href="#honest"><span class="num">11</span> Honest Assessment &mdash; What Works, What Doesn't</a>
+  <a href="#engine"><span class="num">12</span> Own Inference Engine &mdash; No Dependencies</a>
+  <a href="#tiers"><span class="num">13</span> Three-Tier Architecture</a>
+  <a href="#roadmap"><span class="num">14</span> What Comes Next</a>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="overview">
+<h2>01 &mdash; WHAT ORION ACTUALLY IS</h2>
+
+<p>Orion is a <strong>persistent intelligence layer</strong> that sits between you and any AI model. It maintains memory, identity, and understanding across every conversation you have &mdash; regardless of which model, interface, or device you're using.</p>
+
+<p>It is <strong>not</strong> an AI model. It does not generate text. It does not do inference. It is the <strong>memory and context system</strong> that makes any AI model aware of who you are, what you're working on, and how you prefer to interact.</p>
+
+<div class="diagram">
+<span class="dim">What people think AI memory is:</span>
+  Model remembers things between sessions
+
+<span class="dim">What actually happens (without Orion):</span>
+  Every session starts blank. Model knows nothing about you.
+  Context files (CLAUDE.md) inject facts. That's briefing, not memory.
+
+<span class="dim">What Orion does:</span>
+  Reads conversations from <span class="highlight">every source</span> (Claude, Codex, Gemini, Telegram, phone)
+  Extracts patterns, preferences, rules, project states
+  Stores in its own memory (graph + knowledge index)
+  Provides that context to any model that asks
+  <span class="good">The brain persists. The model is interchangeable.</span>
+</div>
+
+<div class="card honest">
+  <span class="label orange">HONEST NOTE</span>
+  <p>The current "understanding" is mostly <strong>pattern matching and keyword extraction</strong>, not deep comprehension. The brain detects that you say "execute" a lot and tags you as "directive." It doesn't truly understand why you value execution over suggestion. Deeper understanding requires Orion's own trained model (in progress).</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="dataflow">
+<h2>02 &mdash; DATA FLOW: WHAT HAPPENS WHEN YOU TALK</h2>
+
+<p>Every interaction with Orion follows this path, regardless of which interface you use:</p>
+
+<div class="diagram">
+<span class="highlight">YOU</span> speak/type/call
+  |
+  v
+<span class="highlight">INTERFACE</span> receives it
+  (Codex terminal, Telegram bot, phone call, Claude Code, Gemini CLI)
+  |
+  v
+<span class="highlight">BRAIN</span> processes it
+  |
+  +--&gt; <span class="good">CLASSIFY</span>: Is this a greeting, question, action, or command?
+  |     Uses keyword matching against known patterns
+  |
+  +--&gt; <span class="good">RECALL</span>: What does the brain already know about this topic?
+  |     Layer 1: Graph memory (microsecond tag lookup)
+  |     Layer 2: Knowledge index (BM25 text search)
+  |
+  +--&gt; <span class="good">RESPOND</span>: Generate response using available "fuel" (AI model)
+  |     Tries best available model in order of capability
+  |
+  +--&gt; <span class="good">MEMORIZE</span>: Should this interaction be remembered?
+  |     Classifies as ADD / UPDATE / DELETE / NOOP
+  |     Filters trivial messages ("hi", "thanks", "ok")
+  |     Checks for duplicates (similarity &gt; 0.6 = skip)
+  |     Detects corrections ("actually", "no,", "wrong")
+  |
+  v
+<span class="highlight">STORED</span> in brain's memory
+  Graph memory: tagged, instant recall
+  Knowledge index: BM25 searchable
+  Conversation log: raw record for synthesis
+</div>
+
+<h3>Memory Classification (Mem0 Pattern)</h3>
+<p>Not everything gets stored. The brain classifies each interaction:</p>
+
+<div class="grid">
+  <div class="card works">
+    <span class="label green">ADD</span>
+    <p>New information worth remembering. Stored in graph + index with extracted tags.</p>
+  </div>
+  <div class="card works">
+    <span class="label green">UPDATE</span>
+    <p>Correction or clarification of existing memory. Finds the old entry, replaces it.</p>
+  </div>
+  <div class="card works">
+    <span class="label green">DELETE</span>
+    <p>User said "forget that" or "scratch that." Finds and removes the matching memory.</p>
+  </div>
+  <div class="card">
+    <span class="label">NOOP</span>
+    <p>Not worth remembering. Trivial greetings, too short, or duplicate of existing memory.</p>
+  </div>
+</div>
+
+<div class="card honest">
+  <span class="label orange">WHAT THIS ACTUALLY DOES</span>
+  <p>Classification uses <strong>keyword matching</strong>, not semantic understanding. It looks for phrases like "actually", "never mind", "forget that" in the first 30 characters. Duplicate detection uses BM25 text similarity with a 0.6 threshold. This works for obvious cases but misses subtle corrections or context-dependent meaning.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="memory">
+<h2>03 &mdash; MEMORY SYSTEM</h2>
+
+<p>Two layers, both file-based, both running on the local machine:</p>
+
+<div class="diagram">
+<span class="highlight">GRAPH MEMORY</span> (~/.orion/brain/graph_memory.json)
+  Structure: { nodes: [ { id, content, type, confidence, tags, timestamp } ] }
+  Lookup: Tag-based. Query "FORGE" &rarr; finds all nodes tagged "forge"
+  Speed: Microseconds (it's a JSON file loaded in RAM)
+  Size: Currently 30+ nodes
+  <span class="dim">Think of it as: A tagged notebook. Fast, structured, small.</span>
+
+<span class="highlight">KNOWLEDGE INDEX</span> (~/.orion/brain/knowledge_index.json)
+  Structure: BM25 inverted index over compiled knowledge articles
+  Lookup: Text search scored by term frequency / inverse document frequency
+  Speed: Milliseconds
+  Size: Grows as conversations are compiled into articles
+  <span class="dim">Think of it as: A search engine over everything the brain has learned.</span>
+
+<span class="warn">NOT a vector database.</span> No embeddings. No semantic similarity.
+  Qdrant (vector DB) exists on COMMAND but the portable brain
+  uses file-based BM25 for zero-dependency operation.
+</div>
+
+<h3>How Recall Works</h3>
+<div class="diagram">
+brain.remember("what is FORGE")
+  |
+  +--&gt; Graph: scan all nodes, score by tag overlap with query tokens
+  |    Match: "FORGE travels with James" (tagged: forge, mobile, laptop)
+  |    Match: "RTX 4070 8GB VRAM" (tagged: forge, gpu, nvidia)
+  |
+  +--&gt; Index: BM25 search for "what is FORGE"
+  |    Score documents by term frequency, return top 5
+  |
+  +--&gt; Combine results into &lt;memory-context&gt; block
+       [graph] FORGE travels with James ...
+       [index:0.84] FORGE is the primary workstation ...
+</div>
+
+<div class="card honest">
+  <span class="label orange">LIMITATION</span>
+  <p>Graph recall is <strong>tag-based, not semantic</strong>. If you stored something about "my laptop" but search for "FORGE", it won't match unless "forge" is in the tags. BM25 is keyword-based &mdash; it matches words, not meaning. Searching "my computer" won't find documents about "FORGE" unless both words appear in the text.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="synthesis">
+<h2>04 &mdash; SYNTHESIS ENGINE</h2>
+
+<p>The synthesis engine reads conversations from <strong>all sources</strong> and produces structured understanding. This is what runs during each heartbeat cycle.</p>
+
+<div class="diagram">
+<span class="highlight">SOURCE READERS</span> &mdash; Pull from native storage of each tool
+
+  Claude Code:  ~/.claude/projects/*/memory/*.md
+  Codex:        ~/.codex/sessions/ (JSON transcripts)
+  Gemini:       ~/.gemini/history/ (JSON sessions)
+  Ollama:       ~/.orion/brain/conversations/ (logged by brain)
+  Letta:        ~/.letta/agents/*/memory/ (MemFS files)
+  Orion:        ~/.orion/brain/conversations/ (all interfaces)
+
+  <span class="good">All readers return the same format:</span>
+  { role: "user"|"assistant", text: "...", source: "codex", timestamp: ... }
+
+  <span class="dim">Currently reading: ~212 messages across all sources</span>
+</div>
+
+<h3>What the Synthesis Engine Produces</h3>
+
+<div class="grid">
+  <div class="card">
+    <h4>User Model</h4>
+    <p><strong>What it tracks:</strong> Communication style (concise? directive?), frustrations (what triggers negative responses), expertise areas (frequent technical terms), values (what you praise), learned rules ("never X", "always Y"), correction patterns.</p>
+    <p><strong>How it works:</strong> Counts word frequencies, detects directive language patterns, extracts capitalized terms as expertise, finds "never/always/don't" phrases as rules. Deduplicates by text similarity.</p>
+    <p class="dim">Stored at: ~/.orion/brain/user_model.json</p>
+  </div>
+  <div class="card">
+    <h4>Project State</h4>
+    <p><strong>What it tracks:</strong> Active projects (detected from capitalized words mentioned 2+ times), blocked items (negative signals near project names), decisions, next actions, cross-tool topic overlap.</p>
+    <p><strong>How it works:</strong> Regex for ALL-CAPS words, quoted phrases. Checks surrounding context for "working on", "stuck", "decided" signals. Finds topics discussed in multiple tools.</p>
+    <p class="dim">Stored at: ~/.orion/brain/project_state.json</p>
+  </div>
+  <div class="card">
+    <h4>Self-Instructions</h4>
+    <p><strong>What it is:</strong> A markdown file the brain writes about itself. Contains the patterns it's discovered, rules it's extracted, and how it should weight different types of information.</p>
+    <p><strong>How it evolves:</strong> Each synthesis cycle, new patterns are appended. Old sections get replaced. The brain literally rewrites how it processes data.</p>
+    <p class="dim">Stored at: ~/.orion/brain/self_instructions.md</p>
+  </div>
+  <div class="card">
+    <h4>Context Document</h4>
+    <p><strong>What it is:</strong> A 6-section briefing document that any AI model can load to instantly have full awareness of who you are and what's happening. Replaces static files like AGENTS.md.</p>
+    <p><strong>Sections:</strong> Identity, User Understanding, Current State, Behavioral Rules, Cross-Tool Awareness, Recent Activity.</p>
+    <p class="dim">Generated on demand or cached for 5 minutes</p>
+  </div>
+</div>
+
+<div class="card honest">
+  <span class="label orange">THE GAP</span>
+  <p>Everything above is <strong>local analysis</strong> &mdash; pattern matching, keyword extraction, frequency counting. No neural network, no LLM, no deep understanding. The code has hooks for LLM enrichment (using a fuel model to produce richer analysis), but these require an AI model to run. The goal is for that model to be <strong>Orion's own fine-tuned model</strong>, not Claude or GPT. The fine-tuning pipeline is built (1,207 training pairs ready). The model hasn't been trained yet.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="heartbeat">
+<h2>05 &mdash; HEARTBEAT</h2>
+
+<p>The heartbeat is a background thread that makes the brain <strong>think on its own schedule</strong>. Without it, the brain only processes data when someone explicitly calls it. With it, the brain is alive.</p>
+
+<div class="diagram">
+<span class="highlight">HEARTBEAT CYCLE</span> (every 30 minutes)
+
+  1. <span class="good">READ</span>
+     Pull conversations from ALL sources
+     Currently: Claude, Codex, Gemini, Ollama, Letta, Orion conversations
+     ~212 messages across all sources
+
+  2. <span class="good">DETECT CHANGE</span>
+     Hash the current message set
+     Compare to last cycle's hash
+     <span class="dim">If nothing changed &rarr; skip (don't waste processing)</span>
+
+  3. <span class="good">ANALYZE</span>
+     Run user model builder (pattern matching on all messages)
+     Run project state analyzer (detect active/blocked projects)
+     Extract behavioral rules from corrections
+
+  4. <span class="good">EVOLVE</span>
+     Rewrite self_instructions.md based on new patterns
+     The brain changes HOW it thinks, not just WHAT it knows
+
+  5. <span class="good">RECORD</span>
+     Log what changed to heartbeat.log
+     Save cycle stats to heartbeat_state.json
+     Track: changes detected, facts learned, duration
+
+<span class="highlight">REFLEX</span> (immediate, not waiting for next cycle)
+
+  Triggered when urgent input arrives:
+  - Corrections ("never do X", "wrong", "stop")
+  - Critical facts ("important", "emergency")
+  - Strong signals that shouldn't wait 30 minutes
+
+  Extracts rules immediately, saves to user model,
+  then signals the heartbeat to run an early cycle.
+</div>
+
+<h3>Heartbeat State</h3>
+<div class="diagram">
+<span class="dim">Example heartbeat_state.json:</span>
+{
+  "cycle_count": 1,
+  "total_facts_learned": 1,
+  "last_source_hash": "fab8f5d0515fbf6a",
+  "last_cycle_time": 1776240965,
+  "cycle_history": [
+    { "cycle": 1, "changes": 5, "facts": 1, "duration_ms": 349 }
+  ]
+}
+
+<span class="dim">Example heartbeat.log:</span>
+[2026-04-15 04:16:05] Cycle 1: new conversation data detected;
+  user model confidence: 35% -&gt; 50%;
+  learned 1 new behavioral rule(s);
+  new project(s) detected: ORION;
+  self-instructions evolved
+</div>
+
+<div class="card honest">
+  <span class="label orange">WHAT "ALIVE" ACTUALLY MEANS</span>
+  <p>The heartbeat is a <strong>timer running synthesis on a schedule</strong>. It's not consciousness. It's not thinking in the human sense. It reads data, runs pattern matching, updates stored models. But it does this <strong>autonomously</strong> &mdash; nobody has to trigger it. And it processes data from ALL interfaces simultaneously, which no single AI model can do. That cross-source awareness is the real value.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="mcp">
+<h2>06 &mdash; MCP SERVER: HOW AI MODELS CONNECT</h2>
+
+<p>The MCP (Model Context Protocol) server exposes the brain as <strong>callable tools</strong> that AI models can use during conversation. When Codex needs to remember something, it calls <code>orion_remember</code>. The brain responds. Codex incorporates the result.</p>
+
+<div class="diagram">
+<span class="highlight">9 MCP TOOLS</span>
+
+  orion_remember     &mdash; Query graph + knowledge index
+  orion_memorize     &mdash; Store a fact (with ADD/UPDATE/DELETE classification)
+  orion_identity     &mdash; Get SOUL.md + learned behavioral rules
+  orion_user_model   &mdash; Get synthesized user profile
+  orion_project_state &mdash; Get active projects, blocked items, decisions
+  orion_synthesize   &mdash; Get full context briefing document
+  orion_cross_model  &mdash; See what other AI models have been doing
+  orion_skills       &mdash; List or search learned skills
+  orion_heartbeat    &mdash; Check if brain is alive, cycle stats
+
+<span class="highlight">TRANSPORT</span>
+
+  Auto-detects format:
+  - Content-Length framing (LSP-style) &mdash; used by Claude Code
+  - Newline-delimited JSON &mdash; used by Codex and Gemini
+
+<span class="highlight">VERIFIED WORKING</span>
+
+  <span class="good">[OK]</span> Codex &mdash; called identity, memorize, project_state, cross_model, skills
+  <span class="good">[OK]</span> Gemini &mdash; connected and functional
+  <span class="warn">[??]</span> Claude Code &mdash; configured but tools not loading
+  <span class="bad">[NO]</span> Ollama &mdash; doesn't speak MCP (has tool calling via API instead)
+  <span class="bad">[NO]</span> Telegram &mdash; uses HTTP API to brain server, not MCP
+  <span class="bad">[NO]</span> Phone &mdash; uses HTTP API to brain server, not MCP
+</div>
+
+<div class="card honest">
+  <span class="label orange">MCP IS ONE DOOR, NOT THE ONLY DOOR</span>
+  <p>MCP only works for AI models that support the protocol. That's currently Codex, Gemini, and Claude Code. Everything else &mdash; Telegram, phone, iMessage, webhooks, Ollama &mdash; connects through the <strong>HTTP brain server</strong> on COMMAND (:5555). Both doors lead to the same brain. Both feed the same memory. The heartbeat processes data from all sources regardless of how it arrived.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="interfaces">
+<h2>07 &mdash; ALL COMMUNICATION POINTS</h2>
+
+<p>Every interface feeds the same brain. None of them are the brain. They are doors.</p>
+
+<div class="diagram">
+                         <span class="highlight">THE BRAIN</span>
+                    (~/.orion/brain/)
+                    Graph Memory (30+ nodes)
+                    Knowledge Index
+                    Synthesis Engine
+                    User Model
+                    Heartbeat (autonomous)
+                         |
+          +--------------+--------------+
+          |              |              |
+     <span class="highlight">MCP SERVER</span>    <span class="highlight">HTTP SERVER</span>    <span class="highlight">FUTURE</span>
+     (stdio)       (:5555)         (anything)
+          |              |              |
+     +----+----+    +----+----+         |
+     |    |    |    |    |    |         |
+   Codex Gem Claude Tel  Ph  iMsg    (unknown
+                                    interfaces)
+
+<span class="good">MCP Server</span> (on FORGE &mdash; this device)
+  - Runs when AI models launch
+  - Speaks JSON-RPC over stdin/stdout
+  - Auto-starts heartbeat on first connection
+
+<span class="good">HTTP Server</span> (on COMMAND &mdash; Mac mini, always on)
+  - Runs 24/7 on port 5555
+  - Serves Telegram bot, phone (Telnyx), iMessage, webhooks
+  - Dispatch commands for system control
+  - Smart email composition
+
+<span class="dim">Both servers use the same brain files.</span>
+<span class="dim">Both feed the same memory.</span>
+<span class="dim">The heartbeat processes all of it.</span>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="independence">
+<h2>08 &mdash; INDEPENDENCE</h2>
+
+<p>What's ours versus what's borrowed.</p>
+
+<div class="grid">
+  <div class="card works">
+    <span class="label green">ORION'S OWN CODE</span>
+    <p><strong>Brain</strong> &mdash; orion_brain_portable.py (3,400+ lines). Memory, synthesis, heartbeat, self-evolution. Pure Python, zero dependencies.</p>
+    <p><strong>MCP Server</strong> &mdash; orion_mcp_server.py (900+ lines). Custom implementation, no MCP framework dependency.</p>
+    <p><strong>Fine-tune Pipeline</strong> &mdash; orion_finetune.py (1,356 lines). Extracts training data from conversations.</p>
+    <p><strong>Memory Format</strong> &mdash; JSON files on disk. No database dependency. Portable on a USB drive.</p>
+  </div>
+  <div class="card honest">
+    <span class="label orange">WHAT WE BORROW</span>
+    <p><strong>AI Models</strong> &mdash; Claude, GPT, Gemini, Ollama models. These are "fuel." Orion doesn't own them.</p>
+    <p><strong>Ollama</strong> &mdash; Runs local models. Open source, runs on our hardware.</p>
+    <p><strong>Qdrant</strong> &mdash; Vector database on COMMAND. Open source, self-hosted.</p>
+    <p><strong>Telnyx</strong> &mdash; Phone number service. Paid API.</p>
+    <p><strong>Cloudflare</strong> &mdash; Tunnel for atlascommand.vip domain.</p>
+  </div>
+</div>
+
+<h3>The Path to Full Independence</h3>
+<div class="diagram">
+<span class="warn">TODAY:</span>
+  Brain analysis = local pattern matching (independent)
+  Deep synthesis = needs an AI model (dependent)
+  That model = Claude or GPT (someone else's brain)
+
+<span class="good">TARGET:</span>
+  Brain analysis = local pattern matching (independent)
+  Deep synthesis = Orion's own fine-tuned model (independent)
+  That model = QLoRA-trained on FORGE's RTX 4070 (our hardware)
+  Training data = 1,207 pairs from our own conversations (our data)
+
+<span class="highlight">The fine-tune pipeline is built. Training hasn't happened yet.</span>
+  When it does, the deep synthesis runs on our own model,
+  on our own hardware, trained on our own data.
+  No API calls. No dependency on any company.
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="nobody">
+<h2>09 &mdash; WHAT NO OTHER SYSTEM DOES</h2>
+
+<p>This section documents what Orion does that no existing AI memory system, agent framework, or personal AI product currently achieves. Verified through comprehensive research across Mem0, Letta, Zep, Khoj, Hindsight, Second Me, LangMem, and 20+ other systems (April 2026).</p>
+
+<div class="card works" style="border-left:3px solid var(--cyan)">
+  <span class="label green">1. UNIFIED CROSS-TOOL AWARENESS</span>
+  <p>Every AI tool &mdash; Claude Code, Codex, Gemini, Ollama, Letta &mdash; stores its own conversation history in its own format in its own location. <strong>None of them can see what the others are doing.</strong> Claude doesn't know what you told Codex. Gemini doesn't know what Ollama said.</p>
+  <p>Orion reads from ALL of them simultaneously. It has 9 source readers that parse 6 different formats (Claude JSONL, Codex JSONL, Gemini JSON, Letta MemFS markdown, Ollama conversation logs, and its own conversation records). Every heartbeat cycle, it pulls from all sources and builds understanding across the full picture.</p>
+  <p><strong>No other system does this.</strong> Mem0 stores memory but only from one application at a time. Letta manages its own memory but can't read Claude's sessions. Zep tracks conversation history within its own framework. None of them reach into other tools' storage and unify it.</p>
+</div>
+
+<div class="card works" style="border-left:3px solid var(--cyan)">
+  <span class="label green">2. CROSS-MODEL MEMORY</span>
+  <p>Store a fact through Codex. Recall it through Gemini. Both models call the same brain through MCP tools. The memory lives in Orion, not in any model. <strong>Verified working</strong> &mdash; Codex stored "James likes key lime pie" via <code>orion_memorize</code>, Gemini can recall it via <code>orion_remember</code>.</p>
+  <p>This is different from each model having its own memory. This is one memory that multiple models share. Switch models mid-thought and your context follows.</p>
+</div>
+
+<div class="card works" style="border-left:3px solid var(--cyan)">
+  <span class="label green">3. EVERY COMMUNICATION POINT &rarr; ONE BRAIN</span>
+  <p>AI models connect via MCP. Phone calls connect via Telnyx + HTTP. Telegram connects via bot API + HTTP. iMessage connects via AppleScript bridge. Terminal conversations connect directly. Web dashboard connects via webhooks. <strong>All feed the same brain. All draw from the same memory.</strong></p>
+  <p>No other personal AI system unifies AI model conversations, phone calls, messaging apps, and terminal sessions into one persistent brain. These are typically separate systems with separate memories.</p>
+</div>
+
+<div class="card works" style="border-left:3px solid var(--cyan)">
+  <span class="label green">4. PHYSICAL PORTABILITY</span>
+  <p>The brain is JSON files on disk. The code is pure Python with zero dependencies. Copy the <code>~/.orion/</code> folder to a USB drive, plug it into any computer with Python installed, and the brain works. No database server. No cloud account. No API keys required for the brain itself.</p>
+  <p>No other system achieves this. Mem0 requires a vector database. Letta requires its server runtime. Zep requires Neo4j. Orion's brain is files you can carry in your pocket.</p>
+</div>
+
+<div class="card works" style="border-left:3px solid var(--cyan)">
+  <span class="label green">5. SELF-EVOLVING INSTRUCTIONS</span>
+  <p>The brain doesn't just store data &mdash; it rewrites its own operating rules. The <code>self_instructions.md</code> file is maintained by the synthesis engine. Each cycle, it analyzes what patterns it found, what rules the user expressed, what tools are used most, and rewrites the instructions that control how future synthesis runs. The brain changes how it thinks, not just what it knows.</p>
+  <p>LangMem has "procedural memory" (agents updating their own prompts) but it's manual. Orion's self-evolution is automatic and runs every heartbeat cycle.</p>
+</div>
+
+<div class="card works" style="border-left:3px solid var(--cyan)">
+  <span class="label green">6. HYPER INGESTION</span>
+  <p>Run <code>python orion_brain_portable.py --hyper</code> and the brain reads <strong>every conversation you've ever had</strong> across all AI tools, memory files, knowledge documents, and context files. In testing: <strong>1,070 messages from 9 sources, analyzed in 741 milliseconds.</strong> Confidence goes from 0% to 100% in one shot.</p>
+  <p>This is how a new Orion installation bootstraps itself. Install Orion, point it at your data, run hyper, and the brain immediately knows who you are from your existing conversation history. No manual setup. No telling it facts one at a time.</p>
+</div>
+
+<h3>The Data Center Comparison</h3>
+
+<p>A natural question: if the brain's analysis is pattern matching, what would make it truly intelligent? The answer is the same mechanism AI companies use &mdash; but at a fundamentally different scale.</p>
+
+<div class="diagram">
+<span class="highlight">AI COMPANIES (Data Centers)</span>
+  Train neural networks on billions of documents
+  Thousands of GPUs running for months
+  Cost: millions of dollars
+  Result: general intelligence &mdash; knows a little about everything
+  Understands the WORLD, but not YOU specifically
+
+<span class="highlight">ORION (Your Laptop)</span>
+  Fine-tunes a small model on YOUR conversations
+  One GPU (RTX 4070) running for 30-60 minutes
+  Cost: electricity
+  Result: personal intelligence &mdash; knows everything about you
+  Understands YOU, but not the whole world
+
+<span class="good">Same mechanism: neural network training, weight updates, gradient descent</span>
+<span class="good">Different scale: personal data on personal hardware</span>
+<span class="good">Different purpose: not general intelligence, but personal intelligence</span>
+</div>
+
+<div class="diagram">
+<span class="highlight">THE TWO LAYERS</span>
+
+  <span class="warn">FAST LAYER</span> (built, running now)
+    Pattern matching, keyword extraction, rule detection
+    Reads 1,070 messages in &lt;1 second
+    No neural network, no training needed
+    Good for: instant recall, fact storage, basic profiling
+    Limited: no deep understanding, no inference, no personality
+
+  <span class="good">DEEP LAYER</span> (pipeline built, training not yet run)
+    QLoRA fine-tuned model trained on your conversations
+    Runs on FORGE's RTX 4070 (8GB VRAM)
+    1,207 training pairs extracted, ready to train
+    Good for: actual comprehension, personality, nuanced responses
+    This is what makes the brain genuinely intelligent
+
+  <span class="highlight">TOGETHER:</span> Fast layer handles recall and routing.
+    Deep layer handles understanding and synthesis.
+    One brain, two speeds.
+</div>
+
+<div class="card honest">
+  <span class="label orange">WHERE WE ARE TODAY</span>
+  <p>Only the fast layer is running. The deep layer's pipeline is built and the training data is extracted, but the model hasn't been trained yet. Until it is, the brain's "understanding" is pattern matching &mdash; useful but not intelligent in the way a trained neural network is. The architecture supports both layers. The intelligence gap is the untrained model.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="how-built">
+<h2>10 &mdash; HOW THIS WAS BUILT: AI BUILDING AI</h2>
+
+<p>Orion was built using AI tools. This is not hidden, not downplayed, and not something we're ashamed of. It's part of the story, and understanding it matters.</p>
+
+<h3>What AI Did</h3>
+
+<div class="card" style="border-left:3px solid var(--cyan)">
+  <span class="label" style="color:var(--cyan)">DEVELOPMENT TOOLS</span>
+  <p><strong>Claude Code (Anthropic)</strong> was the primary development tool. It wrote Python code, debugged protocol issues, conducted research, designed architecture, and documented the system. It is a $200/month AI coding assistant used the same way an engineer uses an IDE.</p>
+  <p><strong>Codex (OpenAI)</strong> was used for testing cross-model memory and validating the MCP server. It was the first non-Claude model to successfully connect to the Orion brain.</p>
+  <p><strong>Research agents</strong> &mdash; 5 parallel AI agents conducted deep research across Ollama internals, universal AI interfaces, persistent identity systems, learning architectures, and competing products. Their findings informed the architecture but are not part of the running product.</p>
+</div>
+
+<div class="card" style="border-left:3px solid var(--cyan)">
+  <span class="label" style="color:var(--cyan)">OPEN-SOURCE BASE MODELS</span>
+  <p>The fine-tuning pipeline starts with open-source models like Qwen3 or Mistral &mdash; freely available, downloadable, modifiable. These are raw materials, not someone else's product. Orion trains a personal overlay (LoRA adapter) on top of these base models using the user's own conversation data on the user's own hardware.</p>
+  <p>This is standard practice across the entire AI industry. Meta released Llama for anyone to use. Alibaba released Qwen. Mistral AI released Mistral. These are building blocks, like open-source libraries in software development.</p>
+</div>
+
+<h3>What AI Did NOT Do</h3>
+
+<div class="card" style="border-left:3px solid var(--purple)">
+  <span class="label purple">THE HUMAN CONTRIBUTION</span>
+  <p><strong>The vision</strong> &mdash; "The memory IS the intelligence. The model is fuel." This philosophy that a brain's identity lives in its memory, not in any particular model, is the foundational insight behind everything Orion does. No AI model produced this idea.</p>
+  <p><strong>The architecture decisions</strong> &mdash; Every major design choice was human-directed. One brain serving all interfaces. Physical portability on a USB drive. Independence from any single AI provider. The heartbeat concept. Cross-model memory. The refusal to just wrap someone else's product and call it new. These decisions shaped the entire system.</p>
+  <p><strong>The product direction</strong> &mdash; What to build, why it matters, who it's for, what's worth doing and what's not. AI tools suggest options. A human chose which options to pursue and which to reject. When AI suggested "there are only two ways to do this," the response was "there are infinite combinations" &mdash; and that philosophy drove the research and architecture in directions no AI would have taken on its own.</p>
+  <p><strong>The quality standard</strong> &mdash; "Never claim something works without the user testing it." "No demo mode &mdash; everything must be functional." "No marketing fluff." These standards forced honest documentation, real testing, and actual functionality over impressive-sounding demos that don't work.</p>
+  <p><strong>The persistence</strong> &mdash; Months of building. Sessions that went late into the night. Debugging protocol mismatches, fixing encoding crashes, rewriting architectures when they didn't work. Starting over when a direction was wrong. Continuing when nothing worked the first time. AI doesn't persist through frustration. A person does.</p>
+</div>
+
+<h3>The Analogy</h3>
+
+<div class="diagram">
+<span class="highlight">Every modern product uses tools to build itself.</span>
+
+  A filmmaker uses cameras, editing software, and CGI tools.
+  Nobody says the film isn't theirs because Adobe made After Effects.
+
+  An architect uses CAD software and structural simulation tools.
+  Nobody says the building isn't theirs because Autodesk made Revit.
+
+  A musician uses synthesizers, DAWs, and digital instruments.
+  Nobody says the music isn't theirs because Ableton made the software.
+
+<span class="highlight">Orion was built using AI tools.</span>
+
+  The tools wrote code when directed.
+  The tools conducted research when asked.
+  The tools debugged issues when pointed at them.
+
+  The tools did not:
+  - Decide what to build
+  - Decide why it matters
+  - Decide when something wasn't good enough
+  - Persist through months of iteration
+  - Refuse to settle for "good enough"
+
+<span class="good">The tool is not the builder. The builder used the tool.</span>
+</div>
+
+<h3>The Independence Model</h3>
+
+<div class="diagram">
+<span class="highlight">DURING DEVELOPMENT</span> (now)
+  Claude Code writes code and conducts research
+  AI agents do parallel investigation
+  Open-source models provide base weights for fine-tuning
+  <span class="warn">Development depends on AI tools &mdash; this is transparent</span>
+
+<span class="highlight">AFTER DEPLOYMENT</span> (the product)
+  Brain runs as pure Python on user's hardware
+  Fine-tuned model runs locally on user's GPU
+  Memory is JSON files on user's disk
+  No API calls to Anthropic, OpenAI, or anyone
+  No subscription required for the brain to function
+  <span class="good">The product is independent &mdash; no company can pull the plug</span>
+
+<span class="highlight">THE DISTINCTION</span>
+  Using AI to BUILD a product ≠ the product DEPENDING on AI
+  Every conversation with Claude during development is documented
+  The code it produced is open source (AGPL-3.0)
+  The architecture it helped design is ours to own and modify
+  If every AI company disappeared tomorrow, Orion still runs
+</div>
+
+<div class="card honest">
+  <span class="label orange">FULL TRANSPARENCY</span>
+  <p>This documentation was written with AI assistance. The code was written with AI assistance. The research was conducted by AI agents. The debugging was done by AI tools. All of this is documented in conversation logs, git history, and session files. We chose to be fully transparent about this because hiding it would be dishonest, and because the real insight is that <strong>one person with AI tools built something that would have taken a team of engineers months to produce</strong>. That's not a weakness of the product. That's the future of how products get built.</p>
+</div>
+
+<p style="margin-top:24px;color:var(--text2)"><strong>Built by James England</strong> &mdash; one person, no CS degree, no funding, no team. Using every tool available to build something that didn't exist before. That's not less impressive because the tools are powerful. It's more impressive because he knew how to use them.</p>
+
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="honest">
+<h2>11 &mdash; HONEST ASSESSMENT (DEVELOPER VIEW)</h2>
+
+<div class="card works">
+  <span class="label green">WHAT WORKS TODAY</span>
+  <ul style="margin:8px 0 0 20px;color:var(--text2)">
+    <li>Cross-model memory &mdash; store in Codex, recall in Gemini. Verified.</li>
+    <li>MCP server with 9 tools &mdash; Codex and Gemini connected and calling tools.</li>
+    <li>Graph + index memory &mdash; stores facts, recalls by tag or text search.</li>
+    <li>Memory classification &mdash; ADD/UPDATE/DELETE/NOOP filtering works.</li>
+    <li>Heartbeat &mdash; autonomous synthesis every 30 minutes, processes all sources.</li>
+    <li>Reflexes &mdash; immediate processing of urgent inputs.</li>
+    <li>Self-evolving instructions &mdash; brain rewrites its own rules.</li>
+    <li>User model &mdash; detects communication style, expertise, frustrations, rules.</li>
+    <li>Project state &mdash; detects active projects and cross-tool context.</li>
+    <li>Source readers &mdash; pulls from Claude, Codex, Gemini, Ollama, Letta.</li>
+    <li>All communication points feed the same brain.</li>
+  </ul>
+</div>
+
+<div class="card broken">
+  <span class="label red">WHAT DOESN'T WORK YET</span>
+  <ul style="margin:8px 0 0 20px;color:var(--text2)">
+    <li>Claude Code MCP &mdash; path fixed, needs restart to verify.</li>
+    <li>Deep synthesis &mdash; LLM enrichment hooks exist but aren't running (model training in progress).</li>
+    <li>Temporal awareness &mdash; no sense of time. Old facts weigh same as new.</li>
+    <li>Semantic search &mdash; memory is keyword-based, not meaning-based.</li>
+    <li>Local model &mdash; QLoRA training IN PROGRESS on FORGE RTX 4070. 1,488 pairs, Mistral 7B, 3 epochs.</li>
+  </ul>
+</div>
+
+<div class="card building">
+  <span class="label blue">WHAT'S BUILT BUT UNTESTED</span>
+  <ul style="margin:8px 0 0 20px;color:var(--text2)">
+    <li>Fine-tune pipeline &mdash; 1,488 training pairs extracted, training running.</li>
+    <li>Synthesis engine LLM hooks &mdash; code exists to use a model for deeper analysis.</li>
+    <li>Knowledge compiler &mdash; distills conversations into knowledge articles.</li>
+    <li>Skill learning &mdash; framework for auto-learning from successful tasks.</li>
+    <li>Hyper ingestion &mdash; tested (1,070 msgs, 741ms), needs live deployment testing.</li>
+  </ul>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="engine">
+<h2>12 &mdash; OWN INFERENCE ENGINE: NO DEPENDENCIES</h2>
+
+<p>A critical product requirement: Orion must not depend on Ollama, vLLM, or any third-party runtime to function. The inference engine &mdash; the thing that runs the trained model &mdash; must be part of Orion itself.</p>
+
+<h3>What We Discovered</h3>
+
+<div class="diagram">
+<span class="highlight">THE PROBLEM</span>
+  Orion trains its own model (LoRA adapter on open-source base)
+  But running that model requires an inference engine
+  Ollama is one engine &mdash; but it's a separate install, a dependency
+  Users shouldn't need to know what Ollama is
+
+<span class="highlight">THE SOLUTION</span>
+  llama.cpp is open source (MIT license)
+  llama-cpp-python embeds the engine directly in Python
+  One process = brain + model + memory + heartbeat
+  No separate service. No HTTP overhead. No external dependency.
+
+  <span class="good">pip install llama-cpp-python</span>
+  <span class="good">from llama_cpp import Llama</span>
+  <span class="good">llm = Llama(model_path="orion.gguf", n_gpu_layers=35)</span>
+  <span class="good">output = llm("Hello sir", max_tokens=128)</span>
+
+  That's the entire inference engine embedded in Orion's process.
+</div>
+
+<h3>How Inference Actually Works (The Real Mechanics)</h3>
+
+<div class="diagram">
+<span class="highlight">STEP BY STEP &mdash; what happens when you talk to the trained model:</span>
+
+  1. Your text arrives: "What's running on COMMAND?"
+
+  2. <span class="good">TOKENIZE</span>: Convert text to numbers
+     "What's" &rarr; 1724  "running" &rarr; 2846  "on" &rarr; 373  "COMMAND" &rarr; 24118  "?" &rarr; 30
+     Now it's [1724, 2846, 373, 24118, 30]
+
+  3. <span class="good">LOAD CONTEXT</span>: Feed tokens through the model
+     Each token passes through 32 transformer layers
+     Each layer: multiply by weight matrices, compute attention, multiply again
+     7 billion parameters = 7 billion multiplication operations per layer
+     <span class="dim">This is where the GPU earns its keep</span>
+
+  4. <span class="good">ATTENTION</span>: "Which previous tokens matter for the next word?"
+     The model computes relationships between every token pair
+     "COMMAND" gets high attention from "running" and "What's"
+     This is how context works &mdash; the model knows the question is about COMMAND
+
+  5. <span class="good">PREDICT</span>: Final layer outputs probability for every possible next word
+     "Docker" = 12%  "The" = 8%  "Currently" = 7%  "Sir" = 15%  ...
+     Pick one (sampling with temperature)
+
+  6. <span class="good">REPEAT</span>: Add the chosen token, go back to step 3
+     Until it generates a stop token or hits max length
+
+<span class="warn">THE LORA DIFFERENCE</span>
+  The base model (Mistral 7B) knows general language
+  The LoRA adapter (42M params trained on YOUR conversations) adjusts the weights
+  At step 5, "sir" gets a higher probability because the adapter learned that pattern
+  The model doesn't READ a rule saying "say sir" &mdash; it's in the weights
+</div>
+
+<h3>Persistent KV Cache &mdash; The 136x Speedup</h3>
+
+<div class="diagram">
+<span class="warn">WITHOUT KV CACHE</span> (current behavior)
+  Every conversation starts cold
+  Model processes the 2000-token system prompt from scratch
+  Takes 15+ seconds before it can respond to your actual question
+
+<span class="good">WITH PERSISTENT KV CACHE</span>
+  First time: process system prompt, save the computed key/value tensors to disk (~50MB file)
+  Every time after: load from disk in &lt;1 second
+  Model instantly has full context without recomputing
+
+  Benchmark: 172s cold &rarr; 1.3s hot = <span class="good">136x faster startup</span>
+
+  For Orion: the identity, rules, user model, and project state
+  are pre-computed once and loaded from cache every conversation.
+  The brain feels instant.
+</div>
+
+<h3>Stripping llama.cpp to Essentials</h3>
+
+<div class="diagram">
+<span class="highlight">FULL llama.cpp</span>: 230,000 lines
+  Supports 113 model architectures
+  5 GPU backends (CUDA, Metal, Vulkan, SYCL, OpenCL)
+  Server, API, multi-user, speculative decoding, TTS
+  CLI tools, examples, tests
+
+<span class="good">STRIPPED FOR ORION</span>: ~42,000 lines
+  1 model architecture (Llama/Mistral family)
+  1 GPU backend (CUDA for FORGE, or CPU for Pi)
+  No server (embedded in Python process)
+  No multi-user (one brain, one user)
+  The actual Llama graph builder: <span class="highlight">175 lines</span>
+
+  <span class="dim">Everything else is optimization for problems we don't have.</span>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="tiers">
+<h2>13 &mdash; THREE-TIER ARCHITECTURE</h2>
+
+<p>Not every query needs a 7-billion-parameter model. Most daily interactions are simple &mdash; "check status", "what's on my schedule", "remember this". The architecture uses the right amount of compute for each task.</p>
+
+<div class="diagram">
+<span class="highlight">TIER 1 &mdash; REFLEX BRAIN</span> (always on)
+  Hardware:    Raspberry Pi 5 (8GB RAM, ~5W power)
+  Model:       BitNet 2B or Gemma 1B (1.58-bit or Q4)
+  Speed:       8-15 tokens/second
+  Memory:      &lt;2.5GB RAM
+  Role:        Dispatch commands, status checks, quick chat
+  Handles:     ~60% of daily queries
+  Startup:     &lt;30 seconds from boot
+  <span class="good">Always on. Always listening. Costs pennies in electricity.</span>
+
+<span class="highlight">TIER 2 &mdash; LOCAL INTELLIGENCE</span> (on demand)
+  Hardware:    FORGE RTX 4070 (8GB VRAM)
+  Model:       Mistral 7B + Orion LoRA (Q4_K_M, ~5GB)
+  Speed:       40-60 tokens/second (with speculative decoding)
+  Role:        Reasoning, planning, code, complex tasks
+  Handles:     ~35% of queries (escalated from Tier 1)
+  Boost:       Speculative decoding with 1B draft model = 1.5-2x speedup
+  <span class="good">Real thinking. No API calls. Your hardware, your model.</span>
+
+<span class="highlight">TIER 3 &mdash; HEAVY COMPUTE</span> (rare)
+  Hardware:    Cloud (Claude API)
+  Model:       Claude Opus or equivalent
+  Speed:       Cloud speeds
+  Role:        Complex multi-step analysis, large context reasoning
+  Handles:     ~5% of queries (things Tier 2 can't solve)
+  <span class="warn">The only tier that uses external AI. Optional. Not required.</span>
+</div>
+
+<div class="diagram">
+<span class="highlight">HOW ROUTING WORKS</span>
+
+  Query arrives (any interface: Telegram, phone, terminal, MCP)
+        |
+        v
+  <span class="good">TIER 1</span> (Pi): Can I handle this?
+    Simple dispatch, status check, greeting &rarr; respond directly
+    Complex reasoning needed &rarr; escalate
+        |
+        v
+  <span class="good">TIER 2</span> (FORGE): Can I handle this?
+    Reasoning, code, planning &rarr; respond
+    Exceeds local model capability &rarr; escalate
+        |
+        v
+  <span class="warn">TIER 3</span> (Cloud): Handle the extraordinary
+
+  <span class="dim">Same brain at every tier. Same memory. Same identity.</span>
+  <span class="dim">The tier only determines which engine processes the response.</span>
+  <span class="dim">The user never knows or cares which tier answered.</span>
+</div>
+
+<div class="card honest">
+  <span class="label orange">CURRENT STATE</span>
+  <p><strong>Tier 2 is training right now.</strong> The Mistral 7B + Orion LoRA model is being trained on FORGE's RTX 4070 with 1,488 conversation pairs. When it finishes, Tier 2 is live.</p>
+  <p><strong>Tier 1 doesn't exist yet.</strong> The Raspberry Pi 5 is incoming hardware. Once it arrives, a sub-2B model can be distilled from the Tier 2 model and deployed as the always-on reflex brain.</p>
+  <p><strong>Tier 3 is what we use today.</strong> Claude API through Claude Code, Codex, and Gemini. This becomes the fallback, not the primary.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="roadmap">
+<h2>14 &mdash; WHAT COMES NEXT</h2>
+
+<h3>Phase 1: Feed the Brain Everything (DONE)</h3>
+<p>Hyper ingestion built and tested. 1,070 messages from 9 sources absorbed in 741ms. The brain reads all existing conversation history from Claude, Codex, Gemini, Ollama, Letta, memory files, knowledge documents, and context files. New Orion installations run <code>--hyper</code> and bootstrap instantly.</p>
+
+<h3>Phase 2: Train Orion's Own Model (IN PROGRESS)</h3>
+<p>QLoRA fine-tuning running on FORGE's RTX 4070. 1,488 training pairs from cross-model conversations. Mistral 7B base. When complete: convert to GGUF, embed in Orion via llama-cpp-python. No Ollama dependency.</p>
+
+<h3>Phase 3: Eliminate External Dependencies</h3>
+<p>Replace Ollama with llama-cpp-python embedded in the brain process. Implement persistent KV cache for 136x faster context loading. One process = brain + model + memory + heartbeat. Ship as a single installer.</p>
+
+<h3>Phase 4: Deep Synthesis</h3>
+<p>With its own model running, the brain can use LLM-enriched analysis for true understanding. Not "James says 'execute' a lot" but "James values execution because he built everything himself." The synthesis engine hooks exist. They just need the model to power them.</p>
+
+<h3>Phase 5: Tier 1 Reflex Brain</h3>
+<p>Distill the 7B model to 1-2B. Deploy on Raspberry Pi 5 as always-on brain. Handles 60%+ of daily queries at 8-15 tok/s. Under 5W power. Persistent KV cache for instant startup. The brain that never sleeps.</p>
+
+<h3>Phase 6: Temporal Awareness &amp; Learning</h3>
+<p>Facts get timestamps. Old facts decay. Contradictions invalidate previous knowledge. The brain learns who you are from conversations, not from files. Every interaction makes it smarter. Every correction adjusts its behavior at the weight level, not just the rule level.</p>
+
+<h3>Phase 7: Scale Down Intelligently</h3>
+<p>The research direction nobody else is taking: instead of scaling up (bigger models, more GPUs, more data centers), scale down intelligently. Domain-specific pruning, vocabulary reduction, conditional computation. A brain that's small, fast, and deeply personal instead of massive and general. Innovation in efficiency, not brute force.</p>
+
+<div class="card" style="border-left:3px solid var(--purple);margin-top:30px">
+  <span class="label purple">THE VISION</span>
+  <p>One brain. Every AI model, every phone call, every text message, every terminal session feeds it. The brain learns from all of it simultaneously. It doesn't matter if you switch from Claude to Gemini to a phone call to Telegram &mdash; you're always talking to the same intelligence.</p>
+  <p>The brain runs on your hardware. It's trained on your data. No company can revoke it. No subscription is required. No internet needed. Plug it in, it's alive.</p>
+  <p>The model is fuel. The memory is the intelligence. This is Orion.</p>
+</div>
+
+</section>
+
+<div style="text-align:center;padding:40px 0;color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace">
+  Built by James England &mdash; ORION Project &mdash; 2026<br>
+  No CS degree. No funding. No shortcuts.<br>
+  <span style="color:var(--cyan)">github.com/1Changetheworld/orion</span>
+</div>
+
+</div>
+</body>
+</html>

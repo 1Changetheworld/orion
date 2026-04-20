@@ -95,10 +95,11 @@ Orion auto-routes: simple tasks go to free models, complex tasks go to the best 
 
 ## Interfaces
 
-Seven ways to reach the same brain. A fact learned over a phone call is recalled in a text message ten minutes later.
+Eight ways to reach the same brain. A fact learned over a phone call is recalled in a text message ten minutes later.
 
 | Interface | Status | Description |
 |-----------|--------|-------------|
+| Voice Headset | Live | Dedicated Poly Voyager 4310 UC wireless headset. Pick it up and talk — Whisper STT on GPU, Piper TTS, fully local. Voice ID verifies it's you before responding. |
 | Phone | Real number | Call from any phone. Orion answers with synthesized speech. |
 | Telegram | 50+ commands | Full command suite plus natural language processing |
 | iMessage | Native macOS | Text Orion from your iPhone — same brain as every other interface |
@@ -106,6 +107,20 @@ Seven ways to reach the same brain. A fact learned over a phone call is recalled
 | Dashboard | Web UI | Pixel art operations center with live agent visualization |
 | Webhook | `POST /chat` | Programmatic access — any script or automation can talk to Orion |
 | Any AI Tool | Zero-prompt | Open ChatGPT, Claude, Gemini — Orion is already there |
+
+### Voice Headset Details
+
+The voice interface turns a Bluetooth headset into a dedicated Orion communication device. The pipeline runs entirely on local hardware — zero API keys, zero cloud calls:
+
+```
+Headset Mic → Voice Activity Detection → Whisper STT (GPU) → Orion Brain → Piper TTS → Headset Earpiece
+```
+
+**Voice ID:** Enroll your voice with 10 samples across different emotions and tones — normal speech, commands, whispers, excitement, fatigue. Orion builds an MFCC-based voiceprint and verifies every utterance before processing. Someone else talks? Ignored.
+
+**Auto-start:** Launches on login. Pick up the headset and talk — no terminal, no commands.
+
+**Multipoint:** The headset connects to your computer at the desk and your phone on the go. Same headset, same Orion, different backend — local GPU processing at home, phone-to-cloud when mobile.
 
 ---
 
@@ -160,7 +175,7 @@ See [docs/INSTALL.md](docs/INSTALL.md) for full details.
 | Model-agnostic | Partial | Partial | Partial | Yes | **Yes** |
 | Portable (physical) | No | No | No | No | **Yes** |
 | Real phone number | No | No | No | No | **Yes** |
-| 7+ interfaces | No | No | 2-3 | No | **Yes** |
+| 8+ interfaces | No | No | 2-3 | No | **Yes** |
 | $0/request | No | No | No | No | **Yes** |
 | No API keys needed | No | No | No | No | **Yes** |
 | Offline fallback | No | No | Yes | Local only | **5-tier** |

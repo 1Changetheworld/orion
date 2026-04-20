@@ -283,65 +283,27 @@ def set_window_border_color(hwnd, color_hex):
         return False
 
 
-def detect_running_models():
-    """Detect which AI models are currently running as processes."""
-    running = {}
-    if platform.system() != "Windows":
-        return running
 
+def read_orion_sessions():
+    """Read ALL active Orion sessions."""
+    session_path = os.path.join(os.path.expanduser("~/.orion"), "session_state.json")
     try:
-        result = subprocess.run(
-            ["powershell", "-Command",
-             "Get-Process | Where-Object { $_.ProcessName -match 'claude|codex|ollama|gemini' } "
-             "| Group-Object ProcessName | Select-Object Name, Count | ConvertTo-Json"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
+        if os.path.exists(session_path):
+            with open(session_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Handle both old single-session and new multi-session format
             if isinstance(data, dict):
                 data = [data]
-            for entry in data:
-                name = entry.get("Name", "").lower()
-                if "claude" in name:
-                    running["claude_cli"] = True
-                elif "codex" in name:
-                    running["codex"] = True
-                elif "ollama" in name:
-                    running["ollama_local"] = True
-                elif "gemini" in name:
-                    running["gemini"] = True
-    except:
+            return [s for s in data if s.get("active")]
+    except Exception:
         pass
-    return running
+    return []
 
 
-def find_terminal_windows():
-    """Find terminal/console windows on Windows."""
-    if platform.system() != "Windows":
-        return []
-    try:
-        user32 = ctypes.windll.user32
-        windows = []
-
-        def enum_callback(hwnd, _):
-            if user32.IsWindowVisible(hwnd):
-                length = user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buf = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd, buf, length + 1)
-                    title = buf.value
-                    # Match terminal-like windows
-                    terminal_keywords = ["terminal", "powershell", "cmd", "mingw",
-                                        "bash", "windows terminal", "jeng1"]
-                    if any(kw in title.lower() for kw in terminal_keywords):
-                        windows.append((hwnd, title))
-            return True
-
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
-        user32.EnumWindows(WNDENUMPROC(enum_callback), 0)
-        return windows
-    except:
-        return []
+def read_orion_session():
+    """Read the first active session (backwards compat)."""
+    sessions = read_orion_sessions()
+    return sessions[0] if sessions else None
 
 
 # =====================================================================
@@ -676,17 +638,18 @@ class FuelGlowIndicator:
         self.fuel = fuel or {}
         self.current_fuel = "offline"
         self.glow_color = RED
-        self.glowed_windows = set()
         self.dragging = False
         self.menu_open = False
 
         self.detect_active_fuel()
         self.build_ui()
 
-        # Drag with right-click, left-click opens menu
+        # Drag with right-click, left-click opens menu, double-click closes
         self.root.bind("<Button-3>", self.start_drag)
         self.root.bind("<B3-Motion>", self.do_drag)
         self.root.bind("<Button-1>", self.on_click)
+        self.root.bind("<Double-Button-1>", lambda e: self.root.destroy())
+        self.root.bind("<Escape>", lambda e: self.root.destroy())
 
         self.refresh_loop()
 
@@ -776,8 +739,9 @@ class FuelGlowIndicator:
             )
             btn.pack(fill="x", padx=8, pady=1)
 
-        # Close menu if clicking outside
-        self.menu_win.bind("<FocusOut>", lambda e: self.close_menu())
+        # Close menu when clicking elsewhere on screen (not on focus loss,
+        # which fires when clicking buttons INSIDE the menu and kills them)
+        self.root.bind("<Button-1>", lambda e: self.close_menu())
 
     def close_menu(self):
         if self.menu_open and hasattr(self, 'menu_win'):
@@ -785,30 +749,65 @@ class FuelGlowIndicator:
             self.menu_open = False
 
     def turn_off_orion(self):
-        """Save progress, close all Orion terminals, and shut down."""
-        self.close_menu()
-        self.status_label.config(text="Saving and closing all windows...")
-        self.root.update()
+        """Kill ALL Orion sessions, reset glows, save data, close indicator."""
+        try:
+            self.close_menu()
+        except Exception:
+            pass
 
-        self.save_state()
+        sessions = read_orion_sessions()
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0
 
-        # Kill any running orion.py processes (terminals using Orion)
-        if platform.system() == "Windows":
-            try:
-                si = subprocess.STARTUPINFO()
-                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                si.wShowWindow = 0
-                # Kill python processes running orion.py
-                subprocess.run(
-                    ["powershell", "-WindowStyle", "Hidden", "-Command",
-                     "Get-Process python -ErrorAction SilentlyContinue | "
-                     "Where-Object { $_.CommandLine -match 'orion.py' } | Stop-Process -Force"],
-                    startupinfo=si, creationflags=0x08000000, timeout=5
-                )
-            except:
-                pass
+        user32 = ctypes.windll.user32
+        WM_CLOSE = 0x0010
 
-        self.root.after(500, self.root.destroy)
+        for session in sessions:
+            # Kill CLI tool + launcher processes
+            for pid_key in ["pid", "launcher_pid"]:
+                pid = session.get(pid_key)
+                if pid:
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(pid), "/T", "/F"],
+                            startupinfo=si, creationflags=0x08000000, timeout=5
+                        )
+                    except Exception:
+                        pass
+
+            # Close the terminal WINDOW itself (not just the process inside it)
+            hwnd = session.get("hwnd")
+            if hwnd:
+                try:
+                    # Reset glow first
+                    dwmapi = ctypes.windll.dwmapi
+                    default = ctypes.c_int(0xFFFFFFFF)
+                    dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(default), ctypes.sizeof(default))
+                    dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(default), ctypes.sizeof(default))
+                    # Send WM_CLOSE to the terminal window to close it
+                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                except Exception:
+                    pass
+
+        # Mark ALL sessions inactive
+        try:
+            session_path = os.path.join(os.path.expanduser("~/.orion"), "session_state.json")
+            if os.path.exists(session_path):
+                with open(session_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    data = [data]
+                for s in data:
+                    s["active"] = False
+                    s["ended"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    s["shutdown"] = "user_turn_off"
+                with open(session_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+        self.root.destroy()
 
     def safe_remove_drive(self):
         """Save all data, flush writes, and prepare for safe USB removal."""
@@ -842,106 +841,71 @@ class FuelGlowIndicator:
         wizard.run()
 
     def save_state(self):
-        """Save current Orion state to disk."""
-        state = {
-            "last_active": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "current_fuel": self.current_fuel,
-            "session_active": True,
-        }
+        """Update indicator's last-seen timestamp without overwriting orion.py's session data."""
         state_path = os.path.join(os.path.expanduser("~/.orion"), "session_state.json")
         try:
-            os.makedirs(os.path.dirname(state_path), exist_ok=True)
-            with open(state_path, "w") as f:
+            if os.path.exists(state_path):
+                with open(state_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+            else:
+                state = {}
+            state["indicator_last_active"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            with open(state_path, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
-        except:
+        except Exception:
             pass
-
-    # -- Process Detection (no flashing windows) -------------------------
-    def detect_running_silent(self):
-        """Detect running AI models without spawning visible windows."""
-        running = {}
-        if platform.system() != "Windows":
-            return running
-        try:
-            # Use CREATE_NO_WINDOW flag to prevent flashing
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 0  # SW_HIDE
-
-            result = subprocess.run(
-                ["powershell", "-WindowStyle", "Hidden", "-Command",
-                 "Get-Process | Where-Object { $_.ProcessName -match 'claude|codex|ollama|gemini' } "
-                 "| Group-Object ProcessName | Select-Object Name, Count | ConvertTo-Json"],
-                capture_output=True, text=True, timeout=5,
-                startupinfo=si,
-                creationflags=0x08000000  # CREATE_NO_WINDOW
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                data = json.loads(result.stdout)
-                if isinstance(data, dict):
-                    data = [data]
-                for entry in data:
-                    name = entry.get("Name", "").lower()
-                    if "claude" in name:
-                        running["claude_cli"] = True
-                    elif "codex" in name:
-                        running["codex"] = True
-                    elif "ollama" in name:
-                        running["ollama_local"] = True
-                    elif "gemini" in name:
-                        running["gemini"] = True
-        except:
-            pass
-        return running
 
     # -- Terminal Glow ---------------------------------------------------
     def apply_terminal_glow(self):
-        """Detect running AI processes and apply glow to terminal windows."""
+        """Read ALL Orion sessions, glow each terminal, show all active fuels."""
         if platform.system() != "Windows":
             return
 
-        running = self.detect_running_silent()
-        if not running:
-            self.status_label.config(text="Click for options  |  No AI models running")
+        sessions = read_orion_sessions()
+        if not sessions:
+            self.status_label.config(text="Click for options  |  Orion not running")
             return
 
-        # Determine primary active model
-        priority = ["claude_cli", "codex", "gemini", "ollama_local"]
-        active = None
-        for key in priority:
-            if running.get(key):
-                active = key
-                break
+        # Apply glow to each active terminal
+        fuel_names = []
+        for session in sessions:
+            hwnd = session.get("hwnd")
+            fuel_key = session.get("fuel", "unknown")
 
-        if active:
-            self.current_fuel = active
-            self.glow_color = FUEL_COLORS.get(active, (ACCENT, "CYAN"))[0]
+            # Map fuel key to color
+            fuel_key_map = {"claude": "claude_cli", "codex": "codex",
+                            "gemini": "gemini", "ollama": "ollama_local"}
+            ui_key = fuel_key_map.get(fuel_key, fuel_key)
+            color = FUEL_COLORS.get(ui_key, (ACCENT, "CYAN"))[0]
 
-            running_names = []
-            for key in running:
-                display = self.fuel.get(key, {}).get("display", key)
-                running_names.append(display)
-            self.status_label.config(text=f"Active: {', '.join(running_names)}")
+            if hwnd:
+                set_window_border_color(hwnd, color)
 
-            # Apply glow border to terminal windows
-            windows = find_terminal_windows()
-            for hwnd, title in windows:
-                if hwnd not in self.glowed_windows:
-                    success = set_window_border_color(hwnd, self.glow_color)
-                    if success:
-                        self.glowed_windows.add(hwnd)
+            fuel_names.append(fuel_key)
+
+        # Update indicator to show ALL active fuels
+        self.glow_color = FUEL_COLORS.get("claude_cli", (ACCENT, "CYAN"))[0]  # Primary color
+        display = " + ".join(fuel_names)
+        self.status_label.config(text=f"Active: {display}")
 
     # -- Refresh Loop ----------------------------------------------------
     def refresh_loop(self):
+        # Read all active sessions and update display
+        sessions = read_orion_sessions()
+
+        if sessions:
+            fuel_names = [s.get("fuel", "?") for s in sessions]
+            self.fuel_label.config(text=f"Fuel: {' + '.join(fuel_names)}")
+            self.quality_label.config(text=f"{len(sessions)} active session(s)")
+            self.glow_color = ACCENT
+        else:
+            self.fuel_label.config(text="Fuel: Offline")
+            self.quality_label.config(text="No active sessions")
+            self.glow_color = RED
+
         self.outer.config(bg=self.glow_color)
         self.dot.delete("all")
         self.dot.create_oval(1, 1, 9, 9, fill=self.glow_color, outline=self.glow_color)
-
-        display = self.fuel.get(self.current_fuel, {}).get("display", "Offline")
-        quality = self.fuel.get(self.current_fuel, {}).get("quality", "Degraded")
-        color_name = FUEL_COLORS.get(self.current_fuel, ("", "GRAY"))[1]
-        self.fuel_label.config(text=f"Fuel: {display}")
-        self.quality_label.config(text=f"Quality: {quality}  |  Glow: {color_name}")
 
         self.apply_terminal_glow()
         self.root.after(5000, self.refresh_loop)
@@ -966,9 +930,13 @@ class FuelGlowIndicator:
 
 if __name__ == "__main__":
     if "--glow" in sys.argv:
-        fuel = detect_fuel()
-        indicator = FuelGlowIndicator(fuel)
-        indicator.run()
+        # Only show indicator if any Orion session is active
+        sessions = read_orion_sessions()
+        if sessions:
+            fuel = detect_fuel()
+            indicator = FuelGlowIndicator(fuel)
+            indicator.run()
+        # If no active sessions, exit silently
     else:
         wizard = SetupWizard()
         wizard.run()
