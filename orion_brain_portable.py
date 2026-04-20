@@ -209,18 +209,85 @@ def bm25_score(query_tokens: list, doc_tokens: list, avg_dl: float,
 # Kept exactly as v6. Already file-based. Already fast.
 # ═══════════════════════════════════════════════════════════════
 
-class GraphMemory:
-    """Fast tag-indexed memory. No LLM needed for recall."""
+import math
 
-    def __init__(self):
-        self.nodes = {}              # id -> {content, type, confidence, tags, created}
-        self.tag_index = defaultdict(set)   # tag -> set of node ids
-        self.type_index = defaultdict(set)  # type -> set of node ids
+# ---------------------------------------------------------------
+# TEMPORAL MEMORY — half-life table
+# Nothing is ever deleted. Stale facts simply rank lower on recall.
+# Re-confirming a fact updates last_confirmed_at and resets decay.
+# ---------------------------------------------------------------
+
+# Half-life in days, by node type. math.inf = never decays.
+# Tune values per deployment via GraphMemory(half_life_days=...).
+HALF_LIFE_DAYS_DEFAULT = {
+    "identity": math.inf,   # Who the user is, philosophy — never expires
+    "preference": math.inf, # Stable preferences
+    "hardware": 365.0,      # GPU, RAM — good for a year
+    "person": 365.0,        # Contacts, relationships
+    "skill": 180.0,         # Capabilities the user has
+    "project": 1.0,         # Current work state — fresh today, stale tomorrow
+    "task": 0.5,            # In-flight tasks
+    "network": 7.0,         # IPs, ports, topology — weekly churn
+    "service": 3.0,         # Running services, uptime
+    "ephemeral": 1 / 24.0,  # Minute-to-minute state
+    "fact": 30.0,           # Generic default — monthly half-life
+}
+
+
+def decayed_confidence(node: dict, now: float = None,
+                       half_life_table: dict = None) -> float:
+    """Compute effective confidence for a node at a given time.
+
+    Confidence decays exponentially from last_confirmed_at (or created
+    if last_confirmed_at is missing). Returns a value in [0, 1].
+    """
+    if now is None:
+        now = time.time()
+    table = half_life_table or HALF_LIFE_DAYS_DEFAULT
+    base_conf = node.get("confidence", 1.0)
+
+    node_type = node.get("type", "fact")
+    half_life = table.get(node_type, table.get("fact", 30.0))
+    if half_life == math.inf:
+        return base_conf
+
+    anchor = node.get("last_confirmed_at") or node.get("created") or now
+    age_days = max(0.0, (now - anchor) / 86400.0)
+    return base_conf * (0.5 ** (age_days / half_life))
+
+
+class GraphMemory:
+    """Fast tag-indexed memory with temporal decay + contradiction detection.
+
+    Nodes carry confidence, created, last_confirmed_at. Retrieval ranks by
+    decayed confidence so stale facts sink below fresh ones. When a new
+    fact conflicts with an existing one (same tags, same subject),
+    both are flagged `contested` for user resolution rather than silently
+    overwritten. Nothing is ever deleted by decay.
+    """
+
+    def __init__(self, half_life_days: dict = None,
+                 contradiction_mode: str = "coexist"):
+        self.nodes = {}
+        self.tag_index = defaultdict(set)
+        self.type_index = defaultdict(set)
         self._next_id = 0
+        self.half_life_days = half_life_days or HALF_LIFE_DAYS_DEFAULT
+        # "coexist" = flag both, require user resolution
+        # "supersede" = new wins silently, old archived
+        self.contradiction_mode = contradiction_mode
 
     def store(self, content: str, node_type: str = "fact",
-              confidence: float = 1.0, tags: list = None) -> int:
-        """Store a memory node with tags for instant recall."""
+              confidence: float = 1.0, tags: list = None,
+              skip_contradiction_check: bool = False) -> int:
+        """Store a new memory node. Returns node_id.
+
+        If a contradicting prior node exists (same tags, overlapping content
+        shape), behavior depends on contradiction_mode. Both get a
+        `contested_with` field pointing at the other (coexist) or the old
+        one gets marked `superseded_by` (supersede).
+        """
+        now = time.time()
         node_id = self._next_id
         self._next_id += 1
         node = {
@@ -228,17 +295,112 @@ class GraphMemory:
             "type": node_type,
             "confidence": confidence,
             "tags": set(tags or []),
-            "created": time.time(),
+            "created": now,
+            "last_confirmed_at": now,
         }
         self.nodes[node_id] = node
         self.type_index[node_type].add(node_id)
         for tag in node["tags"]:
             self.tag_index[tag.lower()].add(node_id)
+
+        if not skip_contradiction_check:
+            conflicts = self._find_contradictions(node_id)
+            if conflicts:
+                self._apply_contradiction_policy(node_id, conflicts)
+
         return node_id
 
+    def confirm(self, node_id: int) -> bool:
+        """Mark a node as re-confirmed now. Resets decay clock to 100%."""
+        if node_id not in self.nodes:
+            return False
+        self.nodes[node_id]["last_confirmed_at"] = time.time()
+        return True
+
+    def confirm_by_content(self, content_fragment: str) -> int:
+        """Re-confirm every node matching a content fragment. Returns count."""
+        count = 0
+        for nid, _ in self.find_by_content(content_fragment):
+            if self.confirm(nid):
+                count += 1
+        return count
+
+    def decayed_confidence(self, node_id: int, now: float = None) -> float:
+        """Effective confidence for node at time now (default: now)."""
+        node = self.nodes.get(node_id)
+        if not node:
+            return 0.0
+        return decayed_confidence(node, now=now,
+                                  half_life_table=self.half_life_days)
+
+    def _find_contradictions(self, new_node_id: int) -> list:
+        """Find prior nodes that likely conflict with the new node.
+
+        Heuristic: same type, non-empty tag overlap, different content.
+        Not a semantic contradiction detector — a cheap first filter.
+        Upstream can layer LLM-based disambiguation on top.
+        """
+        new = self.nodes[new_node_id]
+        if not new["tags"]:
+            return []
+        conflicts = []
+        candidates = set()
+        for tag in new["tags"]:
+            candidates |= self.tag_index.get(tag.lower(), set())
+        candidates.discard(new_node_id)
+        for nid in candidates:
+            prior = self.nodes[nid]
+            if prior.get("superseded_by") is not None:
+                continue
+            if prior["type"] != new["type"]:
+                continue
+            if prior["content"].strip() == new["content"].strip():
+                # Identical content — treat as re-confirmation, not conflict
+                prior["last_confirmed_at"] = time.time()
+                continue
+            # Require meaningful tag overlap (>=1 non-trivial tag match)
+            shared = prior["tags"] & new["tags"]
+            if shared:
+                conflicts.append(nid)
+        return conflicts
+
+    def _apply_contradiction_policy(self, new_id: int, conflict_ids: list):
+        """Apply coexist/supersede policy to new + conflicting nodes."""
+        if self.contradiction_mode == "supersede":
+            self.nodes[new_id]["supersedes"] = list(conflict_ids)
+            for nid in conflict_ids:
+                self.nodes[nid]["superseded_by"] = new_id
+            return
+        # default: coexist — flag both, require resolution
+        self.nodes[new_id]["contested_with"] = list(conflict_ids)
+        for nid in conflict_ids:
+            contested = self.nodes[nid].get("contested_with") or []
+            if new_id not in contested:
+                contested.append(new_id)
+            self.nodes[nid]["contested_with"] = contested
+
+    def resolve_contradiction(self, winner_id: int, loser_ids: list) -> bool:
+        """User-driven resolution: winner keeps confidence, losers archived."""
+        if winner_id not in self.nodes:
+            return False
+        winner = self.nodes[winner_id]
+        winner["contested_with"] = []
+        winner["last_confirmed_at"] = time.time()
+        for lid in loser_ids:
+            if lid in self.nodes:
+                self.nodes[lid]["superseded_by"] = winner_id
+                self.nodes[lid]["contested_with"] = []
+        return True
+
     def recall(self, query: str = None, tags: list = None,
-               node_type: str = None, limit: int = 5) -> list:
-        """Recall memories by tag match + text search. Microseconds."""
+               node_type: str = None, limit: int = 5,
+               include_superseded: bool = False) -> list:
+        """Recall memories by tag match + text search, ranked by decayed confidence.
+
+        Stale facts still appear but rank lower. Superseded nodes are hidden
+        by default (pass include_superseded=True for audit/history).
+        """
+        now = time.time()
         candidates = set(self.nodes.keys())
 
         if node_type:
@@ -250,22 +412,54 @@ class GraphMemory:
                 if tag_matches:
                     candidates &= tag_matches
 
+        if not include_superseded:
+            candidates = {
+                nid for nid in candidates
+                if self.nodes[nid].get("superseded_by") is None
+            }
+
         if query:
             query_words = set(query.lower().split())
             scored = []
             for nid in candidates:
-                content_words = set(self.nodes[nid]["content"].lower().split())
-                tag_words = {t.lower() for t in self.nodes[nid]["tags"]}
-                # Score: word overlap + tag overlap (tags worth more)
+                node = self.nodes[nid]
+                content_words = set(node["content"].lower().split())
+                tag_words = {t.lower() for t in node["tags"]}
                 word_overlap = len(query_words & content_words)
                 tag_overlap = len(query_words & tag_words) * 3
-                total = word_overlap + tag_overlap
-                if total > 0 or tags:
-                    scored.append((total, self.nodes[nid]["confidence"], nid))
+                text_score = word_overlap + tag_overlap
+                eff_conf = decayed_confidence(
+                    node, now=now, half_life_table=self.half_life_days
+                )
+                if text_score > 0 or tags:
+                    # Final rank: text relevance weighted by decayed confidence
+                    scored.append((text_score * max(eff_conf, 0.05), eff_conf, nid))
             scored.sort(reverse=True)
             return [self.nodes[nid] for _, _, nid in scored[:limit]]
-        else:
-            return [self.nodes[nid] for nid in list(candidates)[:limit]]
+
+        # No query: return highest-confidence nodes first
+        scored = [
+            (decayed_confidence(self.nodes[nid], now=now,
+                                half_life_table=self.half_life_days), nid)
+            for nid in candidates
+        ]
+        scored.sort(reverse=True)
+        return [self.nodes[nid] for _, nid in scored[:limit]]
+
+    def list_contested(self) -> list:
+        """Return all nodes currently flagged as contested, with their conflicts."""
+        out = []
+        for nid, node in self.nodes.items():
+            contested = node.get("contested_with")
+            if contested:
+                out.append({
+                    "id": nid,
+                    "content": node["content"],
+                    "tags": list(node["tags"]),
+                    "created": node["created"],
+                    "contested_with": contested,
+                })
+        return out
 
     def find_by_content(self, content_fragment: str) -> list:
         """Find nodes whose content contains the fragment. For UPDATE/DELETE."""
@@ -320,7 +514,7 @@ class GraphMemory:
         os.replace(tmp, str(filepath))
 
     def load(self, filepath: Path = None):
-        """Load graph from disk."""
+        """Load graph from disk. Forward-migrates older nodes to the temporal schema."""
         filepath = filepath or GRAPH_PATH
         if not filepath.exists():
             return
@@ -330,6 +524,9 @@ class GraphMemory:
         for k, v in data.get("nodes", {}).items():
             nid = int(k)
             v["tags"] = set(v["tags"])
+            # Forward-migrate nodes from pre-temporal schema
+            if "last_confirmed_at" not in v:
+                v["last_confirmed_at"] = v.get("created", time.time())
             self.nodes[nid] = v
             self.type_index[v["type"]].add(nid)
             for tag in v["tags"]:
