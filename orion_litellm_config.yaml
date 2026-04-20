@@ -1,0 +1,57 @@
+# ----------------------------------------------------------------
+# ORION LITELLM PROXY CONFIG - Layer 2 Universal Gateway
+# ----------------------------------------------------------------
+#
+# Launch:
+#     litellm --config orion_litellm_config.yaml --port 4000
+#
+# Then any OpenAI-client tool that you point at http://localhost:4000/v1
+# will have Orion's identity + memory injected into every call.
+#
+# Customize model_list for the providers you actually use.
+# Uncomment Anthropic/Gemini entries and supply your keys via env.
+# ----------------------------------------------------------------
+
+model_list:
+  # Local Orion model (offline-capable, always available when Ollama is up)
+  - model_name: orion-local
+    litellm_params:
+      model: ollama/orion-local
+      api_base: http://localhost:11434
+
+  # DeepSeek-R1-Distill - reasoning-grade local offline fuel
+  - model_name: deepseek-local
+    litellm_params:
+      model: ollama/deepseek-r1:7b
+      api_base: http://localhost:11434
+
+  # Anthropic Claude - uncomment + supply ANTHROPIC_API_KEY to enable
+  # - model_name: claude
+  #   litellm_params:
+  #     model: anthropic/claude-3-5-sonnet-20241022
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+
+  # Google Gemini - uncomment + supply GEMINI_API_KEY to enable
+  # - model_name: gemini
+  #   litellm_params:
+  #     model: gemini/gemini-2.0-flash
+  #     api_key: os.environ/GEMINI_API_KEY
+
+  # OpenAI / GPT - uncomment + supply OPENAI_API_KEY to enable
+  # - model_name: gpt
+  #   litellm_params:
+  #     model: openai/gpt-4o
+  #     api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  # The Orion identity + memory injection hook (defined in orion_litellm_proxy.py).
+  # Any call routed through this proxy gets Orion context prepended to messages.
+  callbacks: orion_litellm_proxy.proxy_handler_instance
+
+  # Drop provider-specific params the target model doesn't support
+  # instead of erroring out. Keeps cross-model calls clean.
+  drop_params: true
+
+general_settings:
+  # Replace this for any non-local deployment.
+  master_key: "sk-orion-local-dev"
