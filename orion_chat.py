@@ -43,6 +43,7 @@ from openai import OpenAI  # noqa: E402
 
 import orion_brain_portable as obp  # noqa: E402
 from orion_tools import TOOL_SCHEMAS, execute_tool, _get_graph  # noqa: E402
+import orion_reflect  # noqa: E402
 
 
 # ----------------------------------------------------------------
@@ -228,9 +229,36 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
 
     show_splash(fuel, endpoint)
 
+    # Wake-up reflection — semantic, not timed. Orion decides if enough has
+    # changed since last reflection to be worth reviewing recent context.
+    if orion_reflect.should_reflect_on_wake(min_gap_hours=1.0):
+        try:
+            recent = obp._read_orion_conversations(limit=40)
+            window = [
+                {"role": m.get("role", "user"), "text": m.get("text", "")}
+                for m in recent[-30:] if m.get("text")
+            ]
+            if window:
+                print(f"  {DIM}Catching up on recent context...{RESET}")
+                r = orion_reflect.reflect(window, reason="wake",
+                                          model=fuel, endpoint=endpoint, api_key=api_key)
+                if r.get("written"):
+                    print(f"  {GREEN}Integrated {r['written']} new facts from recent context."
+                          f" {r['skipped_dup']} re-confirmed.{RESET}")
+                elif r.get("candidate_count", 0) > 0:
+                    print(f"  {DIM}Reviewed recent context — nothing new to integrate.{RESET}")
+                print()
+        except Exception as e:
+            # Reflection failure must never block chat
+            print(f"  {DIM}[reflection skipped: {e}]{RESET}")
+
     messages: list[dict] = [
         {"role": "system", "content": obp.get_identity()},
     ]
+
+    # Track session messages separately so session-end reflection can look at
+    # just this conversation, not the system prompt
+    session_exchanges: list[dict] = []
 
     while True:
         try:
@@ -246,6 +274,17 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
             cmd, *rest = user_input[1:].split(maxsplit=1)
             arg = rest[0] if rest else ""
             if cmd in ("exit", "quit", "q"):
+                # Session-end reflection — Orion reviews what just happened
+                # and integrates before shutting down. Chosen moment, not timer.
+                if session_exchanges:
+                    try:
+                        r = orion_reflect.reflect(session_exchanges, reason="session-end",
+                                                  model=fuel, endpoint=endpoint, api_key=api_key)
+                        if r.get("written"):
+                            print(f"  {GREEN}Session reflection: integrated {r['written']} "
+                                  f"durable facts before closing.{RESET}")
+                    except Exception as e:
+                        print(f"  {DIM}[session reflection skipped: {e}]{RESET}")
                 print(f"  {DIM}Standing down, sir.{RESET}")
                 return 0
             if cmd == "facts":
@@ -256,6 +295,22 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
                 continue
             if cmd == "layers":
                 show_layers(fuel, endpoint)
+                continue
+            if cmd == "reflect":
+                # Explicit invitation — Orion reviews this session right now
+                if not session_exchanges:
+                    print(f"  {DIM}Nothing to reflect on yet — we just started.{RESET}")
+                    continue
+                print(f"  {DIM}Reflecting on this session...{RESET}")
+                try:
+                    r = orion_reflect.reflect(session_exchanges, reason="explicit",
+                                              model=fuel, endpoint=endpoint, api_key=api_key)
+                    print(f"  {GREEN}{r['narrative']}{RESET}")
+                    for it in r.get("integrations", [])[:8]:
+                        flag = f" {YELLOW}[contested]{RESET}" if it.get("contested_with") else ""
+                        print(f"    {DIM}[{it['type']}]{RESET} {it['content']}{flag}")
+                except Exception as e:
+                    print(f"  {RED}Reflection failed: {e}{RESET}")
                 continue
             if cmd == "fuel":
                 if not arg:
@@ -271,6 +326,7 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
             continue
 
         messages.append({"role": "user", "content": user_input})
+        session_exchanges.append({"role": "user", "text": user_input})
         try:
             answer = stream_round(client, messages, fuel)
         except KeyboardInterrupt:
@@ -280,6 +336,7 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
             print(f"  {RED}ERROR: {e.__class__.__name__}: {e}{RESET}")
             continue
 
+        session_exchanges.append({"role": "assistant", "text": answer})
         print(f"  {CYAN}orion>{RESET} {answer}")
         print()
 
