@@ -60,19 +60,43 @@ from orion_brain_portable import (
 
 TOOLS = [
     {
-        "name": "orion_remember",
+        "name": "orion_recall",
         "description": (
-            "Query Orion's multi-layer memory (graph + knowledge index). "
-            "Returns recalled context from graph memory (microsecond tag-indexed) "
-            "and BM25-scored knowledge articles. Use this to find what Orion knows "
-            "about a topic before taking action."
+            "Search Orion's memory for facts relevant to a query. Use this ANY time "
+            "you need information about the user, their devices, projects, "
+            "preferences, or past conversations. Results are ranked by decayed "
+            "confidence — stale facts sink below fresh ones. Nodes flagged as "
+            "contested are surfaced with a marker."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query — a topic, question, or keyword to recall memory about."
+                    "description": "Natural-language search query."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return. Default 5.",
+                    "default": 5
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "orion_remember",
+        "description": (
+            "LEGACY alias for orion_recall with query-only input. Prefer orion_recall. "
+            "Kept for backward compatibility with clients configured before the "
+            "unified schema. Returns recalled context from graph + knowledge."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query."
                 }
             },
             "required": ["query"]
@@ -81,24 +105,70 @@ TOOLS = [
     {
         "name": "orion_memorize",
         "description": (
-            "Store a fact, learning, preference, or decision into Orion's memory. "
-            "Uses Mem0 classification pattern (ADD/UPDATE/DELETE/NOOP) — no blind appends. "
-            "The brain classifies whether this is new info, an update, a deletion, or noise."
+            "Save a new fact to Orion's long-term memory. Accepts either `content` "
+            "(preferred) or `fact` (legacy) as the text to remember. Supports "
+            "optional `tags` list and `type`. If the new fact conflicts with a "
+            "prior node on the same subject, both are flagged for user resolution "
+            "via orion_list_contested."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The fact, stated as a clear sentence. (Preferred parameter.)"
+                },
                 "fact": {
                     "type": "string",
-                    "description": "The fact, learning, or observation to memorize."
+                    "description": "Legacy alias for content. Use content instead when possible."
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Short tags for indexed recall (e.g., ['phone','contact'])."
                 },
                 "type": {
                     "type": "string",
-                    "enum": ["fact", "preference", "decision", "skill", "observation"],
-                    "description": "Type of memory to store. Defaults to 'fact'."
+                    "description": (
+                        "Node type drives temporal decay. One of: identity, "
+                        "preference, hardware, person, skill, fact, network, "
+                        "service, project, task, ephemeral."
+                    ),
+                    "default": "fact"
+                }
+            }
+        }
+    },
+    {
+        "name": "orion_list_contested",
+        "description": (
+            "List memories currently flagged as contested — two facts on the "
+            "same subject that disagree. Use this when the user asks what is "
+            "conflicted, or when you suspect stale information before answering."
+        ),
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "orion_resolve_contradiction",
+        "description": (
+            "Commit a user's resolution of a contradiction. The winner keeps its "
+            "confidence; losers are archived (never deleted) and hidden from "
+            "recall unless explicitly requested."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "winner_id": {
+                    "type": "integer",
+                    "description": "The node id of the fact that wins."
+                },
+                "loser_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Node ids to archive as superseded."
                 }
             },
-            "required": ["fact"]
+            "required": ["winner_id", "loser_ids"]
         }
     },
     {
@@ -248,6 +318,7 @@ def _get_synthesis() -> SynthesisEngine:
 # ═══════════════════════════════════════════════════════════════
 
 def _handle_orion_remember(args: dict) -> list:
+    """Legacy recall handler. Accepts only `query`. Kept for backward compat."""
     query = args.get("query", "")
     if not query:
         return [{"type": "text", "text": "Error: query is required."}]
@@ -263,47 +334,117 @@ def _handle_orion_remember(args: dict) -> list:
     return [{"type": "text", "text": f"{context}\n\n[recall: {elapsed_us:.0f}us]"}]
 
 
+def _handle_orion_recall(args: dict) -> list:
+    """Unified recall handler — matches orion_tools.py schema.
+
+    Accepts `query` (required) and `limit` (optional, default 5). Returns the
+    same decayed-confidence-ranked results that orion_tool_chat.py sees, so
+    MCP clients and local tool-calling clients share identical behavior.
+    """
+    query = args.get("query", "")
+    limit = int(args.get("limit", 5))
+    if not query:
+        return [{"type": "text", "text": "Error: query is required."}]
+
+    brain = _get_brain()
+    t0 = time.perf_counter()
+    nodes = brain.graph.recall(query=query, limit=limit)
+    elapsed_us = (time.perf_counter() - t0) * 1_000_000
+
+    if not nodes:
+        return [{"type": "text", "text": f"No memories found for: {query}\n[recall: {elapsed_us:.0f}us]"}]
+
+    lines = []
+    for n in nodes:
+        flag = " [contested]" if n.get("contested_with") else ""
+        lines.append(f"- {n['content']}{flag}")
+    return [{"type": "text", "text": "\n".join(lines) + f"\n\n[recall: {elapsed_us:.0f}us]"}]
+
+
 def _handle_orion_memorize(args: dict) -> list:
-    fact = args.get("fact", "")
-    if not fact:
-        return [{"type": "text", "text": "Error: fact is required."}]
+    """Unified memorize handler — accepts legacy `fact` OR new `content`+`tags`.
+
+    Legacy schema (MCP pre-unification): {fact, type}
+    Unified schema (orion_tools.py):      {content, tags, type}
+    Both land in the same GraphMemory write, identical node structure.
+    """
+    content = args.get("content") or args.get("fact") or ""
+    if not content:
+        return [{"type": "text", "text": "Error: content (or fact) is required."}]
 
     mem_type = args.get("type", "fact")
+    provided_tags = args.get("tags") or []
     brain = _get_brain()
 
-    # Use memorize with a synthetic response that includes the type
-    response = f"[MCP memorize] Storing {mem_type}: {fact}"
-    action = brain.memorize(fact, response, interface="mcp")
-
-    # Also store directly in graph with explicit type
-    tags = []
     from orion_brain_portable import extract_tags
-    tags = extract_tags(fact, max_tags=8)
+    auto_tags = extract_tags(content, max_tags=8)
+    # Merge: user-provided tags take priority, auto-tags fill in
+    tags = list(dict.fromkeys(list(provided_tags) + auto_tags))
     if mem_type not in tags:
         tags.append(mem_type)
 
-    brain.graph.store(
-        content=fact,
+    # Use memorize with synthetic response so existing Mem0-style classification still runs
+    response = f"[MCP memorize] Storing {mem_type}: {content}"
+    action = brain.memorize(content, response, interface="mcp")
+
+    # Explicit graph store — unified schema
+    node_id = brain.graph.store(
+        content=content,
         node_type=mem_type,
         confidence=0.9,
         tags=tags,
     )
     brain.save()
 
-    # Trigger reflex if this looks like a correction or important signal
-    fact_lower = fact.lower()
-    if any(w in fact_lower for w in ["never", "always", "don't", "stop", "wrong",
-                                      "correction", "important", "critical", "emergency"]):
-        reflex(fact, source="mcp-memorize")
+    # Reflex trigger for corrections / important signals
+    c_lower = content.lower()
+    if any(w in c_lower for w in ["never", "always", "don't", "stop", "wrong",
+                                   "correction", "important", "critical", "emergency"]):
+        reflex(content, source="mcp-memorize")
 
     action_type = action.get("action", "ADD") if isinstance(action, dict) else "ADD"
+    contested = brain.graph.nodes.get(node_id, {}).get("contested_with") or []
     return [{"type": "text", "text": json.dumps({
         "status": "stored",
+        "node_id": node_id,
         "classification": action_type,
         "type": mem_type,
-        "fact": fact,
+        "content": content,
         "tags": tags,
+        "contested_with": contested,
     }, indent=2)}]
+
+
+def _handle_orion_list_contested(args: dict) -> list:
+    """Surface all nodes currently flagged as contested for user resolution."""
+    brain = _get_brain()
+    contested = brain.graph.list_contested()
+    if not contested:
+        return [{"type": "text", "text": "No contested memories."}]
+    lines = []
+    for c in contested:
+        lines.append(f"- id={c['id']}: {c['content']} (contested_with={c['contested_with']})")
+    return [{"type": "text", "text": "\n".join(lines)}]
+
+
+def _handle_orion_resolve_contradiction(args: dict) -> list:
+    """Commit a user's resolution of a contradiction."""
+    winner_id = args.get("winner_id")
+    loser_ids = args.get("loser_ids") or []
+    if winner_id is None:
+        return [{"type": "text", "text": "Error: winner_id is required."}]
+    try:
+        winner_id = int(winner_id)
+        loser_ids = [int(x) for x in loser_ids]
+    except (TypeError, ValueError):
+        return [{"type": "text", "text": "Error: winner_id and loser_ids must be integers."}]
+
+    brain = _get_brain()
+    ok = brain.graph.resolve_contradiction(winner_id, loser_ids)
+    if not ok:
+        return [{"type": "text", "text": f"Error: winner node {winner_id} not found."}]
+    brain.save()
+    return [{"type": "text", "text": f"Resolved. Winner: {winner_id}. Archived: {loser_ids}."}]
 
 
 def _handle_orion_user_model(args: dict) -> list:
@@ -464,8 +605,14 @@ def _handle_orion_heartbeat(args: dict) -> list:
 
 # Handler dispatch table
 _HANDLERS = {
-    "orion_remember": _handle_orion_remember,
+    # Unified tool surface (matches orion_tools.py)
+    "orion_recall": _handle_orion_recall,
     "orion_memorize": _handle_orion_memorize,
+    "orion_list_contested": _handle_orion_list_contested,
+    "orion_resolve_contradiction": _handle_orion_resolve_contradiction,
+    # Legacy name — same handler as orion_recall but preserves old `query`-only schema
+    "orion_remember": _handle_orion_remember,
+    # Synthesis / meta tools
     "orion_user_model": _handle_orion_user_model,
     "orion_project_state": _handle_orion_project_state,
     "orion_synthesize": _handle_orion_synthesize,
@@ -536,6 +683,20 @@ def handle_message(msg: dict) -> dict:
     if method == "tools/call":
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
+
+        # Proof-of-life log: every real tool call lands here with timestamp.
+        # If this log stays empty while a client "answers" Orion questions,
+        # that client is using prompt injection, not real brain access.
+        try:
+            import os as _os
+            _log_path = _os.path.expanduser("~/.orion/mcp_calls.log")
+            _os.makedirs(_os.path.dirname(_log_path), exist_ok=True)
+            _stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            _args_repr = json.dumps(tool_args)[:500]
+            with open(_log_path, "a", encoding="utf-8") as _f:
+                _f.write(f"[{_stamp}] tools/call {tool_name} args={_args_repr}\n")
+        except Exception:
+            pass  # Logging must never break the real call
 
         handler = _HANDLERS.get(tool_name)
         if not handler:
