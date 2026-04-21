@@ -886,6 +886,16 @@ def main():
         sys.argv = ["orion chat"] + args[1:]
         return orion_chat._cli() or 0
 
+    # Ingest existing AI history into the brain
+    if args[0].lower() == "ingest":
+        try:
+            import orion_ingest
+        except ImportError as e:
+            print(f"{RED}  orion_ingest module not found: {e}{RESET}")
+            return 1
+        sys.argv = ["orion ingest"] + args[1:]
+        return orion_ingest._cli() or 0
+
     # First arg is the fuel name
     fuel_key = args[0].lower()
     extra_args = args[1:]
