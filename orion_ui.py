@@ -342,8 +342,11 @@ class SetupWizard:
             self.page_scanning,
             self.page_fuel_report,
             self.page_tier_select,
+            self.page_ingest,
             self.page_complete,
         ]
+        # Populated by page_ingest for display on page_complete
+        self.ingest_report = None
 
         self.show_page(0)
 
@@ -520,7 +523,7 @@ class SetupWizard:
         self.nav_buttons(frame, next_text="Configure Orion >>", next_cmd=self.do_setup)
 
     def do_setup(self):
-        """Save config, inject context files, show completion."""
+        """Save config, inject context files, then advance to memory absorption."""
         config = {
             "tier": self.selected_tier.get(),
             "portable": False,
@@ -534,7 +537,7 @@ class SetupWizard:
         }
 
         # Create data dir
-        for sub in ["memory", "knowledge", "skills", "conversations"]:
+        for sub in ["memory", "knowledge", "skills", "conversations", "brain", "identity"]:
             os.makedirs(os.path.join(config["data_dir"], sub), exist_ok=True)
 
         # Save config
@@ -547,6 +550,143 @@ class SetupWizard:
 
         self.next_page()
 
+    # -- PAGE: Ingest ---- absorb existing AI history at install -----------
+    def page_ingest(self):
+        """Run the ambient memory-absorption pass.
+
+        Honors the ambient-not-invoked rule: no buttons, no configuration.
+        Orion quietly orients itself by reading every AI conversation log
+        on this machine and pulling in durable facts. The deep LLM pass is
+        intentionally NOT run here — the heuristic pass is fast enough
+        that the wizard feels instant, and reflection at future orion chat
+        wakes will keep deepening what this pass establishes.
+        """
+        frame = tk.Frame(self.root, bg=BG)
+        frame.pack(fill="both", expand=True, padx=40, pady=25)
+
+        tk.Label(frame, text="Absorbing Your AI Memory",
+                 font=self.heading_font, fg=ACCENT, bg=BG).pack(anchor="w")
+        tk.Label(frame, text=(
+                    "Orion is reading your existing AI conversation history so it "
+                    "doesn't start from zero. This is not a network call — everything "
+                    "is local to this machine."),
+                 font=self.small_font, fg=TEXT3, bg=BG,
+                 wraplength=620, justify="left").pack(anchor="w", pady=(2, 15))
+
+        # Live status lines
+        status_frame = tk.Frame(frame, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        status_frame.pack(fill="x", pady=5, ipady=10, ipadx=12)
+        self.ingest_status = tk.Label(status_frame, text="Initializing...",
+                                      font=self.mono_font, fg=TEXT, bg=CARD,
+                                      anchor="w", justify="left")
+        self.ingest_status.pack(anchor="w", padx=10)
+        self.ingest_detail = tk.Label(status_frame, text="",
+                                      font=self.small_font, fg=TEXT2, bg=CARD,
+                                      anchor="w", justify="left", wraplength=580)
+        self.ingest_detail.pack(anchor="w", padx=10, pady=(4, 0))
+
+        self.ingest_progress = ttk.Progressbar(frame, mode="indeterminate", length=620)
+        self.ingest_progress.pack(pady=12)
+        self.ingest_progress.start(15)
+
+        def _set_status(main, detail=""):
+            try:
+                self.ingest_status.config(text=main)
+                self.ingest_detail.config(text=detail)
+            except Exception:
+                pass
+
+        def _push(main, detail=""):
+            self.root.after(0, lambda: _set_status(main, detail))
+
+        def worker():
+            # Lazy import to keep wizard startable even if orion_ingest is
+            # missing — absorption is nice-to-have, not must-have.
+            try:
+                import orion_ingest
+            except Exception as e:
+                _push("Memory absorption skipped.",
+                      f"orion_ingest unavailable: {e}")
+                self.ingest_report = {"error": str(e)}
+                self.root.after(1200, self.next_page)
+                return
+
+            _push("Scanning AI conversation histories...",
+                  "Claude Code, Codex, Gemini, Letta, Ollama, Orion's own logs, "
+                  "memory files, knowledge base, context files")
+
+            sources_seen = {}
+            heur_count = {"n": 0}
+
+            def progress_cb(msg):
+                # orion_ingest emits short status strings; render as detail
+                msg_lower = msg.lower()
+                if msg_lower.startswith("read "):
+                    # "read N messages from <source>"
+                    try:
+                        parts = msg.split()
+                        n = int(parts[1])
+                        src = parts[-1]
+                        sources_seen[src] = n
+                        summary = ", ".join(f"{k} {v}" for k, v in sources_seen.items())
+                        _push("Scanning AI conversation histories...", summary)
+                    except Exception:
+                        _push("Scanning...", msg)
+                elif "heuristic pass" in msg_lower:
+                    _push("Extracting durable facts...",
+                          "Reading user-authored statements from recent conversations.")
+                elif "wrote" in msg_lower:
+                    # "wrote N new facts (X contested, Y re-confirmed)"
+                    _push("Finalizing...", msg)
+
+            try:
+                report = orion_ingest.run(
+                    sources=None,           # every source we know about
+                    deep=False,             # heuristic only at install — fast
+                    deep_only=False,
+                    dry_run=False,
+                    max_per_source=1000,
+                    progress=progress_cb,
+                )
+            except Exception as e:
+                _push("Memory absorption error.",
+                      f"{type(e).__name__}: {e}  (wizard will continue regardless)")
+                self.ingest_report = {"error": str(e)}
+                self.root.after(1500, self.next_page)
+                return
+
+            self.ingest_report = report
+
+            total_msgs = report.get("total_messages", 0)
+            written = report.get("written", 0)
+            reconfirmed = report.get("skipped_dup", 0)
+            contested = report.get("contested", 0)
+
+            if total_msgs == 0:
+                _push("No prior AI history found on this machine.",
+                      "That's fine — Orion starts fresh. New conversations will "
+                      "populate the brain as you use it.")
+            else:
+                detail = (
+                    f"Read {total_msgs} user-authored segments. "
+                    f"Integrated {written} new durable facts"
+                    + (f", re-confirmed {reconfirmed}" if reconfirmed else "")
+                    + (f", flagged {contested} contested" if contested else "")
+                    + "."
+                )
+                _push("Memory absorption complete.", detail)
+
+            # Stop progress bar visually
+            try:
+                self.root.after(0, self.ingest_progress.stop)
+            except Exception:
+                pass
+
+            # Auto-advance after a short pause so the user sees the summary
+            self.root.after(2500, self.next_page)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     # -- PAGE: Complete ---------------------------------------------------
     def page_complete(self):
         frame = tk.Frame(self.root, bg=BG)
@@ -558,9 +698,22 @@ class SetupWizard:
         tier_names = {"personal": "Personal", "developer": "Developer", "arsenal": "Full Arsenal"}
         active_fuel = [v["display"] for v in self.fuel.values() if v.get("available")]
 
+        # Memory line reflects what ingest actually did, not a static claim
+        rep = self.ingest_report or {}
+        written = rep.get("written", 0)
+        total = rep.get("total_messages", 0)
+        if written > 0:
+            memory_line = (f"Loaded {written} durable fact(s) from {total} prior "
+                           f"AI conversation segment(s). Keeps growing as you use it.")
+        elif total > 0:
+            memory_line = (f"Scanned {total} prior AI conversation segment(s); "
+                           f"nothing obvious to absorb yet. Grows with use.")
+        else:
+            memory_line = "Starts fresh on this machine. Grows with every conversation."
+
         info = [
             ("Brain", "orion_server.py -- Orion's intelligence core"),
-            ("Memory", "Starts empty, grows with every conversation"),
+            ("Memory", memory_line),
             ("Fuel", ", ".join(active_fuel) if active_fuel else "None -- install Ollama for free local AI"),
             ("Dispatch", "20 instant commands (status, email, scan, docker, disk, and more) -- <2s execution"),
             ("Skills", "20 base capabilities (email, security, system management) -- grows with use"),
