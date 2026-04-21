@@ -874,6 +874,18 @@ def main():
         print(__doc__)
         return 0
 
+    # Unified Frankenstein chat mode — every layer active in one loop
+    if args[0].lower() == "chat":
+        try:
+            import orion_chat
+        except ImportError as e:
+            print(f"{RED}  orion_chat module not found: {e}{RESET}")
+            print(f"  Is openai installed? Try: pip install openai")
+            return 1
+        # Forward remaining args to orion_chat._cli() via sys.argv
+        sys.argv = ["orion chat"] + args[1:]
+        return orion_chat._cli() or 0
+
     # First arg is the fuel name
     fuel_key = args[0].lower()
     extra_args = args[1:]
