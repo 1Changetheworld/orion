@@ -394,6 +394,17 @@ def run_setup():
         json.dump(config, f, indent=2)
     print(f"    {c(GREEN, '[OK]')} Config saved: {config_path}")
 
+    # Step 8b: Inject context files into home dir so detected AI CLIs see Orion.
+    # Without this, the preflight's "home context files present" check fails
+    # right after a fresh install via the CLI wizard.
+    try:
+        import orion_ui as _ui
+        injected = _ui.inject_context(fuel if isinstance(fuel, dict) else {})
+        if injected:
+            print(f"    {c(GREEN, '[OK]')} Context files injected: {', '.join(name for name, _ in injected[:4])}")
+    except Exception as _e:
+        print(f"    {c(YELLOW, '[!]')} Context file injection skipped: {_e.__class__.__name__}")
+
     # Step 9: Create .gitignore for user data
     gitignore_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".gitignore")
     gitignore_entries = [
