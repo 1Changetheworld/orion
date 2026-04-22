@@ -134,13 +134,33 @@ if ! command -v ollama >/dev/null 2>&1; then
         info "Running Ollama's official installer (curl | sh)"
         curl -fsSL https://ollama.com/install.sh | sh
         ok "Ollama installed"
-        ask "Pull a small ARM-friendly model (phi3:mini, ~2.2GB) now? [y/N]:"
-        if [[ "$_ans" =~ ^[Yy]$ ]]; then
-            ollama pull phi3:mini
-        fi
     fi
 else
     ok "Ollama already installed"
+fi
+
+# Model selection — orion chat requires a tool-capable model.
+# phi3:mini is small but doesn't reliably do tool calling, so chat mode
+# won't work with it. Offer the real-capable options, warn about phi3:mini.
+if command -v ollama >/dev/null 2>&1; then
+    say ""
+    say "  ${DIM}Orion chat needs a tool-capable model. Pick one:${RESET}"
+    say "    1) qwen3:8b        ${DIM}~5 GB  — recommended, works on 8GB+ RAM${RESET}"
+    say "    2) qwen3:14b       ${DIM}~9 GB  — best quality, 16GB+ RAM${RESET}"
+    say "    3) llama3.1:8b     ${DIM}~5 GB  — Meta, similar size to qwen3:8b${RESET}"
+    say "    4) deepseek-r1:7b  ${DIM}~4.7 GB — reasoning focus${RESET}"
+    say "    5) phi3:mini       ${DIM}~2.2 GB — small, but chat mode won't work (no tool calls)${RESET}"
+    say "    6) skip            ${DIM}— pull a model later with: ollama pull <name>${RESET}"
+    ask "Pull which model? [1-6]:"
+    case "$_ans" in
+        1|"") ollama pull qwen3:8b ;;
+        2)    ollama pull qwen3:14b ;;
+        3)    ollama pull llama3.1:8b ;;
+        4)    ollama pull deepseek-r1:7b ;;
+        5)    ollama pull phi3:mini
+              warn "phi3:mini installed — chat mode won't work. Pull qwen3:8b to enable chat.";;
+        *)    say "  ${DIM}Skipped. Pull later with: ollama pull qwen3:8b${RESET}" ;;
+    esac
 fi
 
 # ----------------------------------------------------------------
