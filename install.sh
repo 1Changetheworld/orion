@@ -192,6 +192,20 @@ say ""
 
 say ""
 ok "Install complete."
+say ""
+
+# If ~/.local/bin isn't on the current PATH, the just-written launcher
+# won't be callable by name in THIS shell — bash only loads .bashrc for
+# new shells. Detect and tell the user clearly.
+if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then
+    warn "Your current shell doesn't yet have ~/.local/bin on PATH."
+    say "  ${DIM}Run one of these before 'orion chat' works by name:${RESET}"
+    say "      source ~/.bashrc          ${DIM}# reload in this shell${RESET}"
+    say "      exec bash -l              ${DIM}# or start a fresh login shell${RESET}"
+    say "  ${DIM}Or use the full path:${RESET}  ~/.local/bin/orion chat"
+    say ""
+fi
+
 say "  ${DIM}Start talking to Orion:${RESET}  orion chat"
 say "  ${DIM}Re-run health check:${RESET}     python orion_preflight.py"
 say ""
