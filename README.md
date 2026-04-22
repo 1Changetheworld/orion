@@ -146,6 +146,7 @@ Headset Mic → Voice Activity Detection → Whisper STT (GPU) → Orion Brain �
 ```bash
 git clone https://github.com/1Changetheworld/orion.git
 cd orion
+pip install -r requirements.txt
 python setup.py
 ```
 
@@ -154,6 +155,7 @@ python setup.py
 cd /path/to/drive
 git clone https://github.com/1Changetheworld/orion.git
 cd orion
+pip install -r requirements.txt
 python setup.py --portable
 ```
 
@@ -162,6 +164,33 @@ The setup wizard detects your OS, scans for available AI models, and asks which 
 - **Personal** — brain + memory + your AI models. Simple. Just works.
 - **Developer** — add fuel routing, CLI access, custom skills, device mesh.
 - **Full Arsenal** — add security scanning, OSINT, offline knowledge, hardware pipelines.
+
+### Verify your install
+
+After setup, run the preflight check to confirm everything composes:
+
+```bash
+python orion_preflight.py
+```
+
+Green rows = healthy. Yellow = usable but has known gaps (usually an AI
+tool on your host that speaks MCP but doesn't have `orion-brain` wired
+— fix with `/selfcheck` inside `orion chat`). Red = broken; address
+before using the brain.
+
+### Prove cross-model memory works (the real test)
+
+If you have two AI CLI tools installed (Codex, Gemini, Claude Code,
+etc.) and they have `orion-brain` wired, this is the glass-switching
+test:
+
+1. In one terminal: `codex` (or `gemini`, or any MCP-enabled AI CLI).
+   Type naturally: `remember my favorite color is teal`. Close.
+2. In a different terminal: `gemini` (or any other wired tool).
+   Type naturally: `what's my favorite color?`
+3. The second tool should answer `teal` without you ever mentioning
+   Orion, memory, or tool names. If it does — the brain crossed the
+   glass. That's the whole product in one sentence.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full details.
 

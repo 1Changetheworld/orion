@@ -19,15 +19,31 @@ Install Orion directly on your computer. Your brain lives on your machine and un
 - Skill system that grows with every interaction
 - All 9 operational modes
 
-**Setup:**
+**Setup (Windows / macOS manual):**
 ```
-# Clone the repo
 git clone https://github.com/1Changetheworld/orion.git
 cd orion
-
-# Run the setup wizard
+pip install -r requirements.txt
 python setup.py
+python orion_preflight.py    # verify
 ```
+
+**Setup (Linux / macOS bootstrapped):**
+```
+git clone https://github.com/1Changetheworld/orion.git
+cd orion
+bash install.sh
+```
+
+The bootstrapper does the same work as the manual steps plus:
+- Detects your package manager (apt, dnf, pacman, brew)
+- Installs python3 + tkinter + venv if missing (asks first)
+- Creates an isolated `.venv` inside the repo
+- Offers to install Ollama for free local fuel
+- Writes an `orion` launcher to `~/.local/bin/orion` so you can type `orion chat` from any shell
+- Runs the setup wizard and preflight check at the end
+
+On a Raspberry Pi (ORIONS HOME) the bootstrapper is the recommended path.
 
 The setup wizard will:
 1. Detect your operating system

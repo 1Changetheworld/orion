@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Orion Dispatch — Command execution layer.
 Any interface can call these. Not tied to Telegram, iMessage, or any specific channel.
-Runs shell commands on COMMAND, dispatches to mesh devices via SSH.
+Runs shell commands locally and dispatches to configured mesh devices via SSH.
 """
 import subprocess
 import time
@@ -51,13 +51,18 @@ def status():
 
 
 def mesh():
-    """Ping all mesh devices."""
+    """Ping all mesh devices.
+
+    Example mesh topology — real deployments customize by editing the
+    devices list below or by supplying hosts via a config file. Names and
+    IPs here are placeholders, not real infrastructure.
+    """
     results = []
     devices = [
-        ("COMMAND", "{COMMAND_IP}", "{SSH_USER}", "Central hub"),
-        ("FORGE", "{FORGE_IP}", None, "Workstation"),
-        ("OUTPOST", "{OUTPOST_IP}", "outpost", "Vision agent"),
-        ("ASUS", "{ASUS_IP}", "asus", "Security"),
+        ("primary-hub", "{PRIMARY_HUB_IP}", "{SSH_USER}", "Central hub"),
+        ("workstation", "{WORKSTATION_IP}", None, "Dev workstation"),
+        ("vision-node", "{VISION_IP}", "{VISION_USER}", "Vision agent"),
+        ("security-node", "{SECURITY_IP}", "{SECURITY_USER}", "Security"),
     ]
     for name, ip, user, role in devices:
         out, elapsed = run_cmd(f"ping -c 1 -W 2 {ip} >/dev/null 2>&1 && echo UP || echo DOWN", timeout=5)
@@ -82,7 +87,7 @@ def agents():
 
 
 # ═══════════════════════════════════════════════════════════════
-# SECURITY COMMANDS (dispatched to ASUS/Kali)
+# SECURITY COMMANDS (dispatched to configured security node)
 # ═══════════════════════════════════════════════════════════════
 
 def scan(target):
@@ -91,22 +96,22 @@ def scan(target):
 
 
 def portscan(target):
-    out, elapsed = ssh_cmd("{ASUS_IP}", "asus", f"nmap -F {target} 2>/dev/null", timeout=120)
+    out, elapsed = ssh_cmd("{SECURITY_IP}", "{SECURITY_USER}", f"nmap -F {target} 2>/dev/null", timeout=120)
     return f"Port scan {target} ({elapsed}s):\n{out}"
 
 
 def vulnscan(target):
-    out, elapsed = ssh_cmd("{ASUS_IP}", "asus", f"nuclei -u {target} -severity medium,high,critical 2>/dev/null", timeout=300)
+    out, elapsed = ssh_cmd("{SECURITY_IP}", "{SECURITY_USER}", f"nuclei -u {target} -severity medium,high,critical 2>/dev/null", timeout=300)
     return f"Vulnerability scan {target} ({elapsed}s):\n{out}"
 
 
 def webscan(url):
-    out, elapsed = ssh_cmd("{ASUS_IP}", "asus", f"nikto -h {url} -maxtime 120 2>/dev/null", timeout=180)
+    out, elapsed = ssh_cmd("{SECURITY_IP}", "{SECURITY_USER}", f"nikto -h {url} -maxtime 120 2>/dev/null", timeout=180)
     return f"Web scan {url} ({elapsed}s):\n{out}"
 
 
 def sslcheck(domain):
-    out, elapsed = ssh_cmd("{ASUS_IP}", "asus", f"sslscan {domain} 2>/dev/null", timeout=60)
+    out, elapsed = ssh_cmd("{SECURITY_IP}", "{SECURITY_USER}", f"sslscan {domain} 2>/dev/null", timeout=60)
     return f"SSL check {domain} ({elapsed}s):\n{out}"
 
 
@@ -116,7 +121,7 @@ def headers(url):
 
 
 def subdomains(domain):
-    out, elapsed = ssh_cmd("{ASUS_IP}", "asus", f"subfinder -d {domain} -silent 2>/dev/null | head -30", timeout=120)
+    out, elapsed = ssh_cmd("{SECURITY_IP}", "{SECURITY_USER}", f"subfinder -d {domain} -silent 2>/dev/null | head -30", timeout=120)
     return f"Subdomains for {domain} ({elapsed}s):\n{out}"
 
 
@@ -125,7 +130,7 @@ def subdomains(domain):
 # ═══════════════════════════════════════════════════════════════
 
 def dolphin(prompt):
-    """Uncensored AI query via dolphin-mistral on FORGE."""
+    """Uncensored local-model query via configured workstation's Ollama."""
     out, elapsed = run_cmd(
         f'curl -s --max-time 120 http://{FORGE_IP}:11434/api/generate '
         f'-d \'{{"model":"dolphin-mistral:7b","prompt":"{prompt[:500]}","stream":false}}\' '
@@ -142,10 +147,10 @@ def dolphin(prompt):
 def dispatch(device, command):
     """Execute any command on any mesh device."""
     devices = {
-        "command": ("{COMMAND_IP}", "{SSH_USER}"),
-        "forge": ("{FORGE_IP}", "jeng1"),
-        "outpost": ("{OUTPOST_IP}", "outpost"),
-        "asus": ("{ASUS_IP}", "asus"),
+        "primary-hub": ("{PRIMARY_HUB_IP}", "{SSH_USER}"),
+        "workstation": ("{WORKSTATION_IP}", "{WORKSTATION_USER}"),
+        "vision-node":  ("{VISION_IP}", "{VISION_USER}"),
+        "security-node": ("{SECURITY_IP}", "{SECURITY_USER}"),
     }
     dev = devices.get(device.lower())
     if not dev:
@@ -184,7 +189,7 @@ def ip():
 
 
 # ═══════════════════════════════════════════════════════════════
-# COMMAND ROUTER — called by the brain when it detects an action
+# DISPATCH ROUTER — called by the brain when it detects an action
 # ═══════════════════════════════════════════════════════════════
 
 DISPATCH_MAP = {

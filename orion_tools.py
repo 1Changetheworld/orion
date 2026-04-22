@@ -187,22 +187,75 @@ def execute_tool(name: str, arguments: dict[str, Any] | str) -> str:
         content = arguments.get("content", "").strip()
         if not content:
             return "ERROR: content required"
+
+        raw_type = arguments.get("type", "fact")
+        raw_tags = list(arguments.get("tags", []) or [])
+
+        # --- Ontology discipline (from research round-3 ontologist) ---
+        # Lazy import so this tool still works if orion_ontology is unavailable
+        try:
+            import orion_ontology as ont
+            existing_types = {n.get("type", "?") for n in g.nodes.values()}
+            accepted, reason = ont.validate_node_type(raw_type, existing_types=existing_types)
+            if not accepted:
+                # Auto-demote to closest canonical type + preserve subtype as tag
+                # (Innovation answer: cap is not a wall, it's a migration signal)
+                demoted_type = "fact"  # safest default
+                raw_tags = list(set(raw_tags) | {ont.as_subtype_tag(raw_type)})
+                note = (
+                    f"[ontology: type '{raw_type}' rejected ({reason}); "
+                    f"auto-demoted to '{demoted_type}' + tag '{ont.as_subtype_tag(raw_type)}']"
+                )
+                raw_type = demoted_type
+            else:
+                note = ""
+        except Exception:
+            ont = None
+            note = ""
+
+        # --- Entity-as-entity fast path ---
+        # If type is entity, route through resolve_entity so the bias-toward-NEW
+        # + alias-merging + last_seen-update discipline runs.
+        if ont and raw_type == ont.ENTITY_TYPE:
+            try:
+                summary = next(
+                    (t[len("summary:"):] for t in raw_tags if isinstance(t, str) and t.startswith("summary:")),
+                    "",
+                )
+                extra_aliases = [t[len("alias:"):] for t in raw_tags
+                                 if isinstance(t, str) and t.startswith("alias:")]
+                nid = ont.resolve_entity(g, content, summary=summary, extra_aliases=extra_aliases)
+                try:
+                    g.save()
+                except Exception as e:
+                    return f"Stored entity as node {nid} (persist failed: {e})"
+                n = g.nodes[nid]
+                return (
+                    f"Resolved entity to node {nid}. "
+                    f"aliases={len(n.get('aliases', []))}, last_seen updated. {note}"
+                ).strip()
+            except Exception as e:
+                # Fall through to generic store if entity-resolution breaks
+                note = (note + f" [entity-resolve fallback: {e.__class__.__name__}]").strip()
+
+        # --- Standard store path (same as before) ---
         nid = g.store(
             content=content,
-            node_type=arguments.get("type", "fact"),
-            tags=list(arguments.get("tags", []) or []),
+            node_type=raw_type,
+            tags=raw_tags,
         )
         try:
             g.save()
         except Exception as e:
-            return f"Stored as node {nid} (but failed to persist: {e})"
+            return f"Stored as node {nid} (but failed to persist: {e}){(' ' + note) if note else ''}"
+
         contested = g.nodes[nid].get("contested_with")
         if contested:
             return (
                 f"Stored as node {nid}. Contradicts existing nodes: "
-                f"{contested}. Surface for user resolution."
+                f"{contested}. Surface for user resolution.{(' ' + note) if note else ''}"
             )
-        return f"Stored as node {nid}."
+        return f"Stored as node {nid}.{(' ' + note) if note else ''}"
 
     if name == "orion_list_contested":
         contested = g.list_contested()

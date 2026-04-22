@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# orion install — Linux / macOS bootstrapper.
+#
+# Does exactly what a new user needs on a fresh machine:
+#   1. Detect the package manager
+#   2. Install Python 3 + tkinter + venv (if missing)
+#   3. Create a venv inside the repo and install pip deps
+#   4. Offer to install Ollama (optional, for free local fuel)
+#   5. Write a bash `orion` launcher to ~/.local/bin/orion
+#   6. Run the setup wizard (python setup.py)
+#
+# What this script does NOT do:
+#   - sudo anything without explicit consent
+#   - modify ~/.bashrc or ~/.zshrc unless user agrees
+#   - install any AI CLI tool other than Ollama (Claude/Codex/Gemini
+#     have their own installers; this script respects that)
+#
+# Usage:
+#   curl -sL <URL>/install.sh | bash     # not recommended, prefer clone
+#   OR after cloning:
+#     cd orion && bash install.sh
+#
+# Tested on: Debian/Ubuntu (apt), Raspberry Pi OS (apt on ARM).
+# Should work on: Fedora (dnf), Arch (pacman), macOS (brew) — with warnings.
+
+set -e
+
+# ----------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+say()   { printf "%b\n" "$*"; }
+info()  { printf "${CYAN}%s${RESET}\n" "$*"; }
+ok()    { printf "${GREEN}✓${RESET}  %s\n" "$*"; }
+warn()  { printf "${YELLOW}!${RESET}  %s\n" "$*"; }
+fail()  { printf "${RED}✗${RESET}  %s\n" "$*" >&2; }
+ask()   { read -r -p "$(printf "${CYAN}?${RESET}  %s " "$*")" _ans; }
+
+# ----------------------------------------------------------------
+# Detect package manager (protocol curation, not distro curation —
+# we care about what it can install, not which distro label)
+# ----------------------------------------------------------------
+
+PKG_MANAGER=""
+PKG_INSTALL=""
+PKG_UPDATE=""
+
+if command -v apt-get >/dev/null 2>&1; then
+    PKG_MANAGER="apt"
+    PKG_INSTALL="sudo apt-get install -y"
+    PKG_UPDATE="sudo apt-get update"
+elif command -v dnf >/dev/null 2>&1; then
+    PKG_MANAGER="dnf"
+    PKG_INSTALL="sudo dnf install -y"
+    PKG_UPDATE="sudo dnf check-update || true"
+elif command -v pacman >/dev/null 2>&1; then
+    PKG_MANAGER="pacman"
+    PKG_INSTALL="sudo pacman -S --noconfirm"
+    PKG_UPDATE="sudo pacman -Sy"
+elif command -v brew >/dev/null 2>&1; then
+    PKG_MANAGER="brew"
+    PKG_INSTALL="brew install"
+    PKG_UPDATE="brew update"
+else
+    fail "No known package manager found (apt, dnf, pacman, brew)."
+    warn "You can still install Orion manually: python3 -m venv venv && venv/bin/pip install -r requirements.txt"
+    exit 1
+fi
+
+info "Detected package manager: $PKG_MANAGER"
+
+# ----------------------------------------------------------------
+# Check and optionally install system packages
+# ----------------------------------------------------------------
+
+NEEDED_SYS_PKGS=()
+
+command -v python3      >/dev/null 2>&1 || NEEDED_SYS_PKGS+=("python3")
+python3 -c "import venv" >/dev/null 2>&1 || NEEDED_SYS_PKGS+=("python3-venv")
+python3 -c "import tkinter" >/dev/null 2>&1 || {
+    case "$PKG_MANAGER" in
+        apt)    NEEDED_SYS_PKGS+=("python3-tk") ;;
+        dnf)    NEEDED_SYS_PKGS+=("python3-tkinter") ;;
+        pacman) NEEDED_SYS_PKGS+=("tk") ;;
+        brew)   ;;  # macOS python usually ships with tk
+    esac
+}
+command -v pip3 >/dev/null 2>&1 || NEEDED_SYS_PKGS+=("python3-pip")
+
+if [ ${#NEEDED_SYS_PKGS[@]} -gt 0 ]; then
+    warn "Missing system packages: ${NEEDED_SYS_PKGS[*]}"
+    ask "Install them now via $PKG_MANAGER? [y/N]:"
+    if [[ "$_ans" =~ ^[Yy]$ ]]; then
+        eval "$PKG_UPDATE"
+        eval "$PKG_INSTALL ${NEEDED_SYS_PKGS[*]}"
+        ok "System packages installed"
+    else
+        fail "Skipping. Install manually and re-run install.sh."
+        exit 1
+    fi
+else
+    ok "System packages present"
+fi
+
+# ----------------------------------------------------------------
+# Python venv + pip deps
+# ----------------------------------------------------------------
+
+VENV_DIR="$SCRIPT_DIR/.venv"
+if [ ! -d "$VENV_DIR" ]; then
+    info "Creating venv at $VENV_DIR"
+    python3 -m venv "$VENV_DIR"
+fi
+
+"$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
+"$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt"
+ok "Python deps installed in venv"
+
+# ----------------------------------------------------------------
+# Optional: Ollama (free local fuel)
+# ----------------------------------------------------------------
+
+if ! command -v ollama >/dev/null 2>&1; then
+    ask "Install Ollama for free local AI fuel? [y/N]:"
+    if [[ "$_ans" =~ ^[Yy]$ ]]; then
+        info "Running Ollama's official installer (curl | sh)"
+        curl -fsSL https://ollama.com/install.sh | sh
+        ok "Ollama installed"
+        ask "Pull a small ARM-friendly model (phi3:mini, ~2.2GB) now? [y/N]:"
+        if [[ "$_ans" =~ ^[Yy]$ ]]; then
+            ollama pull phi3:mini
+        fi
+    fi
+else
+    ok "Ollama already installed"
+fi
+
+# ----------------------------------------------------------------
+# Write bash launcher — equivalent of Windows ORION.bat
+# ----------------------------------------------------------------
+
+LAUNCHER_DIR="$HOME/.local/bin"
+LAUNCHER="$LAUNCHER_DIR/orion"
+mkdir -p "$LAUNCHER_DIR"
+
+cat > "$LAUNCHER" <<EOF
+#!/usr/bin/env bash
+# orion launcher — created by install.sh
+# Runs orion.py via the repo's venv so deps are always available.
+exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/orion.py" "\$@"
+EOF
+chmod +x "$LAUNCHER"
+ok "Launcher installed: $LAUNCHER"
+
+# Check PATH for ~/.local/bin
+if ! echo ":$PATH:" | grep -q ":$LAUNCHER_DIR:"; then
+    warn "$LAUNCHER_DIR is not in your PATH."
+    say "  ${DIM}Add this to your shell config (~/.bashrc, ~/.zshrc, ~/.profile):${RESET}"
+    say "  ${DIM}    export PATH=\"\$HOME/.local/bin:\$PATH\"${RESET}"
+    ask "Add it to ~/.bashrc now? [y/N]:"
+    if [[ "$_ans" =~ ^[Yy]$ ]]; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+        ok "Added to ~/.bashrc — source it or open a new terminal"
+    fi
+fi
+
+# ----------------------------------------------------------------
+# Run the setup wizard
+# ----------------------------------------------------------------
+
+say ""
+info "Running setup wizard..."
+say ""
+"$VENV_DIR/bin/python" "$SCRIPT_DIR/setup.py"
+
+# ----------------------------------------------------------------
+# Preflight
+# ----------------------------------------------------------------
+
+say ""
+info "Running preflight health check..."
+say ""
+"$VENV_DIR/bin/python" "$SCRIPT_DIR/orion_preflight.py" || true
+
+say ""
+ok "Install complete."
+say "  ${DIM}Start talking to Orion:${RESET}  orion chat"
+say "  ${DIM}Re-run health check:${RESET}     python orion_preflight.py"
+say ""

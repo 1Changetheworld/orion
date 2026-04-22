@@ -107,8 +107,12 @@ class CodexCLIFuel(FuelAdapter):
         if not self._path:
             return None
         try:
+            # `codex exec` is the non-interactive mode. `--skip-git-repo-check`
+            # is required for dirs that aren't trusted by codex (e.g. non-git
+            # paths, or first-time-touched directories). Validated via
+            # session 2026-04-21 MCP proof-of-life.
             result = subprocess.run(
-                [self._path, prompt],
+                [self._path, "exec", "--skip-git-repo-check", prompt],
                 capture_output=True, text=True, timeout=120
             )
             if result.returncode == 0 and result.stdout.strip():
@@ -252,13 +256,19 @@ class RemoteOllamaFuel(FuelAdapter):
     tier = 3
 
     def __init__(self, hosts=None):
-        self._hosts = hosts or [
-            "{COMMAND_IP}:11434",    # COMMAND local
-            "{FORGE_IP}:11434",     # FORGE local
-            "{ASUS_IP}:11434",    # ASUS local
-            "100.109.99.21:11434", # COMMAND tailscale
-            "100.84.249.64:11434", # FORGE tailscale
-        ]
+        # Default host list is placeholder-only. Real deployments set these
+        # via the ORION_REMOTE_OLLAMA_HOSTS env var (comma-separated) or by
+        # passing hosts= explicitly. Tailscale/VPN fallbacks are opt-in,
+        # not wired at the library level.
+        import os as _os
+        env_hosts = _os.environ.get("ORION_REMOTE_OLLAMA_HOSTS", "")
+        if env_hosts:
+            self._hosts = [h.strip() for h in env_hosts.split(",") if h.strip()]
+        else:
+            self._hosts = hosts or [
+                "{PRIMARY_HOST}:11434",     # primary inference host
+                "{SECONDARY_HOST}:11434",   # secondary/fallback
+            ]
         self._active = None
         self._model = None
 

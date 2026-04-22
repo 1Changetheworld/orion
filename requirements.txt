@@ -1,0 +1,20 @@
+# Orion core — required for the brain to boot and run orion chat
+openai>=1.0
+
+# ---- optional ----
+# The extras below are only needed for specific features. A minimal Orion
+# install does not need them; install only what you use.
+
+# Transparent memory proxy (start_proxy.bat) — OpenAI-compatible endpoint
+# with ambient memory injection/extraction.
+# litellm>=1.40
+
+# Vector memory (semantic recall across thousands of memories). Graph
+# memory + temporal decay work fine without this; install only if you
+# want semantic search over large memory stores.
+# qdrant-client>=1.9
+
+# Optional: DeepSeek reasoning fuel. Ollama's OpenAI-compat endpoint
+# works without extra packages, so this is only relevant if you run
+# DeepSeek against a remote vLLM or dedicated server.
+# anthropic>=0.25  # only if you drive Claude via the anthropic SDK directly

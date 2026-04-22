@@ -117,7 +117,7 @@ def main():
 
     # Unique fact so we know this demo run produced it
     secret = f"Demo-{int(time.time())}"
-    fact = (f"James's secret coffee order for this demo run is "
+    fact = (f"The user's secret coffee order for this demo run is "
             f"'{secret}' — a dark roast Ethiopian pour-over.")
 
     print()
@@ -143,9 +143,9 @@ def main():
     for reader in readers:
         print()
         print(f"  {PURPLE}>>> {reader}{RESET}")
-        print(f"  user> What is James's secret coffee order from today's demo?")
+        print(f"  user> What is the user's secret coffee order from today's demo?")
         answer = run_one_turn(client, reader,
-                              "What is James's secret coffee order from today's demo? "
+                              "What is the user's secret coffee order from today's demo? "
                               "Use orion_recall. Include the exact code string.")
         # Check if reader found the secret
         hit = secret in answer

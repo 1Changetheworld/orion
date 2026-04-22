@@ -1,9 +1,31 @@
+# Python artifacts
 *.pyc
-.orion/
 __pycache__/
+
+# User's personal config and brain state (never ship)
+.orion/
+orion_user_config.json
 conversations/
-graph_memory.json
 knowledge/
 memory/
-orion_user_config.json
-orion_user_config.json
+graph_memory.json
+
+# Local scratch / driver scripts (prefix _ = local only)
+_*.py
+
+# Selfcheck apply backups
+*.orion-bak
+
+# OS + editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Local environment + secrets
+.env
+.env.*
+*.key
+*.pem
+credentials.json

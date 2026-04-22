@@ -1165,8 +1165,12 @@ class CodexCLIFuel(FuelAdapter):
         if not self._path:
             return None
         try:
+            # `codex exec` is the non-interactive mode. `--skip-git-repo-check`
+            # is required for dirs that aren't trusted by codex (e.g. non-git
+            # paths, or first-time-touched directories). Validated via
+            # session 2026-04-21 MCP proof-of-life.
             result = subprocess.run(
-                [self._path, prompt],
+                [self._path, "exec", "--skip-git-repo-check", prompt],
                 capture_output=True, text=True, timeout=120
             )
             if result.returncode == 0 and result.stdout.strip():
@@ -1467,8 +1471,8 @@ class OrionBrain:
             ("himalaya email client for sending email", "tool", ["email", "send", "himalaya"]),
             ("nmap network scanner — dispatched to security device via SSH", "tool", ["security", "scan", "nmap", "network"]),
             ("Telegram bot @OrionCommand1Bot — 50+ commands", "interface", ["telegram", "bot", "commands"]),
-            ("iMessage interface via orioncommandcenter1@gmail.com", "interface", ["imessage", "text", "apple"]),
-            ("Phone interface via Telnyx +1 (808) 724-7946", "interface", ["phone", "call", "sms", "telnyx"]),
+            ("iMessage interface (email configurable)", "interface", ["imessage", "text", "apple"]),
+            ("Phone interface via Telnyx (number configurable)", "interface", ["phone", "call", "sms", "telnyx"]),
             ("Claude CLI — Opus power at $0/request via Pro subscription", "fuel", ["claude", "opus", "cli"]),
             ("Knowledge index replaces Qdrant — file-based BM25 search", "tool", ["search", "index", "knowledge", "memory"]),
             ("Graph memory — microsecond tag-indexed recall for entities", "tool", ["graph", "memory", "recall", "tags"]),

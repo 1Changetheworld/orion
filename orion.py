@@ -577,20 +577,34 @@ def show_banner(fuel_name="", fuel_color=CYAN):
 # =====================================================================
 
 def launch_fuel_indicator():
-    """Launch the fuel indicator widget if not already running."""
+    """Launch the fuel indicator widget if not already running.
+
+    The previous version matched "any pythonw process" which falsely detected
+    unrelated tools (VS Code python extension, etc.) and suppressed the
+    indicator. This version matches the orion_ui.py --glow command line
+    specifically so only a real running indicator counts.
+    """
     try:
         si = subprocess.STARTUPINFO()
         si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         si.wShowWindow = 0
-        # Check if already running
+        # Query CIM for pythonw processes whose CommandLine references orion_ui
+        # and --glow. Use single-quoted script to avoid PowerShell-side expansion.
+        ps_cmd = (
+            "Get-CimInstance Win32_Process "
+            "-Filter \"Name='pythonw.exe' OR Name='python.exe'\" "
+            "-ErrorAction SilentlyContinue | "
+            "Where-Object { $_.CommandLine -like '*orion_ui*' -and "
+            "$_.CommandLine -like '*--glow*' } | "
+            "Select-Object -ExpandProperty ProcessId"
+        )
         check = subprocess.run(
-            ["powershell", "-WindowStyle", "Hidden", "-Command",
-             "Get-Process pythonw -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"],
+            ["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd],
             capture_output=True, text=True, timeout=5,
             startupinfo=si, creationflags=0x08000000
         )
         if check.returncode == 0 and check.stdout.strip():
-            return  # Already running
+            return  # Indicator already running
 
         script = os.path.join(ORION_REPO, "orion_ui.py")
         if os.path.exists(script):

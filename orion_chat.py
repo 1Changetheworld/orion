@@ -24,6 +24,8 @@ Slash commands inside the loop:
     /facts      list recent memories ranked by decayed confidence
     /contested  list unresolved contradictions
     /layers     show which layers are active for this session
+    /selfcheck  run the perceive -> reason -> act cycle (MCP gap repair)
+    /reflect    reflect on this session now, integrate durable facts
     /fuel <m>   switch to a different model mid-conversation
     /help       this list
     /exit       quit
@@ -118,7 +120,7 @@ def show_splash(fuel: str, endpoint: str) -> None:
     if contested:
         print(f"  {YELLOW}WARNING: {len(contested)} contested memories — type /contested to review{RESET}")
     print()
-    print(f"  {DIM}Commands: /facts /contested /layers /fuel <m> /help /exit{RESET}")
+    print(f"  {DIM}Commands: /facts /contested /layers /selfcheck /reflect /fuel <m> /help /exit{RESET}")
     print()
 
 
@@ -252,6 +254,29 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
             # Reflection failure must never block chat
             print(f"  {DIM}[reflection skipped: {e}]{RESET}")
 
+    # Wake-trigger cognitive cycle — surface-only at wake. Runs in non-
+    # interactive (silent-except-status) mode so Orion notices integration
+    # gaps without blocking the user's first prompt. If gaps exist, a hint
+    # is printed pointing to /selfcheck for the full consult/apply loop.
+    try:
+        import orion_cycle
+        wake_ctx = orion_cycle.CycleContext(
+            trigger="wake",
+            interactive=False,  # wake should never prompt — user hasn't spoken yet
+        )
+        wake_outcome = orion_cycle.run(wake_ctx, ui=orion_cycle.SilentUI())
+        unwired_mcp = sum(
+            1 for io in wake_outcome.issue_outcomes
+            if io.issue.kind == "missing_orion_brain_in_mcp"
+        )
+        if unwired_mcp > 0:
+            print(f"  {YELLOW}{unwired_mcp} tool(s) on this host speak MCP but don't have "
+                  f"orion-brain wired — type /selfcheck to review.{RESET}")
+            print()
+    except Exception as e:
+        # Wake-cycle failure must never block chat
+        print(f"  {DIM}[wake cycle skipped: {e}]{RESET}")
+
     messages: list[dict] = [
         {"role": "system", "content": obp.get_identity()},
     ]
@@ -319,6 +344,24 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
                 fuel = arg.strip()
                 print(f"  {GREEN}Fuel swapped to: {fuel}{RESET}")
                 continue
+            if cmd == "selfcheck":
+                # Fire the unified cognitive cycle from inside chat. Uses the
+                # SimpleCLIUI so proposals print to this terminal and y/N is
+                # read from stdin — same stream the user is already typing in.
+                print(f"  {DIM}Running perceive → reason → act cycle...{RESET}")
+                try:
+                    import orion_cycle
+                    ctx = orion_cycle.CycleContext(
+                        trigger="selfcheck",
+                        interactive=True,
+                        fuel_preference="claude-cli",
+                    )
+                    outcome = orion_cycle.run(ctx)
+                    print()
+                    print(f"  {CYAN}{outcome.human_summary()}{RESET}")
+                except Exception as e:
+                    print(f"  {RED}Cycle failed: {e.__class__.__name__}: {e}{RESET}")
+                continue
             if cmd == "help":
                 print(__doc__)
                 continue
@@ -337,6 +380,17 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
             continue
 
         session_exchanges.append({"role": "assistant", "text": answer})
+
+        # Persist each exchange to ~/.orion/brain/conversations/<date>.jsonl so
+        # the next wake-up reflection has real direct-chat context to review,
+        # not only artifacts from other tools. Truncation to 500 chars happens
+        # inside log_conversation — we don't second-guess it here.
+        try:
+            obp.log_conversation(user_input, answer, interface="orion-chat")
+        except Exception:
+            # Chat must never die because logging failed. Silent is correct.
+            pass
+
         print(f"  {CYAN}orion>{RESET} {answer}")
         print()
 

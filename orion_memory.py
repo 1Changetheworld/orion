@@ -482,7 +482,7 @@ if __name__ == "__main__":
     print(f"Graph: {len(g.nodes)} nodes")
 
     # Test graph store/recall
-    g.store("nmap is the network scanning tool on ASUS Kali box", "tool", 1.0, ["security", "scan", "nmap"])
+    g.store("nmap is a network scanning tool available on security-configured hosts", "tool", 1.0, ["security", "scan", "nmap"])
     g.store("himalaya is the email tool at {EMAIL_TOOL}", "tool", 1.0, ["email", "send", "himalaya"])
     g.store("dispatch module at orion_dispatch.py handles command execution", "tool", 1.0, ["dispatch", "execute", "command"])
 

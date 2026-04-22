@@ -19,6 +19,10 @@ import threading
 import time
 import ctypes
 
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
+IS_MACOS = platform.system() == "Darwin"
+
 # =====================================================================
 # THEME
 # =====================================================================
@@ -218,22 +222,24 @@ def detect_fuel():
 def detect_gpu():
     gpu = {"available": False, "name": "", "vram": "", "vram_mb": 0}
     try:
-        if platform.system() == "Windows":
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                parts = result.stdout.strip().split(", ")
-                gpu["available"] = True
-                gpu["name"] = parts[0]
-                gpu["vram"] = parts[1] if len(parts) > 1 else ""
-                # Parse VRAM MB
-                try:
-                    gpu["vram_mb"] = int(''.join(filter(str.isdigit, gpu["vram"])))
-                except:
-                    gpu["vram_mb"] = 0
-        elif platform.system() == "Darwin" and platform.machine() == "arm64":
+        if IS_WINDOWS or IS_LINUX:
+            # nvidia-smi works on both. On hosts without NVIDIA (e.g. Pi 5), the
+            # binary is absent and subprocess raises FileNotFoundError — caught below.
+            if shutil.which("nvidia-smi"):
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    parts = result.stdout.strip().split(", ")
+                    gpu["available"] = True
+                    gpu["name"] = parts[0]
+                    gpu["vram"] = parts[1] if len(parts) > 1 else ""
+                    try:
+                        gpu["vram_mb"] = int(''.join(filter(str.isdigit, gpu["vram"])))
+                    except:
+                        gpu["vram_mb"] = 0
+        elif IS_MACOS and platform.machine() == "arm64":
             gpu["available"] = True
             gpu["name"] = "Apple Silicon (Metal)"
             gpu["vram"] = "Unified memory"
@@ -265,7 +271,13 @@ def get_model_recommendations(vram_mb):
 # =====================================================================
 
 def set_window_border_color(hwnd, color_hex):
-    """Set the border/caption color of a window using DWM API (Windows 11+)."""
+    """Set the border/caption color of a window using DWM API (Windows 11+).
+
+    No-op on non-Windows — other platforms don't have per-window caption color APIs
+    reachable from a normal user process.
+    """
+    if not IS_WINDOWS:
+        return False
     try:
         dwmapi = ctypes.windll.dwmapi
         # DWMWA_BORDER_COLOR = 34, DWMWA_CAPTION_COLOR = 35
@@ -343,8 +355,11 @@ class SetupWizard:
             self.page_fuel_report,
             self.page_tier_select,
             self.page_ingest,
+            self.page_cycle,     # perceive -> reason -> act cycle at install
             self.page_complete,
         ]
+        # Populated by page_cycle so page_complete can summarize the gap count
+        self.cycle_outcome = None
         # Populated by page_ingest for display on page_complete
         self.ingest_report = None
 
@@ -687,6 +702,117 @@ class SetupWizard:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    # -- PAGE: Cycle -- perceive AI tools on the host, flag gaps -----------
+    def page_cycle(self):
+        """Fire the unified cognitive cycle at install time.
+
+        Scope at install:
+          * Run discovery + detect MCP-channel gaps
+          * Surface findings — do NOT consult/apply here (that runs via
+            /selfcheck in chat or `python orion_cycle.py` from a shell).
+            Reason: consultation takes ~30s per gap and we don't want the
+            wizard to hang; plus we don't want to propose writes to user
+            config files while they're mid-wizard.
+          * Store outcome on self.cycle_outcome so page_complete can
+            summarize the gap count and point to /selfcheck.
+        """
+        frame = tk.Frame(self.root, bg=BG)
+        frame.pack(fill="both", expand=True, padx=40, pady=25)
+
+        tk.Label(frame, text="Reading Your Host",
+                 font=self.heading_font, fg=ACCENT, bg=BG).pack(anchor="w")
+        tk.Label(frame, text=(
+            "Orion is looking at what AI tools exist on this machine and "
+            "noticing which ones still need wiring. No configuration is "
+            "being changed here — this is perception."),
+            font=self.small_font, fg=TEXT3, bg=BG,
+            wraplength=620, justify="left").pack(anchor="w", pady=(2, 15))
+
+        status_frame = tk.Frame(frame, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        status_frame.pack(fill="x", pady=5, ipady=10, ipadx=12)
+        self.cycle_status = tk.Label(status_frame, text="Perceiving...",
+                                     font=self.mono_font, fg=TEXT, bg=CARD,
+                                     anchor="w", justify="left")
+        self.cycle_status.pack(anchor="w", padx=10)
+        self.cycle_detail = tk.Label(status_frame, text="",
+                                     font=self.small_font, fg=TEXT2, bg=CARD,
+                                     anchor="w", justify="left", wraplength=580)
+        self.cycle_detail.pack(anchor="w", padx=10, pady=(4, 0))
+
+        self.cycle_progress = ttk.Progressbar(frame, mode="indeterminate", length=620)
+        self.cycle_progress.pack(pady=12)
+        self.cycle_progress.start(15)
+
+        def _set(main, detail=""):
+            try:
+                self.cycle_status.config(text=main)
+                self.cycle_detail.config(text=detail)
+            except Exception:
+                pass
+
+        def worker():
+            try:
+                import orion_cycle
+                ctx = orion_cycle.CycleContext(
+                    trigger="install",
+                    interactive=False,  # wizard context — don't prompt on stdin
+                )
+
+                # Silent UI that forwards status lines to the wizard label
+                sink_msgs = []
+                class WizardUI:
+                    def status(self, msg):
+                        sink_msgs.append(msg)
+                        self.root_ref.after(0, lambda m=msg: _set("Perceiving...", m))
+                    def error(self, msg):
+                        sink_msgs.append(f"[error] {msg}")
+                        self.root_ref.after(0, lambda m=msg: _set("Perceiving...", f"error: {m}"))
+                    def confirm(self, plan):
+                        return False  # install-time is surface-only; never apply here
+                wui = WizardUI()
+                wui.root_ref = self.root
+
+                outcome = orion_cycle.run(ctx, ui=wui)
+                self.cycle_outcome = outcome
+
+                tools = outcome.discovery_summary.get("tool_guesses", [])
+                tools_str = ", ".join(tools[:8]) or "(none detected)"
+                mcp_gaps = sum(
+                    1 for io in outcome.issue_outcomes
+                    if io.issue.kind == "missing_orion_brain_in_mcp"
+                )
+                bin_gaps = sum(
+                    1 for io in outcome.issue_outcomes
+                    if io.issue.kind == "ai_binary_without_mcp_config"
+                )
+
+                if mcp_gaps == 0 and bin_gaps == 0:
+                    detail = ("No integration gaps detected. Every MCP-capable "
+                              "tool on this host is wired to orion-brain.")
+                else:
+                    parts = []
+                    if mcp_gaps:
+                        parts.append(f"{mcp_gaps} MCP-capable tool(s) need orion-brain wired")
+                    if bin_gaps:
+                        parts.append(f"{bin_gaps} AI binary/binaries without an MCP config "
+                                     f"(manual integration if they support it)")
+                    detail = "Found: " + "; ".join(parts) + "."
+
+                self.root.after(0, lambda: _set(f"Tools noticed: {tools_str}", detail))
+                try:
+                    self.root.after(0, self.cycle_progress.stop)
+                except Exception:
+                    pass
+                self.root.after(2500, self.next_page)
+
+            except Exception as e:
+                self.cycle_outcome = {"error": str(e)}
+                self.root.after(0, lambda: _set("Cycle skipped.",
+                    f"{type(e).__name__}: {e} (wizard will continue)"))
+                self.root.after(1800, self.next_page)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     # -- PAGE: Complete ---------------------------------------------------
     def page_complete(self):
         frame = tk.Frame(self.root, bg=BG)
@@ -711,9 +837,26 @@ class SetupWizard:
         else:
             memory_line = "Starts fresh on this machine. Grows with every conversation."
 
+        # Cycle outcome summary — what the cognitive cycle found at install
+        cycle_line = "Not run."
+        if isinstance(self.cycle_outcome, dict) and self.cycle_outcome.get("error"):
+            cycle_line = f"Skipped: {self.cycle_outcome['error']}"
+        elif self.cycle_outcome is not None and hasattr(self.cycle_outcome, "issue_outcomes"):
+            tool_guesses = self.cycle_outcome.discovery_summary.get("tool_guesses", [])
+            mcp_gaps = sum(1 for io in self.cycle_outcome.issue_outcomes
+                           if io.issue.kind == "missing_orion_brain_in_mcp")
+            if mcp_gaps == 0:
+                cycle_line = (f"Noticed {len(tool_guesses)} tool type(s); "
+                              f"every MCP-capable tool is wired.")
+            else:
+                cycle_line = (f"Noticed {len(tool_guesses)} tool type(s); "
+                              f"{mcp_gaps} MCP-capable tool(s) still need wiring. "
+                              f"Run /selfcheck in orion chat to adopt them.")
+
         info = [
             ("Brain", "orion_server.py -- Orion's intelligence core"),
             ("Memory", memory_line),
+            ("Perceive", cycle_line),
             ("Fuel", ", ".join(active_fuel) if active_fuel else "None -- install Ollama for free local AI"),
             ("Dispatch", "20 instant commands (status, email, scan, docker, disk, and more) -- <2s execution"),
             ("Skills", "20 base capabilities (email, security, system management) -- grows with use"),
@@ -909,39 +1052,54 @@ class FuelGlowIndicator:
             pass
 
         sessions = read_orion_sessions()
-        si = subprocess.STARTUPINFO()
-        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        si.wShowWindow = 0
 
-        user32 = ctypes.windll.user32
-        WM_CLOSE = 0x0010
+        if IS_WINDOWS:
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0
+            user32 = ctypes.windll.user32
+            WM_CLOSE = 0x0010
 
         for session in sessions:
             # Kill CLI tool + launcher processes
             for pid_key in ["pid", "launcher_pid"]:
                 pid = session.get(pid_key)
-                if pid:
-                    try:
+                if not pid:
+                    continue
+                try:
+                    if IS_WINDOWS:
                         subprocess.run(
                             ["taskkill", "/PID", str(pid), "/T", "/F"],
                             startupinfo=si, creationflags=0x08000000, timeout=5
                         )
-                    except Exception:
-                        pass
-
-            # Close the terminal WINDOW itself (not just the process inside it)
-            hwnd = session.get("hwnd")
-            if hwnd:
-                try:
-                    # Reset glow first
-                    dwmapi = ctypes.windll.dwmapi
-                    default = ctypes.c_int(0xFFFFFFFF)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(default), ctypes.sizeof(default))
-                    dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(default), ctypes.sizeof(default))
-                    # Send WM_CLOSE to the terminal window to close it
-                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                    else:
+                        # POSIX: terminate the process group if possible, fall
+                        # back to a direct TERM. The session's child processes
+                        # are our best approximation of Windows' /T flag.
+                        import signal
+                        try:
+                            os.killpg(os.getpgid(int(pid)), signal.SIGTERM)
+                        except Exception:
+                            os.kill(int(pid), signal.SIGTERM)
                 except Exception:
                     pass
+
+            # Terminal-window close is Windows-only — hwnd is a Win32 concept.
+            # On Linux/macOS the terminal emulator exits when its child shell
+            # (which we already signaled above) exits.
+            if IS_WINDOWS:
+                hwnd = session.get("hwnd")
+                if hwnd:
+                    try:
+                        # Reset glow first
+                        dwmapi = ctypes.windll.dwmapi
+                        default = ctypes.c_int(0xFFFFFFFF)
+                        dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(default), ctypes.sizeof(default))
+                        dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(default), ctypes.sizeof(default))
+                        # Send WM_CLOSE to the terminal window to close it
+                        user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                    except Exception:
+                        pass
 
         # Mark ALL sessions inactive
         try:
@@ -972,13 +1130,15 @@ class FuelGlowIndicator:
         self.save_state()
 
         # Flush filesystem writes
-        if platform.system() == "Windows":
-            try:
-                # Sync filesystem
+        try:
+            if IS_WINDOWS:
                 subprocess.run(["cmd", "/c", "sync"], capture_output=True, timeout=5,
                                creationflags=0x08000000)  # CREATE_NO_WINDOW
-            except:
-                pass
+            else:
+                # POSIX: stdlib sync() flushes all pending filesystem writes
+                os.sync()
+        except Exception:
+            pass
 
         self.status_label.config(text="Safe to remove drive.")
         self.root.update()
