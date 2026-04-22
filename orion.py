@@ -888,6 +888,16 @@ def main():
         print(__doc__)
         return 0
 
+    # Proto-Orion setup — re-run the conversational onboarding anytime
+    if args[0].lower() in ("setup", "onboard", "hello"):
+        try:
+            import orion_setup_chat
+        except ImportError as e:
+            print(f"{RED}  orion_setup_chat module not found: {e}{RESET}")
+            return 1
+        orion_setup_chat.run()
+        return 0
+
     # Unified Frankenstein chat mode — every layer active in one loop
     if args[0].lower() == "chat":
         try:

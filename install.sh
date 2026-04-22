@@ -193,13 +193,22 @@ if ! echo ":$PATH:" | grep -q ":$LAUNCHER_DIR:"; then
 fi
 
 # ----------------------------------------------------------------
-# Run the setup wizard
+# Proto-Orion — first-run onboarding (the conversational wizard)
 # ----------------------------------------------------------------
+# Instead of a cold CLI tier-picker, Orion introduces itself, gathers
+# identity, detects tools, and picks a host. This is the Venom-symbiote
+# moment: proto-Orion talks before it has a full LLM backing it.
+#
+# For users who prefer the old text-only classic wizard, pass --classic.
 
 say ""
-info "Running setup wizard..."
-say ""
-"$VENV_DIR/bin/python" "$SCRIPT_DIR/setup.py"
+if [[ "$*" == *"--classic"* ]]; then
+    info "Running classic setup wizard..."
+    say ""
+    "$VENV_DIR/bin/python" "$SCRIPT_DIR/setup.py"
+else
+    "$VENV_DIR/bin/python" "$SCRIPT_DIR/orion_setup_chat.py"
+fi
 
 # ----------------------------------------------------------------
 # Preflight
