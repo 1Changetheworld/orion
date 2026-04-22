@@ -233,14 +233,38 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
 
     # Wake-up reflection — semantic, not timed. Orion decides if enough has
     # changed since last reflection to be worth reviewing recent context.
-    if orion_reflect.should_reflect_on_wake(min_gap_hours=1.0):
+    #
+    # CRITICAL GUARDS (learned the hard way on Pi 5 CPU-only qwen3:8b):
+    #   1. Skip if graph is empty/near-empty — nothing to contextualize against
+    #   2. Skip if the conversation window only contains test/preflight entries
+    #   3. Allow user override via ORION_SKIP_WAKE_REFLECT=1 (useful on slow
+    #      hardware where a 5-minute wake wait is not acceptable)
+    import os as _os
+    if _os.environ.get("ORION_SKIP_WAKE_REFLECT", "").lower() in ("1", "true", "yes"):
+        pass  # explicit user opt-out
+    elif len(_get_graph().nodes) < 3:
+        # Fresh brain — no prior context worth reflecting on. Skip silently.
+        pass
+    elif orion_reflect.should_reflect_on_wake(min_gap_hours=1.0):
         try:
             recent = obp._read_orion_conversations(limit=40)
+            # Drop test/preflight/smoke entries — they're never worth reflecting on
+            def _meaningful(entry):
+                iface = (entry.get("interface") or "").lower()
+                if iface in ("preflight", "g4-smoke", "g5-smoke"):
+                    return False
+                text = (entry.get("user") or entry.get("text") or "")
+                if text.startswith("[preflight") or text.startswith("[g4-"):
+                    return False
+                return bool(text.strip())
+
             window = [
-                {"role": m.get("role", "user"), "text": m.get("text", "")}
-                for m in recent[-30:] if m.get("text")
+                {"role": "user", "text": m.get("user") or m.get("text", "")}
+                for m in recent[-30:] if _meaningful(m)
             ]
-            if window:
+            # Need at least 2 real exchanges to reflect against — a single
+            # message isn't a context worth a full LLM turn.
+            if len(window) >= 2:
                 print(f"  {DIM}Catching up on recent context...{RESET}")
                 r = orion_reflect.reflect(window, reason="wake",
                                           model=fuel, endpoint=endpoint, api_key=api_key)
