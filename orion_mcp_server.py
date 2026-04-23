@@ -1108,10 +1108,10 @@ def setup_mcp_configs():
                 def _toml_str(s: str) -> str:
                     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-                # Tools Codex should surface + auto-approve. Mirrors the
-                # working FORGE configuration. Without these declarations,
-                # Codex may default to blocking tools or failing to expose
-                # them entirely — which was the Pi install's exact symptom.
+                # Tools Codex should surface + auto-approve. Mirrors a
+                # known-working reference configuration. Without these
+                # declarations, Codex may default to blocking tools or
+                # failing to expose them entirely.
                 _codex_tools = [
                     "orion_recall", "orion_memorize", "orion_identity",
                     "orion_project_state", "orion_cross_model",
