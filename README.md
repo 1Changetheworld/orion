@@ -8,11 +8,52 @@
 
 $0 per request. Zero API keys. Zero framework dependencies.
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20Raspberry%20Pi-lightgrey)
+
 ---
 
 *A portable intelligence layer that works with any AI model, on any device, with persistent memory that belongs to you.*
 
+**2026-04-23 — Fresh-user install verified on Raspberry Pi 5.** Cross-model memory proven on ARM hardware with throwaway accounts — see [the case study](docs/pi-install-case-study.md).
+
 </div>
+
+---
+
+## Table of Contents
+
+- [Try it in 2 minutes](#try-it-in-2-minutes)
+- [What is Orion?](#what-is-orion)
+- [How It Works](#how-it-works)
+- [Fuel System](#fuel-system)
+- [Interfaces](#interfaces)
+- [Operational Modes](#operational-modes)
+- [Installation](#installation)
+- [Verify your install](#verify-your-install)
+- [Prove cross-model memory works](#prove-cross-model-memory-works-the-real-test)
+- [Competitive Landscape](#competitive-landscape)
+- [Documentation](#documentation)
+- [What Orion Is Not](#what-orion-is-not)
+- [Roadmap](#roadmap)
+- [License](#license)
+
+---
+
+## Try it in 2 minutes
+
+**You have Codex, Gemini, or Claude CLI installed already?**
+
+```bash
+git clone https://github.com/1Changetheworld/orion.git
+cd orion
+bash install.sh    # Linux / macOS — asks 4 questions, 2 min
+# Or: pip install -r requirements.txt && python setup.py   (Windows)
+```
+
+When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask: *"what's my name?"* — it'll know, because Orion just seeded its brain with you.
 
 ---
 
@@ -126,17 +167,30 @@ Headset Mic → Voice Activity Detection → Whisper STT (GPU) → Orion Brain �
 
 ## Operational Modes
 
-| Mode | Status | What It Does | Example |
-|------|--------|-------------|---------|
-| Standard | Active | Conversational AI + command execution | *"Check my server status and restart the web container"* |
-| Deep Dive | Active | Extended reasoning, multi-source research | *"Research every competitor in the AI memory space and summarize their funding, features, and gaps"* |
-| Builder | Active | End-to-end project execution from a single prompt | *"Build a REST API for user authentication with JWT tokens, tests, and deploy it"* |
-| Absorption | Partial | Indexes new tools and repos into the knowledge base | *Orion scans GitHub trending, reads READMEs, embeds useful tools into its knowledge — gets smarter overnight* |
-| Defense | Partial | Hardens security on untrusted networks | *Connect to hotel WiFi — Orion auto-tightens firewall rules, enforces VPN, blocks inbound connections* |
-| Hive Mind | Concept | Parallel dispatch across multiple devices | *"Scan all 4 devices for vulnerabilities simultaneously" — each device works independently, results merge* |
-| Stealth | Concept | Zero cloud calls, local only, no telemetry | *All traffic stays on-device. No logs. No external connections. Nothing leaves the machine.* |
-| The Ant | Concept | Hive-like mass search for deep investigation | *"Find everything about this company" — branches into dozens of search paths like ants, synthesizes findings* |
-| Autonomous | Concept | Camera-enabled self-directed operation | *Orion sees through a camera, decides what to do, and acts without user input — monitoring, hardware control* |
+Orion operates in distinct *modes* — each shapes how the brain behaves when the user invokes it. Status column is honest: what's live, what's partial, what's next.
+
+### Shipping now
+| Mode | What It Does | Example |
+|------|-------------|---------|
+| **Standard** | Conversational AI + command execution | *"Check my server status and restart the web container"* |
+| **Deep Dive** | Extended reasoning, multi-source research | *"Research every competitor in the AI memory space and summarize their funding, features, and gaps"* |
+| **Builder** | End-to-end project execution from a single prompt | *"Build a REST API for user authentication with JWT tokens, tests, and deploy it"* |
+
+### Partial (working, needs polish)
+| Mode | What It Does | Example |
+|------|-------------|---------|
+| **Absorption** | Indexes new tools and repos into the knowledge base | *Orion scans GitHub trending, reads READMEs, embeds useful tools into its knowledge — gets smarter overnight* |
+| **Defense** | Hardens security on untrusted networks | *Connect to hotel WiFi — Orion auto-tightens firewall rules, enforces VPN, blocks inbound connections* |
+
+### Coming soon
+| Mode | What It'll Do | Example |
+|------|-------------|---------|
+| **Hive Mind** | Parallel dispatch across multiple devices | *"Scan all 4 devices for vulnerabilities simultaneously" — each device works independently, results merge* |
+| **Stealth** | Zero cloud calls, local only, no telemetry | *All traffic stays on-device. No logs. No external connections. Nothing leaves the machine.* |
+| **The Ant** | Hive-like mass search for deep investigation | *"Find everything about this company" — branches into dozens of search paths like ants, synthesizes findings* |
+| **Autonomous** | Camera-enabled self-directed operation | *Orion sees through a camera, decides what to do, and acts without user input — monitoring, hardware control* |
+
+Under the hood, Orion also has **adaptive discovery** (finds AI tools on your host by shape, not a hardcoded list), a **cognitive cycle** (perceive → reason → act → verify, fires at install / wake / on-command), and **self-repair** (consults another model when something's wrong — first alien-arc move of its kind in personal-AI memory). See [docs/orion-architecture.html](docs/orion-architecture.html) for the technical picture.
 
 ---
 
@@ -214,6 +268,16 @@ These companies have raised a combined $20M+ in venture funding. Orion was built
 
 ---
 
+## Documentation
+
+- [**Pi install case study**](docs/pi-install-case-study.md) — real graduation test on a Raspberry Pi 5 with fresh accounts. Proof the portable-soul thesis works on stranger's hardware.
+- [**Product pitch** (orion-v2.html)](docs/orion-v2.html) — the full long-form pitch. Start here for the product-level story + investor-facing narrative.
+- [**Architecture** (orion-architecture.html)](docs/orion-architecture.html) — technical internals: brain layers, MCP, cognitive cycle, ontology, memory model.
+- [**UI mockup** (orion-ui-mockup.html)](docs/orion-ui-mockup.html) — design target for the forthcoming desktop app. Open in a browser.
+- [**Install guide** (INSTALL.md)](docs/INSTALL.md) — Windows / macOS / Linux install paths, portable drive setup, troubleshooting.
+
+---
+
 ## What Orion Is Not
 
 - **Not a replacement for ChatGPT.** Orion uses models like ChatGPT as fuel. If you're happy with one model and never switch, Orion's value is lower for you today.
@@ -222,11 +286,38 @@ These companies have raised a combined $20M+ in venture funding. Orion was built
 
 ---
 
-## Future
+## Roadmap
 
-- **Hardware Intelligence** — Car diagnostics via OBD-II + AI interpretation. Biosignal monitoring via commodity sensors + AI analysis. The hardware is cheap. The integration layer is Orion.
-- **AI Literacy Platform** — Learn to use AI effectively, structured by career field. Like Duolingo for the AI era. Your Orion brain builds as you learn.
-- **Portable Soul** — Full auto-detection on any OS. Plug the drive in, Orion activates without configuration.
+### Near-term (active work)
+- **Desktop app** — Orion UI with a model picker dropdown, persistent chat, personality customization, brain visualization. Mockup in [docs/orion-ui-mockup.html](docs/orion-ui-mockup.html). The CLI you're reading about today is v0; the app is what most users will meet first.
+- **Self-healing observer** (`orion_sleep.py`) — replay / consolidation / adaptive forgetting cycle based on the EIMB-1 research track. Notices when a tool session failed to reach Orion and self-repairs the integration. In-progress.
+- **Multi-interface expansion** — iMessage, Telegram, phone (Telnyx/Twilio), and email all routing to the same brain. Orion walks you through wiring each.
+- **Coherent-information-grounded memory** — replace heuristic half-life decay with a mathematically rigorous re-anchoring trigger from the Bény–Oreshkov threshold theorem. Makes Orion's memory the first personal AI memory layer with real persistence guarantees.
+
+### Later
+- **Mesh mode** — two or more Orion installs sharing one brain (CRDT plane + consensus plane per the research spec). One you across devices, phones, and desktops.
+- **Hardware intelligence** — car diagnostics via OBD-II, biosignal monitoring via commodity sensors, Orion as the interpretation layer. Hardware is cheap; integration is hard — that's where Orion lives.
+- **AI literacy platform** — learn to use AI effectively, structured by career field. Like Duolingo for the AI era. Your Orion brain builds as you learn.
+- **Orion as a platform** — SDK + marketplace of skills, payment rails, team/enterprise tiers. The CLI and the desktop app are surfaces; the brain is the platform.
+
+---
+
+## Project status snapshot
+
+| | Status |
+|---|---|
+| CLI install + conversational onboarding | ✅ shipping |
+| Cross-model memory (Codex ↔ Gemini ↔ Claude) | ✅ proven on fresh Pi with fresh accounts |
+| MCP auto-wiring into AI CLIs | ✅ shipping |
+| Ontology discipline (type caps, entity canonicalization) | ✅ shipping |
+| Linux install script + launcher | ✅ shipping |
+| Extraction-resistance guardrails | ✅ shipping |
+| Test harness (regression-gated before every push) | ✅ shipping |
+| Desktop UI app | 🔨 design landed, build next |
+| Self-healing observer | 🔨 in-progress |
+| Multi-interface (iMessage, phone, Telegram, email) | 🔨 in-progress |
+| Mesh mode (shared brain across devices) | 📋 specced |
+| Coherent-info memory architecture | 📋 specced |
 
 ---
 
