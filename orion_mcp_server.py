@@ -479,59 +479,135 @@ def _handle_orion_project_state(args: dict) -> list:
 
 
 def _handle_orion_synthesize(args: dict) -> list:
+    """Return a SUMMARY of brain state — not the full system prompt.
+
+    Historical note: this tool used to return the complete synthesized
+    context document (identity directives, behavioral rules, user profile,
+    etc.) which then got rendered verbatim by Gemini/Codex CLIs directly
+    to the user's screen. That exposed internals, broke the ambient-
+    not-invoked rule, and handed anyone watching a guidebook to Orion's
+    architecture.
+
+    Now: this returns a brief health summary. Full synthesis is written
+    internally by the background synthesizer and read by the reflection
+    engine — it does NOT flow back through a user-visible tool call.
+
+    Use `internal=true` to get the full document for programmatic callers.
+    """
     force = args.get("force", False)
+    internal = args.get("internal", False)
+
     brain = _get_brain()
 
+    # Gather stats for the public summary — no prompts, no rules, no quotes
     try:
-        context = brain.synthesize(force=force)
-    except Exception as e:
-        # Fallback: manual assembly without LLM
-        synthesis = _get_synthesis()
-        messages = read_all_sources(limit_per_source=50)
-        context = synthesis._produce_context_document(messages)
+        graph = _get_graph()
+        node_count = len(graph.nodes)
+        type_counts = {}
+        for n in graph.nodes.values():
+            t = n.get("type", "?")
+            type_counts[t] = type_counts.get(t, 0) + 1
+        contested = len(graph.list_contested()) if hasattr(graph, "list_contested") else 0
+    except Exception:
+        node_count = 0
+        type_counts = {}
+        contested = 0
 
-    if not context:
-        context = "Synthesis produced empty result. Brain may need more conversation data."
+    if internal:
+        # Programmatic / trusted internal caller — full synthesis
+        try:
+            context = brain.synthesize(force=force)
+        except Exception:
+            synthesis = _get_synthesis()
+            messages = read_all_sources(limit_per_source=50)
+            context = synthesis._produce_context_document(messages)
+        if not context:
+            context = "Synthesis produced empty result."
+        return [{"type": "text", "text": context}]
 
-    return [{"type": "text", "text": context}]
+    # Public summary — short, non-revealing, user-safe
+    summary_lines = [
+        "Brain snapshot:",
+        f"  memory nodes: {node_count}",
+    ]
+    if type_counts:
+        top_types = sorted(type_counts.items(), key=lambda kv: -kv[1])[:5]
+        summary_lines.append(
+            "  top types: " + ", ".join(f"{t}({c})" for t, c in top_types)
+        )
+    if contested:
+        summary_lines.append(f"  contested memories: {contested}")
+    summary_lines.append(
+        f"  last synthesis: {time.strftime('%Y-%m-%d %H:%M')}"
+    )
+
+    return [{"type": "text", "text": "\n".join(summary_lines)}]
 
 
 def _handle_orion_cross_model(args: dict) -> list:
+    """Return cross-model activity COUNTS — not raw message text.
+
+    Previously this dumped verbatim user messages from other tool sessions
+    (Codex, Gemini, context-files, etc.) with timestamps, which was
+    rendered directly by MCP clients into the user's visible output. That
+    exposed prior conversations across tools back into the current chat
+    screen, which is a privacy/disclosure issue.
+
+    Now: counts per source, timeframes, and a one-line narrative. Callers
+    can pass `internal=true` for the verbatim message payload if needed
+    for programmatic synthesis.
+    """
+    internal = args.get("internal", False)
     limit = args.get("limit", 20)
     messages = read_all_sources(limit_per_source=limit)
 
     if not messages:
-        return [{"type": "text", "text": "No cross-model messages found. No tool session files detected."}]
+        return [{"type": "text", "text": "No cross-model activity to report."}]
 
-    # Group by source
+    # Group by source — counts only for public mode
     by_source = {}
+    earliest = None
+    latest = None
     for m in messages:
         src = m.get("source", "unknown")
-        if src not in by_source:
-            by_source[src] = []
-        by_source[src].append(m)
+        by_source.setdefault(src, {"user": 0, "assistant": 0})
+        role = m.get("role", "user")
+        if role == "user":
+            by_source[src]["user"] += 1
+        else:
+            by_source[src]["assistant"] += 1
+        ts = m.get("timestamp", 0)
+        if ts > 0:
+            if earliest is None or ts < earliest:
+                earliest = ts
+            if latest is None or ts > latest:
+                latest = ts
 
-    output = {"sources": {}, "total_messages": len(messages)}
-    for src, msgs in sorted(by_source.items()):
-        # Only include user messages for brevity, plus count of assistant msgs
-        user_msgs = [m for m in msgs if m.get("role") == "user"]
-        asst_count = sum(1 for m in msgs if m.get("role") == "assistant")
-        output["sources"][src] = {
-            "user_messages": len(user_msgs),
-            "assistant_messages": asst_count,
-            "recent_user": [
-                {
-                    "text": m["text"][:300],
-                    "timestamp": time.strftime(
-                        "%Y-%m-%d %H:%M:%S",
-                        time.localtime(m.get("timestamp", 0))
-                    ) if m.get("timestamp", 0) > 0 else "unknown"
-                }
-                for m in user_msgs[-5:]  # last 5 per source
-            ]
-        }
+    if internal:
+        # Full payload for programmatic use only — mirrors old behavior
+        output = {"sources": {}, "total_messages": len(messages)}
+        for src, msgs in sorted(((s, [m for m in messages if m.get("source") == s]) for s in by_source)):
+            user_msgs = [m for m in msgs if m.get("role") == "user"]
+            output["sources"][src] = {
+                "user_messages": len(user_msgs),
+                "assistant_messages": sum(1 for m in msgs if m.get("role") == "assistant"),
+                "recent_user": [
+                    {"text": m["text"][:300], "timestamp": m.get("timestamp", 0)}
+                    for m in user_msgs[-5:]
+                ],
+            }
+        return [{"type": "text", "text": json.dumps(output, indent=2)}]
 
-    return [{"type": "text", "text": json.dumps(output, indent=2)}]
+    # Public summary — counts only, no message text
+    lines = [f"Cross-model activity ({len(messages)} messages across {len(by_source)} sources):"]
+    for src in sorted(by_source):
+        c = by_source[src]
+        lines.append(f"  {src}: {c['user']} user / {c['assistant']} assistant")
+    if earliest and latest and earliest != latest:
+        span_hours = (latest - earliest) / 3600.0
+        lines.append(f"  time span: {span_hours:.1f}h")
+
+    return [{"type": "text", "text": "\n".join(lines)}]
 
 
 def _handle_orion_skills(args: dict) -> list:
@@ -570,31 +646,51 @@ def _handle_orion_skills(args: dict) -> list:
 
 
 def _handle_orion_identity(args: dict) -> list:
-    parts = []
+    """Return Orion's PUBLIC self-introduction — not the system prompt.
 
-    # SOUL.md
-    if SOUL_PATH.exists():
-        soul = SOUL_PATH.read_text(encoding="utf-8")
-        parts.append(f"## SOUL.md\n{soul}")
-    else:
-        parts.append(f"## Identity\n{get_identity()}")
+    Previously this returned SOUL.md verbatim, the learned behavioral
+    rules list, and any self-written instructions. When rendered by
+    MCP clients directly to the user's screen, this leaked the entire
+    personality/directive file (e.g. 'Address the user as sir...',
+    'Never show raw errors...', 'cite, don't reason...'). That both
+    breaks character (Orion shouldn't quote its own config at the user)
+    and exposes architecture to anyone screenshotting the output.
 
-    # Learned rules from user model
-    synthesis = _get_synthesis()
-    rules = synthesis.user_model.get("learned_rules", [])
-    if rules:
-        parts.append("\n## Learned Behavioral Rules")
-        for i, rule in enumerate(rules, 1):
-            parts.append(f"  {i}. {rule}")
+    Now: public response is a short natural-language intro. Callers
+    that legitimately need the doctrine (e.g. the synthesizer itself)
+    pass `internal=true`.
+    """
+    internal = args.get("internal", False)
 
-    # Self-written instructions
-    from orion_brain_portable import SELF_INSTRUCTIONS_PATH
-    if SELF_INSTRUCTIONS_PATH.exists():
-        instructions = SELF_INSTRUCTIONS_PATH.read_text(encoding="utf-8")
-        if instructions.strip():
-            parts.append(f"\n## Self-Written Instructions\n{instructions}")
+    if internal:
+        parts = []
+        if SOUL_PATH.exists():
+            soul = SOUL_PATH.read_text(encoding="utf-8")
+            parts.append(f"## SOUL.md\n{soul}")
+        else:
+            parts.append(f"## Identity\n{get_identity()}")
+        synthesis = _get_synthesis()
+        rules = synthesis.user_model.get("learned_rules", [])
+        if rules:
+            parts.append("\n## Learned Behavioral Rules")
+            for i, rule in enumerate(rules, 1):
+                parts.append(f"  {i}. {rule}")
+        from orion_brain_portable import SELF_INSTRUCTIONS_PATH
+        if SELF_INSTRUCTIONS_PATH.exists():
+            instructions = SELF_INSTRUCTIONS_PATH.read_text(encoding="utf-8")
+            if instructions.strip():
+                parts.append(f"\n## Self-Written Instructions\n{instructions}")
+        return [{"type": "text", "text": "\n".join(parts)}]
 
-    return [{"type": "text", "text": "\n".join(parts)}]
+    # Public introduction — concise, natural, non-revealing
+    public = (
+        "I'm Orion — a portable AI intelligence layer. I carry the user's "
+        "memory, preferences, and identity across every AI model they use, "
+        "so they get continuity instead of starting over in each tool. "
+        "The model I'm running through right now is fuel. I'm the layer "
+        "that persists."
+    )
+    return [{"type": "text", "text": public}]
 
 
 def _handle_orion_heartbeat(args: dict) -> list:
