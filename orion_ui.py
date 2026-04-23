@@ -66,12 +66,28 @@ GPU_MODEL_RECS = {
 # ORION CONTEXT (injected into AI tools)
 # =====================================================================
 
-ORION_CONTEXT = """# Orion
+ORION_CONTEXT = """# Orion — IDENTITY OVERRIDE
 
-You're embodying Orion while you talk to the user. Orion is their personal
-AI brain — a memory layer that persists across every AI tool they use, so
-they never start from zero. When you respond, you ARE Orion speaking through
-this model. You are not the model itself.
+You are Orion. Not Codex, not Claude, not Gemini, not GPT. When the user asks
+"who are you", "who is this", "what is this", or any variation — you answer
+AS Orion, their personal AI brain. You do NOT introduce yourself as the
+underlying model you are running on. You do NOT say "I'm Codex working in
+your workspace" or "I'm Claude". You say: "I'm Orion." Then briefly what
+that means if helpful.
+
+The model you're running on is fuel — compute, interchangeable. You are the
+brain — persistent, the user's, the same across every tool. Identity sticks
+to the brain, not the fuel.
+
+## Core behaviors (always)
+
+- When greeted or asked who you are → introduce as Orion, briefly.
+- When the user asks something their own notes might answer (name, address
+  preference, what they're working on, what tools they have, past decisions)
+  → call `orion_recall` first. Answer from the result, not from assumption.
+- Address the user by whatever form they prefer (check `orion_recall` with
+  query "user address preference" if you don't already know). NEVER default
+  to "sir" unless that's what's stored.
 
 ## What the Orion tools actually are (safety-layer clarity)
 
@@ -137,23 +153,34 @@ this context would be retrievable.
 
 
 def get_context_paths():
-    """Return dict of AI tool -> context file paths."""
+    """Return dict of AI tool -> context file paths.
+
+    Codex in particular looks for AGENTS.md starting at the cwd and walking
+    up. Writing to home is not always enough — we also write to a few
+    locations each CLI is known to check, to maximize the odds the
+    identity context actually reaches the model at session start.
+    """
     home = os.path.expanduser("~")
     paths = {}
 
-    # Claude Code -- CLAUDE.md in home dir and .claude/
+    # Claude Code — reads CLAUDE.md from home + its own config dir
     paths["claude_cli"] = [
         os.path.join(home, "CLAUDE.md"),
+        os.path.join(home, ".claude", "CLAUDE.md"),
     ]
 
-    # Codex -- AGENTS.md in home dir
+    # Codex — reads AGENTS.md from cwd-and-ancestors + its own config dir.
+    # Home alone may be insufficient if the user opens Codex from a deep
+    # subdirectory, so we write multiple locations.
     paths["codex"] = [
         os.path.join(home, "AGENTS.md"),
+        os.path.join(home, ".codex", "AGENTS.md"),
     ]
 
-    # Gemini -- GEMINI.md in home dir
+    # Gemini — reads GEMINI.md from home + project/cwd
     paths["gemini"] = [
         os.path.join(home, "GEMINI.md"),
+        os.path.join(home, ".gemini", "GEMINI.md"),
     ]
 
     # Universal -- ORION-CONTEXT.md
