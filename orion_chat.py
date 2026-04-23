@@ -226,8 +226,39 @@ def stream_round(
     return f"{YELLOW}[exceeded max_rounds]{RESET}"
 
 
+def _lookup_user_label(graph) -> str:
+    """Read the user's preferred form-of-address from graph_memory.
+
+    Falls back to 'you' (neutral, no assumption) if the user hasn't set one.
+    """
+    try:
+        import re
+        for node in graph.nodes.values():
+            if node.get("type") != "preference":
+                continue
+            tags = node.get("tags") or set()
+            if isinstance(tags, (list, tuple)):
+                tags = set(tags)
+            if "address" not in tags and "form-of-address" not in tags:
+                continue
+            content = node.get("content", "")
+            m = re.search(r"addressed as:\s*'([^']+)'", content)
+            if m:
+                return m.group(1).lower()
+            if "does not want any honorific" in content:
+                return ""  # user explicitly wanted no honorific
+    except Exception:
+        pass
+    return "you"
+
+
 def chat(fuel: str, endpoint: str, api_key: str) -> int:
     client = OpenAI(base_url=endpoint, api_key=api_key)
+
+    # Look up user's preferred form of address. Defaults to "you" (neutral)
+    # rather than assuming "sir". User sets this during proto-Orion onboarding.
+    _user_label = _lookup_user_label(_get_graph())
+    _prompt_label = _user_label or "you"
 
     show_splash(fuel, endpoint)
 
@@ -311,7 +342,7 @@ def chat(fuel: str, endpoint: str, api_key: str) -> int:
 
     while True:
         try:
-            user_input = input(f"  {BOLD}{WHITE}sir>{RESET} ").strip()
+            user_input = input(f"  {BOLD}{WHITE}{_prompt_label}>{RESET} ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return 0

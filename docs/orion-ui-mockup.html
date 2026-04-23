@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORION — Desktop UI Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Deep space base */
+    --bg-0: #030617;
+    --bg-1: #050b1f;
+    --bg-2: #0a1430;
+    --bg-3: #0e1b3e;
+    --glass: rgba(16, 27, 58, 0.55);
+    --glass-border: rgba(96, 165, 250, 0.12);
+
+    /* Orion blues (darker preferred, as requested) */
+    --orion-deep: #0f2258;
+    --orion-mid: #1e3a8a;
+    --orion-primary: #2563eb;
+    --orion-bright: #3b82f6;
+    --orion-glow: #60a5fa;
+    --orion-ice: #93c5fd;
+
+    /* Accent supports */
+    --cyan-subtle: #22d3ee;
+    --text: #e2e8f0;
+    --text-2: #94a3b8;
+    --text-3: #64748b;
+    --text-4: #475569;
+
+    --success: #34d399;
+    --warning: #fbbf24;
+
+    /* Elevation shadows with blue glow */
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--glass-border);
+    --shadow-glow: 0 0 40px rgba(59, 130, 246, 0.15), 0 0 80px rgba(37, 99, 235, 0.08);
+    --shadow-blue: 0 4px 24px rgba(37, 99, 235, 0.25);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg-0);
+    /* Space depth: radial gradient + subtle mesh */
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% 0%, rgba(37, 99, 235, 0.12), transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(15, 34, 88, 0.4), transparent 70%),
+      radial-gradient(ellipse 40% 30% at 0% 50%, rgba(30, 58, 138, 0.2), transparent 70%),
+      linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Starfield — subtle depth texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1px 1px at 15% 20%, rgba(255, 255, 255, 0.4), transparent),
+      radial-gradient(1px 1px at 85% 15%, rgba(147, 197, 253, 0.5), transparent),
+      radial-gradient(1px 1px at 45% 70%, rgba(255, 255, 255, 0.3), transparent),
+      radial-gradient(1px 1px at 75% 85%, rgba(96, 165, 250, 0.4), transparent),
+      radial-gradient(1px 1px at 25% 90%, rgba(255, 255, 255, 0.3), transparent),
+      radial-gradient(1px 1px at 65% 30%, rgba(147, 197, 253, 0.3), transparent),
+      radial-gradient(1px 1px at 95% 55%, rgba(255, 255, 255, 0.2), transparent);
+    opacity: 0.7;
+  }
+
+  /* Faint brain circuit overlay — atmospheric, very low opacity */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 900px;
+    height: 900px;
+    pointer-events: none;
+    opacity: 0.04;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><circle cx='100' cy='100' r='60' fill='none' stroke='%2360a5fa' stroke-width='0.3'/><circle cx='100' cy='100' r='80' fill='none' stroke='%233b82f6' stroke-width='0.3'/><path d='M40 100 Q100 40 160 100 Q100 160 40 100 Z' fill='none' stroke='%2393c5fd' stroke-width='0.3'/></svg>") center/contain no-repeat;
+  }
+
+  /* ============================================================
+     LAYOUT — three-column shell: history | chat | brain state
+  ============================================================ */
+  .app {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 280px 1fr 340px;
+    grid-template-rows: 60px 1fr;
+    grid-template-areas:
+      "sidebar header  brain"
+      "sidebar chat    brain";
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* ============================================================
+     HEADER — top bar with logo + model dropdown + actions
+  ============================================================ */
+  .header {
+    grid-area: header;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    background: linear-gradient(180deg, rgba(10, 20, 48, 0.7) 0%, rgba(5, 11, 31, 0.6) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--glass-border);
+    gap: 16px;
+  }
+
+  .header-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 4px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    margin-left: 8px;
+  }
+
+  /* MODEL DROPDOWN — the centerpiece */
+  .model-picker {
+    position: relative;
+    margin-left: auto;
+  }
+
+  .model-picker-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 10px;
+    background: rgba(16, 27, 58, 0.6);
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 220px;
+  }
+
+  .model-picker-trigger:hover {
+    background: rgba(30, 58, 138, 0.5);
+    border-color: var(--orion-primary);
+    box-shadow: 0 0 20px rgba(37, 99, 235, 0.2);
+  }
+
+  .model-icon {
+    width: 22px; height: 22px;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.5));
+  }
+
+  .model-name { flex: 1; }
+  .model-chevron {
+    width: 14px; height: 14px;
+    opacity: 0.6;
+    transition: transform 0.2s;
+  }
+
+  .model-picker.open .model-chevron { transform: rotate(180deg); }
+
+  .model-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 340px;
+    background: rgba(10, 20, 48, 0.92);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    border-radius: 14px;
+    padding: 8px;
+    display: none;
+    box-shadow: var(--shadow-md), var(--shadow-glow);
+    z-index: 10;
+  }
+
+  .model-picker.open .model-dropdown { display: block; }
+
+  .model-section-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-3);
+    padding: 10px 12px 6px;
+    text-transform: uppercase;
+  }
+
+  .model-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    color: var(--text-2);
+  }
+
+  .model-option:hover {
+    background: rgba(37, 99, 235, 0.12);
+    color: var(--text);
+  }
+
+  .model-option.selected {
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0.06));
+    color: var(--text);
+  }
+
+  .model-option .model-icon { width: 20px; height: 20px; }
+
+  .model-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .model-option-name {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  .model-option-desc {
+    font-size: 11px;
+    color: var(--text-3);
+    line-height: 1.3;
+    margin-top: 2px;
+  }
+
+  .model-check {
+    width: 16px; height: 16px;
+    color: var(--orion-bright);
+    opacity: 0;
+  }
+
+  .model-option.selected .model-check { opacity: 1; }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: 12px;
+  }
+
+  .icon-btn {
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    background: rgba(16, 27, 58, 0.4);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    cursor: pointer;
+    color: var(--text-2);
+    transition: all 0.2s;
+  }
+
+  .icon-btn:hover {
+    background: rgba(37, 99, 235, 0.15);
+    color: var(--text);
+    border-color: rgba(96, 165, 250, 0.3);
+  }
+
+  /* ============================================================
+     LOGO — Orion mark
+  ============================================================ */
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-mark {
+    width: 32px; height: 32px;
+    position: relative;
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4));
+  }
+
+  .logo-text {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    background: linear-gradient(135deg, var(--orion-ice) 0%, var(--orion-bright) 60%, var(--orion-primary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ============================================================
+     SIDEBAR — conversation history
+  ============================================================ */
+  .sidebar {
+    grid-area: sidebar;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, rgba(10, 20, 48, 0.55) 0%, rgba(3, 6, 23, 0.7) 100%);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-right: 1px solid var(--glass-border);
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 18px 20px 12px;
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .new-chat-btn {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    background: linear-gradient(135deg, var(--orion-primary) 0%, var(--orion-mid) 100%);
+    color: white;
+    font-weight: 600;
+    font-size: 13px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: var(--shadow-blue);
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+
+  .new-chat-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 28px rgba(37, 99, 235, 0.4);
+  }
+
+  .sidebar-section {
+    padding: 16px 12px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .section-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: var(--text-3);
+    padding: 4px 10px 10px;
+    text-transform: uppercase;
+  }
+
+  .conversation {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+    border-left: 2px solid transparent;
+  }
+
+  .conversation:hover { background: rgba(37, 99, 235, 0.08); }
+  .conversation.active {
+    background: rgba(37, 99, 235, 0.15);
+    border-left-color: var(--orion-bright);
+  }
+
+  .conv-title {
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .conv-meta {
+    font-size: 11px;
+    color: var(--text-3);
+    margin-top: 2px;
+    display: flex; gap: 6px; align-items: center;
+  }
+
+  .conv-meta-model {
+    color: var(--orion-glow);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+
+  /* ============================================================
+     CHAT AREA — center stage
+  ============================================================ */
+  .chat {
+    grid-area: chat;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px 15% 20px;
+  }
+
+  .message {
+    margin-bottom: 28px;
+    animation: fadein 0.4s ease-out;
+  }
+
+  @keyframes fadein {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .msg-role {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .msg-avatar {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    display: grid; place-items: center;
+    font-size: 10px; font-weight: 700;
+  }
+
+  .user .msg-avatar {
+    background: rgba(100, 116, 139, 0.2);
+    color: var(--text-2);
+  }
+
+  .user .msg-role { color: var(--text-3); }
+
+  .orion .msg-avatar {
+    background: linear-gradient(135deg, var(--orion-primary), var(--orion-mid));
+    color: white;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .orion .msg-role { color: var(--orion-glow); }
+
+  .msg-body {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  .msg-body p { margin-bottom: 12px; }
+
+  .orion .msg-body {
+    /* Subtle glass panel on Orion responses */
+    background: rgba(16, 27, 58, 0.35);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-left: 3px solid var(--orion-bright);
+    padding: 16px 20px;
+    border-radius: 10px;
+  }
+
+  /* Tool-call trace — understated, collapsible */
+  .tool-trace {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(3, 6, 23, 0.4);
+    border: 1px dashed rgba(96, 165, 250, 0.2);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+  .tool-trace .t-fn { color: var(--orion-glow); }
+  .tool-trace .t-ok { color: var(--success); }
+
+  /* INPUT — at the bottom */
+  .chat-input-wrap {
+    padding: 20px 15% 30px;
+    background: linear-gradient(180deg, transparent 0%, var(--bg-0) 40%);
+  }
+
+  .chat-input {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 14px 16px;
+    background: rgba(16, 27, 58, 0.55);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(96, 165, 250, 0.18);
+    border-radius: 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .chat-input:focus-within {
+    border-color: var(--orion-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15), var(--shadow-glow);
+  }
+
+  .chat-input textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    min-height: 24px;
+    max-height: 200px;
+  }
+
+  .chat-input textarea::placeholder { color: var(--text-4); }
+
+  .send-btn {
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--orion-primary), var(--orion-mid));
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: var(--shadow-blue);
+  }
+
+  .send-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 24px rgba(37, 99, 235, 0.45);
+  }
+
+  .input-hint {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 4px 0;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+  .input-hint kbd {
+    background: rgba(16, 27, 58, 0.8);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    border: 1px solid var(--glass-border);
+  }
+
+  /* ============================================================
+     BRAIN PANEL — right sidebar: identity, memory state, personality
+  ============================================================ */
+  .brain-panel {
+    grid-area: brain;
+    background: linear-gradient(180deg, rgba(10, 20, 48, 0.55) 0%, rgba(3, 6, 23, 0.7) 100%);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-left: 1px solid var(--glass-border);
+    overflow-y: auto;
+    padding: 20px 18px;
+  }
+
+  .brain-hero {
+    position: relative;
+    padding: 20px;
+    background: radial-gradient(ellipse at top, rgba(37, 99, 235, 0.2), rgba(10, 20, 48, 0.5));
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    margin-bottom: 18px;
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .brain-hero::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background: conic-gradient(from 0deg,
+      transparent 0%,
+      rgba(96, 165, 250, 0.3) 30%,
+      transparent 60%);
+    animation: rotate 8s linear infinite;
+    filter: blur(20px);
+    z-index: -1;
+    opacity: 0.5;
+  }
+
+  @keyframes rotate { to { transform: rotate(360deg); } }
+
+  .brain-viz {
+    width: 110px; height: 110px;
+    margin: 0 auto 14px;
+    position: relative;
+  }
+
+  .brain-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--orion-glow);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .brain-status {
+    font-size: 13px;
+    color: var(--text-2);
+    font-weight: 500;
+  }
+
+  .brain-pulse {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--success);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--success);
+    margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .panel-section {
+    margin-bottom: 20px;
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding: 0 4px;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(16, 27, 58, 0.35);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+
+  .stat-row .label { color: var(--text-3); }
+  .stat-row .value { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+  .stat-row .value.highlight { color: var(--orion-glow); }
+
+  /* Personality slider-style controls */
+  .pers-control {
+    margin-bottom: 12px;
+  }
+
+  .pers-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-2);
+    margin-bottom: 6px;
+  }
+
+  .pers-label .value {
+    color: var(--orion-glow);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .pers-track {
+    height: 4px;
+    background: rgba(16, 27, 58, 0.6);
+    border-radius: 2px;
+    position: relative;
+  }
+
+  .pers-fill {
+    position: absolute;
+    height: 100%;
+    background: linear-gradient(90deg, var(--orion-mid), var(--orion-bright));
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  }
+
+  .pers-thumb {
+    position: absolute;
+    top: 50%;
+    width: 12px; height: 12px;
+    background: white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 2px var(--orion-primary), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Utility */
+  .hidden { display: none; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.25);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(96, 165, 250, 0.4); }
+
+  /* Design-note banner — this is a mockup, not live */
+  .mockup-banner {
+    position: fixed;
+    bottom: 16px; right: 16px;
+    padding: 8px 14px;
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--warning);
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.5px;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===== SIDEBAR — conversations ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <button class="new-chat-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        NEW CHAT
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Today</div>
+
+      <div class="conversation active">
+        <div class="conv-title">Pi install + fresh user test</div>
+        <div class="conv-meta">
+          <span class="conv-meta-model">qwen3:8b</span>
+          <span>·</span>
+          <span>2m ago</span>
+        </div>
+      </div>
+
+      <div class="conversation">
+        <div class="conv-title">What makes Orion different from Mem0</div>
+        <div class="conv-meta">
+          <span class="conv-meta-model">claude-opus-4.7</span>
+          <span>·</span>
+          <span>1h ago</span>
+        </div>
+      </div>
+
+      <div class="conversation">
+        <div class="conv-title">Physicist research — coherent info memory</div>
+        <div class="conv-meta">
+          <span class="conv-meta-model">claude-opus-4.7</span>
+          <span>·</span>
+          <span>3h ago</span>
+        </div>
+      </div>
+
+      <div class="section-label" style="margin-top: 14px;">Yesterday</div>
+
+      <div class="conversation">
+        <div class="conv-title">Mesh mode architecture — CRDT vs Raft</div>
+        <div class="conv-meta">
+          <span class="conv-meta-model">gemini-3.1-pro</span>
+          <span>·</span>
+          <span>yesterday</span>
+        </div>
+      </div>
+
+      <div class="conversation">
+        <div class="conv-title">Morning — voice notes review</div>
+        <div class="conv-meta">
+          <span class="conv-meta-model">orion-local</span>
+          <span>·</span>
+          <span>yesterday</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== HEADER — logo + model picker ===== -->
+  <header class="header">
+    <div class="logo">
+      <svg class="logo-mark" viewBox="0 0 32 32" fill="none">
+        <defs>
+          <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#93c5fd"/>
+            <stop offset="60%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#1e3a8a"/>
+          </linearGradient>
+          <radialGradient id="coreGrad" cx="50%" cy="50%">
+            <stop offset="0%" stop-color="#e2e8f0" stop-opacity="1"/>
+            <stop offset="60%" stop-color="#60a5fa" stop-opacity="0.8"/>
+            <stop offset="100%" stop-color="#1e3a8a" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <!-- Orbital rings -->
+        <circle cx="16" cy="16" r="14" fill="none" stroke="url(#logoGrad)" stroke-width="0.8" opacity="0.7"/>
+        <ellipse cx="16" cy="16" rx="14" ry="5" fill="none" stroke="url(#logoGrad)" stroke-width="0.6" opacity="0.5"/>
+        <ellipse cx="16" cy="16" rx="5" ry="14" fill="none" stroke="url(#logoGrad)" stroke-width="0.6" opacity="0.5"/>
+        <!-- Brain core -->
+        <circle cx="16" cy="16" r="5" fill="url(#coreGrad)"/>
+      </svg>
+      <span class="logo-text">ORION</span>
+    </div>
+    <span class="header-title">PORTABLE AI BRAIN</span>
+
+    <!-- ===== MODEL PICKER ===== -->
+    <div class="model-picker open">
+      <button class="model-picker-trigger">
+        <svg class="model-icon" viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="miGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#60a5fa"/>
+              <stop offset="100%" stop-color="#1e3a8a"/>
+            </linearGradient>
+          </defs>
+          <circle cx="12" cy="12" r="10" fill="none" stroke="url(#miGrad)" stroke-width="1.2"/>
+          <circle cx="12" cy="12" r="6" fill="none" stroke="url(#miGrad)" stroke-width="0.8"/>
+          <circle cx="12" cy="12" r="2.5" fill="url(#miGrad)"/>
+        </svg>
+        <span class="model-name">Claude Opus 4.7 <span style="color: var(--text-3); font-weight: 400;">via Orion</span></span>
+        <svg class="model-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      <div class="model-dropdown">
+        <div class="model-section-label">Subscription</div>
+        <div class="model-option selected">
+          <svg class="model-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.5" fill="#3b82f6"/>
+          </svg>
+          <div class="model-meta">
+            <div class="model-option-name">Claude Opus 4.7</div>
+            <div class="model-option-desc">Anthropic · Premium · 1M ctx</div>
+          </div>
+          <svg class="model-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+
+        <div class="model-option">
+          <svg class="model-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.5" fill="#3b82f6"/>
+          </svg>
+          <div class="model-meta">
+            <div class="model-option-name">Claude Sonnet 4.6</div>
+            <div class="model-option-desc">Anthropic · Fast · 1M ctx</div>
+          </div>
+          <svg class="model-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+
+        <div class="model-option">
+          <svg class="model-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.5" fill="#3b82f6"/>
+          </svg>
+          <div class="model-meta">
+            <div class="model-option-name">GPT-5.4</div>
+            <div class="model-option-desc">OpenAI · Via Codex</div>
+          </div>
+          <svg class="model-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+
+        <div class="model-option">
+          <svg class="model-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.5" fill="#3b82f6"/>
+          </svg>
+          <div class="model-meta">
+            <div class="model-option-name">Gemini 3.1 Pro</div>
+            <div class="model-option-desc">Google · Free tier</div>
+          </div>
+          <svg class="model-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+
+        <div class="model-section-label" style="margin-top: 6px;">Local (Offline)</div>
+
+        <div class="model-option">
+          <svg class="model-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.5" fill="#3b82f6"/>
+          </svg>
+          <div class="model-meta">
+            <div class="model-option-name">orion-qwen3</div>
+            <div class="model-option-desc">Ollama · 8B · tool-capable</div>
+          </div>
+          <svg class="model-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+
+        <div class="model-option">
+          <svg class="model-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+            <circle cx="12" cy="12" r="2.5" fill="#3b82f6"/>
+          </svg>
+          <div class="model-meta">
+            <div class="model-option-name">orion-deepseek</div>
+            <div class="model-option-desc">Ollama · 7B · reasoning</div>
+          </div>
+          <svg class="model-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button class="icon-btn" title="Search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+      </button>
+      <button class="icon-btn" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== CHAT ===== -->
+  <main class="chat">
+    <div class="chat-messages">
+
+      <div class="message user">
+        <div class="msg-role">
+          <div class="msg-avatar">J</div>
+          <span>YOU</span>
+        </div>
+        <div class="msg-body">
+          <p>Remember that I ran the fresh-user Orion install on the Raspberry Pi today and it worked on qwen3:8b.</p>
+        </div>
+      </div>
+
+      <div class="message orion">
+        <div class="msg-role">
+          <div class="msg-avatar">O</div>
+          <span>ORION</span>
+        </div>
+        <div class="msg-body">
+          <p>Saved, sir. Filed under your Pi graduation milestone.</p>
+          <div class="tool-trace">
+            <span class="t-fn">→ orion_memorize</span>(type=<span class="t-ok">"milestone"</span>, tags=<span class="t-ok">["pi","install","graduation"]</span>)
+            <br><span class="t-fn">← stored</span> as node #64 · linked to entity <span class="t-ok">"ORIONS HOME"</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="message user">
+        <div class="msg-role">
+          <div class="msg-avatar">J</div>
+          <span>YOU</span>
+        </div>
+        <div class="msg-body">
+          <p>What did the physicist research say about my memory re-anchoring threshold again?</p>
+        </div>
+      </div>
+
+      <div class="message orion">
+        <div class="msg-role">
+          <div class="msg-avatar">O</div>
+          <span>ORION</span>
+        </div>
+        <div class="msg-body">
+          <p>The Bény–Oreshkov approximate Knill–Laflamme framework gives you a concrete threshold ε = δ²/η where δ is your target recovery fidelity. Below it, redundancy works; above it, active re-anchoring is mandatory. Not a heuristic — a phase transition.</p>
+          <p>I have the three papers tagged if you want them surfaced.</p>
+          <div class="tool-trace">
+            <span class="t-fn">→ orion_recall</span>(query=<span class="t-ok">"memory re-anchoring Beny-Oreshkov"</span>)
+            <br><span class="t-fn">← 3 nodes</span> · confidence 0.92 · source=<span class="t-ok">research/2026-04-22</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="chat-input-wrap">
+      <div class="chat-input">
+        <textarea placeholder="Message Orion..."></textarea>
+        <button class="send-btn" title="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        <span>Fuel: <span style="color: var(--orion-glow);">Claude Opus 4.7</span> · Brain: <span style="color: var(--success);">● connected</span></span>
+        <span><kbd>⌘ K</kbd> Commands · <kbd>Enter</kbd> Send · <kbd>⇧ Enter</kbd> Newline</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== BRAIN PANEL ===== -->
+  <aside class="brain-panel">
+
+    <div class="brain-hero">
+      <div class="brain-viz">
+        <svg viewBox="0 0 120 120" width="110" height="110">
+          <defs>
+            <radialGradient id="core" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#e2e8f0" stop-opacity="1"/>
+              <stop offset="30%" stop-color="#60a5fa" stop-opacity="0.9"/>
+              <stop offset="100%" stop-color="#1e3a8a" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#93c5fd"/>
+              <stop offset="100%" stop-color="#1e3a8a"/>
+            </linearGradient>
+          </defs>
+          <!-- Core glow -->
+          <circle cx="60" cy="60" r="50" fill="url(#core)"/>
+          <!-- Orbital rings -->
+          <circle cx="60" cy="60" r="48" fill="none" stroke="url(#ring)" stroke-width="0.8" opacity="0.6"/>
+          <ellipse cx="60" cy="60" rx="48" ry="18" fill="none" stroke="url(#ring)" stroke-width="0.6" opacity="0.5"/>
+          <ellipse cx="60" cy="60" rx="18" ry="48" fill="none" stroke="url(#ring)" stroke-width="0.6" opacity="0.5"/>
+          <ellipse cx="60" cy="60" rx="35" ry="35" fill="none" stroke="url(#ring)" stroke-width="0.4" opacity="0.4" transform="rotate(45 60 60)"/>
+          <!-- Inner core -->
+          <circle cx="60" cy="60" r="14" fill="#3b82f6" opacity="0.9"/>
+          <circle cx="60" cy="60" r="8" fill="#93c5fd"/>
+          <!-- Node points -->
+          <circle cx="60" cy="12" r="1.5" fill="#93c5fd"/>
+          <circle cx="108" cy="60" r="1.5" fill="#93c5fd"/>
+          <circle cx="60" cy="108" r="1.5" fill="#93c5fd"/>
+          <circle cx="12" cy="60" r="1.5" fill="#93c5fd"/>
+          <circle cx="94" cy="26" r="1" fill="#60a5fa"/>
+          <circle cx="94" cy="94" r="1" fill="#60a5fa"/>
+          <circle cx="26" cy="94" r="1" fill="#60a5fa"/>
+          <circle cx="26" cy="26" r="1" fill="#60a5fa"/>
+        </svg>
+      </div>
+      <div class="brain-label">BRAIN STATUS</div>
+      <div class="brain-status">
+        <span class="brain-pulse"></span> Active · Learning
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Memory</div>
+      <div class="stat-row">
+        <span class="label">Graph nodes</span>
+        <span class="value highlight">64</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Entities</span>
+        <span class="value">5</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Contested</span>
+        <span class="value">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Conversations today</span>
+        <span class="value">12</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Personality</div>
+
+      <div class="pers-control">
+        <div class="pers-label">
+          <span>Conciseness</span>
+          <span class="value">0.85</span>
+        </div>
+        <div class="pers-track">
+          <div class="pers-fill" style="width: 85%;"></div>
+          <div class="pers-thumb" style="left: 85%;"></div>
+        </div>
+      </div>
+
+      <div class="pers-control">
+        <div class="pers-label">
+          <span>Proactivity</span>
+          <span class="value">0.60</span>
+        </div>
+        <div class="pers-track">
+          <div class="pers-fill" style="width: 60%;"></div>
+          <div class="pers-thumb" style="left: 60%;"></div>
+        </div>
+      </div>
+
+      <div class="pers-control">
+        <div class="pers-label">
+          <span>Formality</span>
+          <span class="value">0.70</span>
+        </div>
+        <div class="pers-track">
+          <div class="pers-fill" style="width: 70%;"></div>
+          <div class="pers-thumb" style="left: 70%;"></div>
+        </div>
+      </div>
+
+      <div class="pers-control">
+        <div class="pers-label">
+          <span>Self-repair autonomy</span>
+          <span class="value">0.40</span>
+        </div>
+        <div class="pers-track">
+          <div class="pers-fill" style="width: 40%;"></div>
+          <div class="pers-thumb" style="left: 40%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Fuel Sources</div>
+      <div class="stat-row">
+        <span class="label">Claude CLI</span>
+        <span class="value" style="color: var(--success);">● ready</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Codex CLI</span>
+        <span class="value" style="color: var(--success);">● ready</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Gemini CLI</span>
+        <span class="value" style="color: var(--success);">● ready</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Ollama local</span>
+        <span class="value" style="color: var(--success);">● qwen3:8b</span>
+      </div>
+    </div>
+
+  </aside>
+
+</div>
+
+<div class="mockup-banner">
+  MOCKUP · v0 · not functional · design target for desktop app
+</div>
+
+</body>
+</html>

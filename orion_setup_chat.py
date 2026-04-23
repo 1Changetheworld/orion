@@ -64,15 +64,31 @@ def speak(text: str, *, color: str = CYAN, label: str = "orion", lead_pause: flo
     sys.stdout.flush()
 
 
-def ask(prompt_text: str = "") -> str:
-    """Wait for user input. Voice of the human."""
+def ask(prompt_text: str = "", prompt_label: str = None) -> str:
+    """Wait for user input. Voice of the human.
+
+    prompt_label lets us show the user's chosen form-of-address after they
+    pick one. Defaults to 'you>' — neutral, no assumption.
+    """
     if prompt_text:
         speak(prompt_text)
+    label = prompt_label or _USER_LABEL
     try:
-        return input(f"  {BOLD}sir>{RESET} ").strip()
+        return input(f"  {BOLD}{label}>{RESET} ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return ""
+
+
+# Form-of-address for the current user. Updated during onboarding.
+# Defaults to 'you' so we never assume before asking.
+_USER_LABEL = "you"
+
+
+def set_user_label(label: str):
+    """Update the shell prompt label so input() shows the right form."""
+    global _USER_LABEL
+    _USER_LABEL = label or "you"
 
 
 def pause(seconds: float = 0.4) -> None:
@@ -141,7 +157,7 @@ def find_ready_fuel(tools: dict) -> tuple[str, str] | None:
 # ─────────────────────────────────────────────────────────
 
 def seed_brain(user_name: str, user_summary: str, tools: dict,
-               chosen_fuel: str) -> dict:
+               chosen_fuel: str, user_address: str = "") -> dict:
     """Populate the fresh brain with first-meeting facts.
 
     Uses orion_ontology.resolve_entity so canonicalization/bias-toward-NEW
@@ -204,6 +220,20 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
         content=f"First meeting with {user_name or 'user'} on {time.strftime('%Y-%m-%d')}. Installed via proto-Orion onboarding.",
         node_type="identity",
         tags=["first-meeting", "install-day"],
+        skip_contradiction_check=True,
+    )
+    nodes_written += 1
+
+    # 6. Address preference — how user wants to be addressed.
+    # Critical: without this, Orion defaults to nothing (no honorific assumption).
+    g.store(
+        content=(
+            f"The user prefers to be addressed as: '{user_address}'"
+            if user_address
+            else "The user does not want any honorific or title. Address them plainly or by name."
+        ),
+        node_type="preference",
+        tags=["address", "form-of-address", "user-preference"],
         skip_contradiction_check=True,
     )
     nodes_written += 1
@@ -276,12 +306,48 @@ def run():
 
     # --- IDENTITY GATHERING ---
     speak("First, who am I talking to?")
-    user_name = ask()
+    user_name = ask(prompt_label="name")
     if not user_name:
-        speak("No name given. I'll call you 'sir' for now.")
-        user_name = "sir"
+        user_name = ""
+        speak("No name given — that's fine, we can do this without one.")
+
+    # Form-of-address. Orion will not assume anything.
+    pause(0.3)
+    if user_name:
+        speak(f"Nice to meet you, {user_name}.")
+        pause(0.2)
+        speak(f"How should I address you? You can say:")
     else:
-        speak(f"Noted, {user_name}.")
+        speak("How would you like me to address you?")
+    speak(f"  {DIM}— 'just use my name' ({user_name or 'whatever you tell me'}){RESET}",
+          lead_pause=0.1)
+    speak(f"  {DIM}— a title like 'Dr', 'Professor', 'Captain', 'Coach'{RESET}", lead_pause=0.1)
+    speak(f"  {DIM}— an honorific like 'sir', 'ma'am'{RESET}", lead_pause=0.1)
+    speak(f"  {DIM}— a nickname of your choice{RESET}", lead_pause=0.1)
+    speak(f"  {DIM}— 'nothing' / press enter, and I'll skip honorifics entirely{RESET}", lead_pause=0.1)
+
+    address_input = ask(prompt_label="address").lower().strip()
+    if not address_input or address_input in ("nothing", "none", "skip", "no"):
+        user_address = ""   # Orion addresses them by nothing
+        prompt_label = user_name.split()[0].lower() if user_name else "you"
+    elif "name" in address_input and user_name:
+        user_address = user_name.split()[0]  # first name
+        prompt_label = user_name.split()[0].lower()
+    else:
+        # Take whatever they typed at face value — their choice, literally
+        # (Strip trailing punctuation.)
+        user_address = address_input.rstrip(".,!?").strip()
+        # Cap at 40 chars as sanity guard
+        user_address = user_address[:40]
+        prompt_label = user_address.lower()
+
+    # Update the shell prompt label so subsequent input shows the right form
+    set_user_label(prompt_label)
+
+    if user_address:
+        speak(f"Got it. I'll call you {user_address}.")
+    else:
+        speak("Noted — no honorific, just conversation.")
 
     pause(0.3)
     speak("One-liner — what are you working on, or what do you care about? "
@@ -341,7 +407,7 @@ def run():
     # --- BRAIN SEEDING ---
     pause(0.3)
     speak("Writing what we just covered into my memory.")
-    seed_result = seed_brain(user_name, user_summary, tools, chosen_fuel)
+    seed_result = seed_brain(user_name, user_summary, tools, chosen_fuel, user_address)
     if seed_result.get("error"):
         speak(f"Memory write partial: {seed_result['error']}", color=YELLOW)
     else:
@@ -389,7 +455,12 @@ def run():
               "with orion-brain in its MCP config to talk to me through it.")
 
     print()
-    speak(f"Welcome, {user_name}. I'm here.", color=BLUE)
+    # Use user's chosen address, fall back to name, fall back to plain welcome
+    greeting_target = user_address or user_name or ""
+    if greeting_target:
+        speak(f"Welcome, {greeting_target}. I'm here.", color=BLUE)
+    else:
+        speak("Welcome. I'm here.", color=BLUE)
     print()
 
 
