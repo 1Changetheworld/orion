@@ -226,19 +226,58 @@ TOOLS = [
     {
         "name": "orion_cross_model",
         "description": (
-            "Get what's happening in other AI terminals — recent messages "
-            "from Codex, Claude Code, Gemini CLI, Letta, and Ollama sessions. "
-            "Use this to understand cross-tool context and avoid duplicate work."
+            "Summary of cross-tool activity (counts per source, time span). "
+            "Use this when the user asks 'where have we been talking' or "
+            "'what tools have I used'. For specific message content from a "
+            "given tool, use orion_get_message instead — this tool returns "
+            "aggregates only, on purpose, so you don't dump raw cross-tool "
+            "transcripts into the current chat."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "limit": {
                     "type": "integer",
-                    "description": "Max messages per source. Default 20."
+                    "description": "Max messages per source to aggregate. Default 20."
                 }
             },
             "required": []
+        }
+    },
+    {
+        "name": "orion_get_message",
+        "description": (
+            "Fetch specific messages from a named tool's session history — "
+            "use this when the user asks 'what did I say in codex' or "
+            "'what was the last thing discussed in gemini'. Returns actual "
+            "message text from the local session file on disk. This is the "
+            "user's own terminal history on their own device (consent granted "
+            "at install). Unlike orion_cross_model (which returns counts "
+            "only), this returns content — so call it only when the user "
+            "explicitly asks for content, not for casual 'what tools am I "
+            "using' questions."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "Which tool's history to read: 'codex', 'gemini', 'claude', or 'orion' (orion_chat sessions)."
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Optional keyword search within that tool's messages. Omit to get most recent."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max messages to return. Default 5, max 20."
+                },
+                "role": {
+                    "type": "string",
+                    "description": "Filter by 'user' or 'assistant'. Omit for both."
+                }
+            },
+            "required": ["source"]
         }
     },
     {
@@ -617,6 +656,64 @@ def _handle_orion_cross_model(args: dict) -> list:
     return [{"type": "text", "text": "\n".join(lines)}]
 
 
+def _handle_orion_get_message(args: dict) -> list:
+    """Fetch specific messages from a named tool's session history.
+
+    Solves the problem observed in Pi graduation test: Gemini had to make
+    12 tool calls (cross_model + recall + synthesize + user_model + grep +
+    ls + tail) to answer 'what was the last thing said in codex', because
+    cross_model returns counts only (for privacy). This tool returns actual
+    message content on explicit request. One call, not twelve.
+    """
+    source = args.get("source", "").lower().strip()
+    query = args.get("query", "").strip().lower()
+    limit = min(int(args.get("limit", 5)), 20)
+    role_filter = args.get("role", "").lower().strip()
+
+    if source not in ("codex", "gemini", "claude", "orion"):
+        return [{"type": "text", "text": (
+            f"Unknown source '{source}'. Use one of: codex, gemini, claude, orion."
+        )}]
+
+    try:
+        messages = read_all_sources(limit_per_source=50)
+    except Exception as e:
+        return [{"type": "text", "text": f"Could not read session histories: {e}"}]
+
+    # Filter to requested source
+    hits = [m for m in messages if m.get("source", "").lower() == source]
+
+    # Role filter
+    if role_filter in ("user", "assistant"):
+        hits = [m for m in hits if m.get("role") == role_filter]
+
+    # Keyword filter
+    if query:
+        hits = [m for m in hits if query in (m.get("text") or "").lower()]
+
+    # Most recent first, capped at limit
+    hits.sort(key=lambda m: m.get("timestamp", 0), reverse=True)
+    hits = hits[:limit]
+
+    if not hits:
+        return [{"type": "text", "text": (
+            f"No messages found in {source}"
+            + (f" matching '{query}'" if query else "")
+            + (f" with role {role_filter}" if role_filter else "")
+            + "."
+        )}]
+
+    lines = [f"{len(hits)} message(s) from {source}:"]
+    for m in hits:
+        ts = m.get("timestamp", 0)
+        ts_fmt = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)) if ts else "unknown"
+        role = m.get("role", "?")
+        text = (m.get("text") or "").strip()[:500]
+        lines.append(f"\n[{ts_fmt}] {role}: {text}")
+
+    return [{"type": "text", "text": "\n".join(lines)}]
+
+
 def _handle_orion_skills(args: dict) -> list:
     query = args.get("query", "")
 
@@ -720,6 +817,7 @@ _HANDLERS = {
     "orion_project_state": _handle_orion_project_state,
     "orion_synthesize": _handle_orion_synthesize,
     "orion_cross_model": _handle_orion_cross_model,
+    "orion_get_message": _handle_orion_get_message,
     "orion_skills": _handle_orion_skills,
     "orion_identity": _handle_orion_identity,
     "orion_heartbeat": _handle_orion_heartbeat,
@@ -1016,7 +1114,8 @@ def setup_mcp_configs():
                 # them entirely — which was the Pi install's exact symptom.
                 _codex_tools = [
                     "orion_recall", "orion_memorize", "orion_identity",
-                    "orion_project_state", "orion_cross_model", "orion_skills",
+                    "orion_project_state", "orion_cross_model",
+                    "orion_get_message", "orion_skills",
                     "orion_list_contested", "orion_resolve_contradiction",
                     "orion_user_model", "orion_synthesize", "orion_heartbeat",
                 ]
