@@ -195,7 +195,7 @@
 <div class="diagram">
 <span class="highlight">GRAPH MEMORY</span> (~/.orion/brain/graph_memory.json)
   Structure: { nodes: [ { id, content, type, confidence, tags, timestamp } ] }
-  Lookup: Tag-based. Query "FORGE" &rarr; finds all nodes tagged "forge"
+  Lookup: Tag-based. Query "device-name" &rarr; finds all nodes tagged "forge"
   Speed: Microseconds (it's a JSON file loaded in RAM)
   Size: Currently 30+ nodes
   <span class="dim">Think of it as: A tagged notebook. Fast, structured, small.</span>
@@ -208,29 +208,29 @@
   <span class="dim">Think of it as: A search engine over everything the brain has learned.</span>
 
 <span class="warn">NOT a vector database.</span> No embeddings. No semantic similarity.
-  Qdrant (vector DB) exists on COMMAND but the portable brain
+  Qdrant (vector DB) exists on the hub but the portable brain
   uses file-based BM25 for zero-dependency operation.
 </div>
 
 <h3>How Recall Works</h3>
 <div class="diagram">
-brain.remember("what is FORGE")
+brain.remember("what is my laptop")
   |
   +--&gt; Graph: scan all nodes, score by tag overlap with query tokens
-  |    Match: "FORGE travels with James" (tagged: forge, mobile, laptop)
+  |    Match: "the workstation travels with the user" (tagged: forge, mobile, laptop)
   |    Match: "RTX 4070 8GB VRAM" (tagged: forge, gpu, nvidia)
   |
-  +--&gt; Index: BM25 search for "what is FORGE"
+  +--&gt; Index: BM25 search for "what is my laptop"
   |    Score documents by term frequency, return top 5
   |
   +--&gt; Combine results into &lt;memory-context&gt; block
-       [graph] FORGE travels with James ...
-       [index:0.84] FORGE is the primary workstation ...
+       [graph] the workstation travels with the user ...
+       [index:0.84] the workstation is the primary dev machine ...
 </div>
 
 <div class="card honest">
   <span class="label orange">LIMITATION</span>
-  <p>Graph recall is <strong>tag-based, not semantic</strong>. If you stored something about "my laptop" but search for "FORGE", it won't match unless "forge" is in the tags. BM25 is keyword-based &mdash; it matches words, not meaning. Searching "my computer" won't find documents about "FORGE" unless both words appear in the text.</p>
+  <p>Graph recall is <strong>tag-based, not semantic</strong>. If you stored something about "my laptop" but search for "FORGE", it won't match unless "forge" is in the tags. BM25 is keyword-based &mdash; it matches words, not meaning. Searching "my computer" won't find documents about "my-device-name" unless both words appear in the text.</p>
 </div>
 </section>
 
@@ -399,7 +399,7 @@ brain.remember("what is FORGE")
 
 <div class="card honest">
   <span class="label orange">MCP IS ONE DOOR, NOT THE ONLY DOOR</span>
-  <p>MCP only works for AI models that support the protocol. That's currently Codex, Gemini, and Claude Code. Everything else &mdash; Telegram, phone, iMessage, webhooks, Ollama &mdash; connects through the <strong>HTTP brain server</strong> on COMMAND (:5555). Both doors lead to the same brain. Both feed the same memory. The heartbeat processes data from all sources regardless of how it arrived.</p>
+  <p>MCP only works for AI models that support the protocol. That's currently Codex, Gemini, and Claude Code. Everything else &mdash; Telegram, phone, iMessage, webhooks, Ollama &mdash; connects through the <strong>HTTP brain server</strong> on the central hub (port 5555). Both doors lead to the same brain. Both feed the same memory. The heartbeat processes data from all sources regardless of how it arrived.</p>
 </div>
 </section>
 
@@ -428,12 +428,12 @@ brain.remember("what is FORGE")
    Codex Gem Claude Tel  Ph  iMsg    (unknown
                                     interfaces)
 
-<span class="good">MCP Server</span> (on FORGE &mdash; this device)
+<span class="good">MCP Server</span> (on the workstation &mdash; this device)
   - Runs when AI models launch
   - Speaks JSON-RPC over stdin/stdout
   - Auto-starts heartbeat on first connection
 
-<span class="good">HTTP Server</span> (on COMMAND &mdash; Mac mini, always on)
+<span class="good">HTTP Server</span> (on the central hub &mdash; example: Mac mini, always on)
   - Runs 24/7 on port 5555
   - Serves Telegram bot, phone (Telnyx), iMessage, webhooks
   - Dispatch commands for system control
@@ -463,7 +463,7 @@ brain.remember("what is FORGE")
     <span class="label orange">WHAT WE BORROW</span>
     <p><strong>AI Models</strong> &mdash; Claude, GPT, Gemini, Ollama models. These are "fuel." Orion doesn't own them.</p>
     <p><strong>Ollama</strong> &mdash; Runs local models. Open source, runs on our hardware.</p>
-    <p><strong>Qdrant</strong> &mdash; Vector database on COMMAND. Open source, self-hosted.</p>
+    <p><strong>Qdrant</strong> &mdash; Vector database on the central hub. Open source, self-hosted.</p>
     <p><strong>Telnyx</strong> &mdash; Phone number service. Paid API.</p>
     <p><strong>Cloudflare</strong> &mdash; Tunnel for atlascommand.vip domain.</p>
   </div>
@@ -479,7 +479,7 @@ brain.remember("what is FORGE")
 <span class="good">TARGET:</span>
   Brain analysis = local pattern matching (independent)
   Deep synthesis = Orion's own fine-tuned model (independent)
-  That model = QLoRA-trained on FORGE's RTX 4070 (our hardware)
+  That model = QLoRA-trained on the workstation GPU (our hardware)
   Training data = 1,207 pairs from our own conversations (our data)
 
 <span class="highlight">The fine-tune pipeline is built. Training hasn't happened yet.</span>
@@ -504,7 +504,7 @@ brain.remember("what is FORGE")
 
 <div class="card works" style="border-left:3px solid var(--cyan)">
   <span class="label green">2. CROSS-MODEL MEMORY</span>
-  <p>Store a fact through Codex. Recall it through Gemini. Both models call the same brain through MCP tools. The memory lives in Orion, not in any model. <strong>Verified working</strong> &mdash; Codex stored "James likes key lime pie" via <code>orion_memorize</code>, Gemini can recall it via <code>orion_remember</code>.</p>
+  <p>Store a fact through Codex. Recall it through Gemini. Both models call the same brain through MCP tools. The memory lives in Orion, not in any model. <strong>Verified working</strong> &mdash; Codex stored "my favorite pie is key lime" via <code>orion_memorize</code>, Gemini can recall it via <code>orion_remember</code>.</p>
   <p>This is different from each model having its own memory. This is one memory that multiple models share. Switch models mid-thought and your context follows.</p>
 </div>
 
@@ -568,7 +568,7 @@ brain.remember("what is FORGE")
 
   <span class="good">DEEP LAYER</span> (pipeline built, training not yet run)
     QLoRA fine-tuned model trained on your conversations
-    Runs on FORGE's RTX 4070 (8GB VRAM)
+    Runs on a workstation GPU (example: RTX 4070, 8GB VRAM)
     1,207 training pairs extracted, ready to train
     Good for: actual comprehension, personality, nuanced responses
     This is what makes the brain genuinely intelligent
@@ -708,7 +708,7 @@ brain.remember("what is FORGE")
     <li>Deep synthesis &mdash; LLM enrichment hooks exist but aren't running (model training in progress).</li>
     <li>Temporal awareness &mdash; no sense of time. Old facts weigh same as new.</li>
     <li>Semantic search &mdash; memory is keyword-based, not meaning-based.</li>
-    <li>Local model &mdash; QLoRA training IN PROGRESS on FORGE RTX 4070. 1,488 pairs, Mistral 7B, 3 epochs.</li>
+    <li>Local model &mdash; QLoRA training IN PROGRESS on {workstation-gpu}. 1,488 pairs, Mistral 7B, 3 epochs.</li>
   </ul>
 </div>
 
@@ -758,10 +758,10 @@ brain.remember("what is FORGE")
 <div class="diagram">
 <span class="highlight">STEP BY STEP &mdash; what happens when you talk to the trained model:</span>
 
-  1. Your text arrives: "What's running on COMMAND?"
+  1. Your text arrives: "What's running on the hub?"
 
   2. <span class="good">TOKENIZE</span>: Convert text to numbers
-     "What's" &rarr; 1724  "running" &rarr; 2846  "on" &rarr; 373  "COMMAND" &rarr; 24118  "?" &rarr; 30
+     "What's" &rarr; 1724  "running" &rarr; 2846  "on" &rarr; 373  "hub" &rarr; [token-id]  "?" &rarr; 30
      Now it's [1724, 2846, 373, 24118, 30]
 
   3. <span class="good">LOAD CONTEXT</span>: Feed tokens through the model
@@ -772,8 +772,8 @@ brain.remember("what is FORGE")
 
   4. <span class="good">ATTENTION</span>: "Which previous tokens matter for the next word?"
      The model computes relationships between every token pair
-     "COMMAND" gets high attention from "running" and "What's"
-     This is how context works &mdash; the model knows the question is about COMMAND
+     "hub" gets high attention from "running" and "What's"
+     This is how context works &mdash; the model knows the question is about the hub
 
   5. <span class="good">PREDICT</span>: Final layer outputs probability for every possible next word
      "Docker" = 12%  "The" = 8%  "Currently" = 7%  "Sir" = 15%  ...
@@ -820,7 +820,7 @@ brain.remember("what is FORGE")
 
 <span class="good">STRIPPED FOR ORION</span>: ~42,000 lines
   1 model architecture (Llama/Mistral family)
-  1 GPU backend (CUDA for FORGE, or CPU for Pi)
+  1 GPU backend (CUDA for a workstation GPU, or CPU for Pi)
   No server (embedded in Python process)
   No multi-user (one brain, one user)
   The actual Llama graph builder: <span class="highlight">175 lines</span>
@@ -847,7 +847,7 @@ brain.remember("what is FORGE")
   <span class="good">Always on. Always listening. Costs pennies in electricity.</span>
 
 <span class="highlight">TIER 2 &mdash; LOCAL INTELLIGENCE</span> (on demand)
-  Hardware:    FORGE RTX 4070 (8GB VRAM)
+  Hardware:    {workstation-gpu} (8GB VRAM)
   Model:       Mistral 7B + Orion LoRA (Q4_K_M, ~5GB)
   Speed:       40-60 tokens/second (with speculative decoding)
   Role:        Reasoning, planning, code, complex tasks
@@ -875,7 +875,7 @@ brain.remember("what is FORGE")
     Complex reasoning needed &rarr; escalate
         |
         v
-  <span class="good">TIER 2</span> (FORGE): Can I handle this?
+  <span class="good">TIER 2</span> (workstation): Can I handle this?
     Reasoning, code, planning &rarr; respond
     Exceeds local model capability &rarr; escalate
         |
@@ -889,7 +889,7 @@ brain.remember("what is FORGE")
 
 <div class="card honest">
   <span class="label orange">CURRENT STATE</span>
-  <p><strong>Tier 2 is training right now.</strong> The Mistral 7B + Orion LoRA model is being trained on FORGE's RTX 4070 with 1,488 conversation pairs. When it finishes, Tier 2 is live.</p>
+  <p><strong>Tier 2 is currently a research track.</strong> The Mistral 7B + Orion LoRA model is being trained on the workstation GPU with 1,488 conversation pairs. When it finishes, Tier 2 is live.</p>
   <p><strong>Tier 1 doesn't exist yet.</strong> The Raspberry Pi 5 is incoming hardware. Once it arrives, a sub-2B model can be distilled from the Tier 2 model and deployed as the always-on reflex brain.</p>
   <p><strong>Tier 3 is what we use today.</strong> Claude API through Claude Code, Codex, and Gemini. This becomes the fallback, not the primary.</p>
 </div>
@@ -903,13 +903,13 @@ brain.remember("what is FORGE")
 <p>Hyper ingestion built and tested. 1,070 messages from 9 sources absorbed in 741ms. The brain reads all existing conversation history from Claude, Codex, Gemini, Ollama, Letta, memory files, knowledge documents, and context files. New Orion installations run <code>--hyper</code> and bootstrap instantly.</p>
 
 <h3>Phase 2: Train Orion's Own Model (IN PROGRESS)</h3>
-<p>QLoRA fine-tuning running on FORGE's RTX 4070. 1,488 training pairs from cross-model conversations. Mistral 7B base. When complete: convert to GGUF, embed in Orion via llama-cpp-python. No Ollama dependency.</p>
+<p>QLoRA fine-tuning running on the workstation GPU. 1,488 training pairs from cross-model conversations. Mistral 7B base. When complete: convert to GGUF, embed in Orion via llama-cpp-python. No Ollama dependency.</p>
 
 <h3>Phase 3: Eliminate External Dependencies</h3>
 <p>Replace Ollama with llama-cpp-python embedded in the brain process. Implement persistent KV cache for 136x faster context loading. One process = brain + model + memory + heartbeat. Ship as a single installer.</p>
 
 <h3>Phase 4: Deep Synthesis</h3>
-<p>With its own model running, the brain can use LLM-enriched analysis for true understanding. Not "James says 'execute' a lot" but "James values execution because he built everything himself." The synthesis engine hooks exist. They just need the model to power them.</p>
+<p>With its own model running, the brain can use LLM-enriched analysis for true understanding. Not "the user says 'execute' a lot" but "the user values execution because they built everything themselves." The synthesis engine hooks exist. They just need the model to power them.</p>
 
 <h3>Phase 5: Tier 1 Reflex Brain</h3>
 <p>Distill the 7B model to 1-2B. Deploy on Raspberry Pi 5 as always-on brain. Handles 60%+ of daily queries at 8-15 tok/s. Under 5W power. Persistent KV cache for instant startup. The brain that never sleeps.</p>
@@ -930,7 +930,7 @@ brain.remember("what is FORGE")
 </section>
 
 <div style="text-align:center;padding:40px 0;color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace">
-  Built by James England &mdash; ORION Project &mdash; 2026<br>
+  Built by ORION Project &mdash; 2026<br>
   No CS degree. No funding. No shortcuts.<br>
   <span style="color:var(--cyan)">github.com/1Changetheworld/orion</span>
 </div>
