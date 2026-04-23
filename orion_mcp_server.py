@@ -907,10 +907,29 @@ def setup_mcp_configs():
                 def _toml_str(s: str) -> str:
                     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
+                # Tools Codex should surface + auto-approve. Mirrors the
+                # working FORGE configuration. Without these declarations,
+                # Codex may default to blocking tools or failing to expose
+                # them entirely — which was the Pi install's exact symptom.
+                _codex_tools = [
+                    "orion_recall", "orion_memorize", "orion_identity",
+                    "orion_project_state", "orion_cross_model", "orion_skills",
+                    "orion_list_contested", "orion_resolve_contradiction",
+                    "orion_user_model", "orion_synthesize", "orion_heartbeat",
+                ]
+
+                tool_blocks = "\n".join(
+                    f"\n[mcp_servers.orion-brain.tools.{name}]\n"
+                    f'approval_mode = "approve"\n'
+                    for name in _codex_tools
+                )
+
                 block = (
                     "\n\n[mcp_servers.orion-brain]\n"
                     f"command = {_toml_str(mcp_entry['command'])}\n"
                     f"args = [{', '.join(_toml_str(a) for a in mcp_entry['args'])}]\n"
+                    f"startup_timeout_sec = 60\n"   # tolerant of slow hardware (Pi 5, ARM)
+                    f"{tool_blocks}"
                 )
                 # Ensure a clean newline before append
                 if existing and not existing.endswith("\n"):
