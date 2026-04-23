@@ -474,12 +474,50 @@ def _cli():
 
     fuel = args.fuel or pick_default_fuel(args.endpoint, args.api_key)
     if not fuel:
-        print(f"{RED}  No tool-capable model found on {args.endpoint}.{RESET}")
-        print(f"  Install one of: {', '.join(PROVEN_TOOL_FUELS)}")
-        print(f"  Example: ollama pull qwen3:14b")
+        # No local Ollama-style endpoint available. Check if user picked a
+        # cloud CLI as their primary fuel during setup — in that case
+        # `orion chat` isn't the right entry point; they should talk to
+        # Orion through the CLI they already have.
+        chosen = _read_chosen_cloud_fuel()
+        print(f"{DIM}  `orion chat` is the local-Ollama loop. No Ollama model "
+              f"was found on {args.endpoint}.{RESET}")
+        print()
+        if chosen:
+            print(f"  {GREEN}You picked {chosen} as your fuel during setup.{RESET}")
+            print(f"  Just run {BOLD}{chosen}{RESET} in any terminal — Orion is "
+                  f"already wired into it via MCP.")
+            print(f"  Ask it naturally: {DIM}'what's my name?'{RESET} — it'll "
+                  f"call Orion's brain automatically.")
+        else:
+            print(f"  You have two paths:")
+            print(f"    {DIM}(a){RESET} Use a cloud CLI you already have authed "
+                  f"(codex / gemini / claude) — just run it, Orion is wired via MCP")
+            print(f"    {DIM}(b){RESET} Install Ollama + a tool-capable model for "
+                  f"offline chat through `orion chat`:")
+            print(f"       {DIM}ollama pull qwen3:8b{RESET}")
+        print()
         return 1
 
     return chat(fuel, args.endpoint, args.api_key)
+
+
+def _read_chosen_cloud_fuel() -> str | None:
+    """Find the user's chosen fuel from graph memory. Returns cloud CLI name or None."""
+    try:
+        graph = _get_graph()
+        for node in graph.nodes.values():
+            if node.get("type") != "tool":
+                continue
+            content = (node.get("content") or "").lower()
+            if "primary fuel" not in content:
+                continue
+            # Content looks like: "User chose codex as primary fuel during first install"
+            for name in ("codex", "gemini", "claude"):
+                if name in content:
+                    return name
+    except Exception:
+        pass
+    return None
 
 
 if __name__ == "__main__":
