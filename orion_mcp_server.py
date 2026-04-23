@@ -889,24 +889,50 @@ def setup_mcp_configs():
             print(f"  [!] Claude Code config failed: {e}")
 
     # ── Codex ──
+    # Codex reads MCP servers from ~/.codex/config.toml using TOML
+    # sections like [mcp_servers.<name>] — NOT from ~/.codex/mcp.json.
+    # Writing mcp.json is silently ignored by the CLI, which is why this
+    # setup previously appeared to succeed but Codex didn't see orion-brain.
     codex_dir = Path.home() / ".codex"
     if codex_dir.exists():
-        codex_config = codex_dir / "mcp.json"
+        codex_config = codex_dir / "config.toml"
         try:
-            config = {}
+            existing = ""
             if codex_config.exists():
-                with open(codex_config, encoding='utf-8') as f:
-                    config = json.load(f)
+                existing = codex_config.read_text(encoding="utf-8")
 
-            if "mcpServers" not in config:
-                config["mcpServers"] = {}
+            # Idempotent: only append if section not present
+            if "[mcp_servers.orion-brain]" not in existing:
+                # Escape backslashes + quotes for TOML double-quoted strings
+                def _toml_str(s: str) -> str:
+                    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-            config["mcpServers"]["orion-brain"] = mcp_entry
+                block = (
+                    "\n\n[mcp_servers.orion-brain]\n"
+                    f"command = {_toml_str(mcp_entry['command'])}\n"
+                    f"args = [{', '.join(_toml_str(a) for a in mcp_entry['args'])}]\n"
+                )
+                # Ensure a clean newline before append
+                if existing and not existing.endswith("\n"):
+                    existing += "\n"
+                codex_config.write_text(existing + block, encoding="utf-8")
+                configured.append(f"Codex: {codex_config}")
+            else:
+                configured.append(f"Codex: {codex_config} (already configured)")
 
-            with open(codex_config, 'w', encoding='utf-8') as f:
+            # Also write mcp.json for forward-compat in case Codex ever
+            # supports that format too — harmless either way.
+            mcp_json = codex_dir / "mcp.json"
+            config = {}
+            if mcp_json.exists():
+                try:
+                    with open(mcp_json, encoding='utf-8') as f:
+                        config = json.load(f)
+                except Exception:
+                    config = {}
+            config.setdefault("mcpServers", {})["orion-brain"] = mcp_entry
+            with open(mcp_json, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2)
-
-            configured.append(f"Codex: {codex_config}")
         except Exception as e:
             print(f"  [!] Codex config failed: {e}")
 
