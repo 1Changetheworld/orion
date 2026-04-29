@@ -1,4 +1,4 @@
-# orion install — Windows bootstrapper.
+# orion install -- Windows bootstrapper.
 #
 # Mirrors install.sh for Windows. Does what a new user needs on a fresh machine:
 #   1. Verify Python 3.10+ is available (install via winget if missing)
@@ -153,12 +153,12 @@ $ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
 if ($ollamaCheck) {
     Say ""
     Say "  Orion chat needs a tool-capable model. Pick one:"
-    Say "    1) qwen3:8b        ~5 GB  — recommended, works on 8GB+ RAM"
-    Say "    2) qwen3:14b       ~9 GB  — best quality, 16GB+ RAM"
-    Say "    3) llama3.1:8b     ~5 GB  — Meta, similar size to qwen3:8b"
-    Say "    4) deepseek-r1:7b  ~4.7 GB — reasoning focus"
-    Say "    5) phi3:mini       ~2.2 GB — small, but chat mode won't work (no tool calls)"
-    Say "    6) skip            — pull a model later with: ollama pull <name>"
+    Say "    1) qwen3:8b        ~5 GB  -- recommended, works on 8GB+ RAM"
+    Say "    2) qwen3:14b       ~9 GB  -- best quality, 16GB+ RAM"
+    Say "    3) llama3.1:8b     ~5 GB  -- Meta, similar size to qwen3:8b"
+    Say "    4) deepseek-r1:7b  ~4.7 GB -- reasoning focus"
+    Say "    5) phi3:mini       ~2.2 GB -- small, but chat mode won't work (no tool calls)"
+    Say "    6) skip            -- pull a model later with: ollama pull <name>"
     $resp = Ask "Pull which model? [1-6]"
     switch -Regex ($resp) {
         '^1$|^$' { ollama pull qwen3:8b }
@@ -183,7 +183,7 @@ if (-not (Test-Path $LauncherDir)) {
 
 $launcherContent = @"
 @echo off
-REM orion launcher — created by install.ps1
+REM orion launcher -- created by install.ps1
 REM Runs orion.py via the repo's venv so deps are always available.
 "$VenvPython" "$ScriptDir\orion.py" %*
 "@
