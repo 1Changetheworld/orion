@@ -26,6 +26,8 @@ This file is the universal adapter.
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -1069,25 +1071,57 @@ def setup_mcp_configs():
     }
 
     # ── Claude Code ──
-    claude_settings = Path.home() / ".claude" / "settings.json"
-    if claude_settings.parent.exists():
+    # Canonical path: `claude mcp add --scope user orion-brain -- <python> <server>`.
+    # This writes to ~/.claude.json (home root). Earlier code wrote to
+    # ~/.claude/settings.json mcpServers, which Claude Code silently ignores —
+    # the cause of the 2026-04-29 dog-food failure where Claude in the VM
+    # identified as Orion but had zero brain MCP tools loaded.
+    claude_added = False
+    claude_cli = shutil.which("claude")
+    if claude_cli:
+        try:
+            existing = subprocess.run(
+                [claude_cli, "mcp", "list"],
+                capture_output=True, text=True, timeout=15
+            )
+            if existing.returncode == 0 and "orion-brain" in (existing.stdout or ""):
+                configured.append("Claude Code: already configured (via `claude mcp list`)")
+                claude_added = True
+            else:
+                add = subprocess.run(
+                    [claude_cli, "mcp", "add", "--scope", "user", "orion-brain",
+                     "--", python_path, server_path],
+                    capture_output=True, text=True, timeout=15
+                )
+                if add.returncode == 0:
+                    configured.append("Claude Code: configured via `claude mcp add`")
+                    claude_added = True
+                else:
+                    print(f"  [!] `claude mcp add` failed (rc={add.returncode}): {(add.stderr or '').strip()}")
+        except Exception as e:
+            print(f"  [!] Claude CLI invocation failed: {e}")
+
+    if not claude_added:
+        # Fallback: write ~/.claude.json directly. Top-level mcpServers, NOT
+        # ~/.claude/settings.json. type=stdio is required for Claude Code to
+        # treat the entry as a launchable MCP server.
+        claude_json = Path.home() / ".claude.json"
         try:
             settings = {}
-            if claude_settings.exists():
-                with open(claude_settings, encoding='utf-8') as f:
+            if claude_json.exists():
+                with open(claude_json, encoding='utf-8') as f:
                     settings = json.load(f)
-
-            if "mcpServers" not in settings:
-                settings["mcpServers"] = {}
-
-            settings["mcpServers"]["orion-brain"] = mcp_entry
-
-            with open(claude_settings, 'w', encoding='utf-8') as f:
+            settings.setdefault("mcpServers", {})["orion-brain"] = {
+                "type": "stdio",
+                "command": python_path,
+                "args": [server_path],
+                "env": {},
+            }
+            with open(claude_json, 'w', encoding='utf-8') as f:
                 json.dump(settings, f, indent=2)
-
-            configured.append(f"Claude Code: {claude_settings}")
+            configured.append(f"Claude Code: {claude_json} (file fallback)")
         except Exception as e:
-            print(f"  [!] Claude Code config failed: {e}")
+            print(f"  [!] Claude Code config (file fallback) failed: {e}")
 
     # ── Codex ──
     # Codex reads MCP servers from ~/.codex/config.toml using TOML
