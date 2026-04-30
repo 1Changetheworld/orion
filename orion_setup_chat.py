@@ -64,6 +64,29 @@ def speak(text: str, *, color: str = CYAN, label: str = "orion", lead_pause: flo
     sys.stdout.flush()
 
 
+def _drain_stdin() -> None:
+    """Best-effort flush of any queued typeahead so the next input() blocks
+    on a real keystroke rather than swallowing leftover newlines.
+
+    Without this, paste buffers / typeahead consume prompts immediately and
+    every input() returns "" — the 2026-04-29 install bug where every
+    wizard prompt was skipped silently.
+    """
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+            while msvcrt.kbhit():
+                msvcrt.getch()
+        except Exception:
+            pass
+    else:
+        try:
+            import termios
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+        except Exception:
+            pass
+
+
 def ask(prompt_text: str = "", prompt_label: str = None) -> str:
     """Wait for user input. Voice of the human.
 
@@ -73,6 +96,7 @@ def ask(prompt_text: str = "", prompt_label: str = None) -> str:
     if prompt_text:
         speak(prompt_text)
     label = prompt_label or _USER_LABEL
+    _drain_stdin()
     try:
         return input(f"  {BOLD}{label}>{RESET} ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -215,11 +239,22 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
     )
     nodes_written += 1
 
-    # 5. First-meeting marker — Orion knows this was install day
+    # 5. First-meeting marker — Orion knows this was install day.
+    #    This IS Orion's birthday for this user. Every user has a different
+    #    birthday for Orion (the day they installed), and we explicitly tag
+    #    this node as such so `orion_recall` can surface it for questions
+    #    like "when were you born" / "how old are you" / "when did we meet".
+    install_date = time.strftime('%Y-%m-%d')
     g.store(
-        content=f"First meeting with {user_name or 'user'} on {time.strftime('%Y-%m-%d')}. Installed via proto-Orion onboarding.",
+        content=(
+            f"Orion's birthday with {user_name or 'this user'} is {install_date}. "
+            f"That is the day Orion came to live on this device — the day they "
+            f"set Orion up. Every user has a different Orion birthday because "
+            f"every user started on a different day. First meeting happened "
+            f"via proto-Orion onboarding."
+        ),
         node_type="identity",
-        tags=["first-meeting", "install-day"],
+        tags=["first-meeting", "install-day", "birthday", "orion-birthday", "orion-identity"],
         skip_contradiction_check=True,
     )
     nodes_written += 1
@@ -289,12 +324,19 @@ def inject_home_context(tools: dict) -> list:
 
 def run():
     # --- GREETING ---
-    print()
-    print(f"  {BLUE}┌─────────────────────────────────────────┐{RESET}")
-    print(f"  {BLUE}│{RESET}            {CYAN}O R I O N{RESET}                    {BLUE}│{RESET}")
-    print(f"  {BLUE}│{RESET}        {DIM}first-run synthesis{RESET}              {BLUE}│{RESET}")
-    print(f"  {BLUE}└─────────────────────────────────────────┘{RESET}")
-    print()
+    # Render the constellation banner. orion_logo handles terminal capability
+    # detection (truecolor / 256-color / mono) and falls back gracefully on
+    # terminals that can't paint color. animate=True does a brief twinkle pass
+    # on the brightest named stars (Betelgeuse, Rigel, Alnilam, Alnitak).
+    try:
+        from orion_logo import render as _render_logo
+        _render_logo(animate=True)
+    except Exception:
+        # If the logo module fails for any reason, fall back to a plain header
+        # so the wizard still runs.
+        print()
+        print(f"  {CYAN}O R I O N{RESET}    {DIM}first-run synthesis{RESET}")
+        print()
 
     speak("Hi.", lead_pause=0.5)
     speak("I'm Orion. We haven't met.")

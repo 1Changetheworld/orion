@@ -35,6 +35,13 @@ function Warn { param($m); Write-Host "[WARN] $m" -ForegroundColor Yellow }
 function Fail { param($m); Write-Host "[FAIL] $m" -ForegroundColor Red }
 function Ask  {
     param([string]$Prompt)
+    # Drain any queued keystrokes so Read-Host blocks on fresh input.
+    # Without this, paste buffers / typeahead consume prompts immediately
+    # and Read-Host returns "" — caught in 2026-04-29 dog-food install
+    # where every prompt was silently skipped.
+    try {
+        while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) }
+    } catch { }
     $resp = Read-Host -Prompt "[?] $Prompt"
     return $resp
 }
