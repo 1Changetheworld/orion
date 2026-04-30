@@ -416,35 +416,37 @@ def run():
 
     pause(0.4)
 
-    # --- HOST PATH DECISION ---
-    ready = find_ready_fuel(tools)
+    # --- AUTO-WIRE PHASE (no fuel choice at install time) ---
+    # The fuel is whichever CLI the user opens. Setup wires MCP into ALL
+    # detected CLIs silently; the conscious "which CLI am I in" moment
+    # happens at first contact inside each CLI, not here. See the
+    # repo-level CLAUDE.md / AGENTS.md / GEMINI.md and the home-dropped
+    # ORION-CONTEXT.md for the first-meeting flow.
 
-    chosen_fuel = None
+    ready_clis = [t for t in ("claude", "codex", "gemini")
+                  if tools.get(t, {}).get("installed")
+                  and cli_auth_status(t) == "authed"]
+    unauthed_clis = [t for t in ("claude", "codex", "gemini")
+                     if tools.get(t, {}).get("installed")
+                     and cli_auth_status(t) != "authed"]
 
-    if ready:
-        ready_name, _path = ready
-        speak(f"{ready_name} is already installed AND authenticated. I can use that "
-              f"as my host. Or I can show you other options.")
-        speak(f"Use {ready_name} as my fuel? [y/N]: ", lead_pause=0.2)
-        ans = ask().lower()
-        if ans in ("y", "yes", ""):
-            chosen_fuel = ready_name
-            speak(f"Wiring myself into {ready_name}.")
+    if ready_clis:
+        if len(ready_clis) == 1:
+            speak(f"{ready_clis[0]} is signed in. I'll wire my brain into it.")
         else:
-            chosen_fuel = _offer_all_paths(tools, user_name)
-    else:
-        # Nothing ready. Walk them through the three paths.
-        if any(tools[t]["installed"] for t in ("codex", "gemini", "claude")):
-            speak("You have CLI tools installed but none are signed in.")
-            chosen_fuel = _handle_unauthed_path(tools, user_name)
-        else:
-            speak("No AI CLIs installed. Three options — I'll explain honestly.")
-            chosen_fuel = _offer_all_paths(tools, user_name)
-
-    if not chosen_fuel:
-        speak("No fuel picked. You can run 'orion setup' again when you're ready. "
-              "I'll still remember you.", color=YELLOW)
+            speak(f"{len(ready_clis)} CLIs are signed in: {', '.join(ready_clis)}. "
+                  f"I'll wire my brain into each. The fuel you actually use is "
+                  f"whichever you open — I'll meet you there.")
+        chosen_fuel = "auto"
+    elif unauthed_clis:
+        speak(f"You have CLI tools installed ({', '.join(unauthed_clis)}) but "
+              f"none are signed in yet. Sign in to one or more, then run me again.")
         chosen_fuel = "deferred"
+    else:
+        speak("No AI CLIs installed yet. Three options — I'll explain honestly.")
+        chosen_fuel = _offer_all_paths(tools, user_name)
+        if not chosen_fuel:
+            chosen_fuel = "deferred"
 
     # --- BRAIN SEEDING ---
     pause(0.3)
@@ -477,13 +479,25 @@ def run():
         speak("I'm here whenever you're ready. Run 'orion chat' once a fuel is configured.")
         return
 
-    speak(f"Synthesis complete. You now have a brain that knows you, wired into {chosen_fuel}.")
+    if chosen_fuel == "auto":
+        speak("Synthesis complete. Brain is wired into every CLI you have signed in.")
+    else:
+        speak(f"Synthesis complete. You now have a brain that knows you, wired into {chosen_fuel}.")
     pause(0.4)
     print()
     print(f"  {DIM}────────────────────────────────────────────────{RESET}")
     print()
 
-    if chosen_fuel in ("codex", "gemini", "claude"):
+    if chosen_fuel == "auto":
+        ready_list = ", ".join(ready_clis) if ready_clis else "any CLI you sign into"
+        speak(f"To talk to me: open any of {ready_list}. The first time we meet "
+              f"in each one, I'll introduce myself there and we can verify the "
+              f"wiring together. After that I just behave — no recurring intro.")
+        speak(f"Try it now: open one of those CLIs, ask 'who is this?'. "
+              f"I'll greet you, confirm I can reach my brain, and offer a "
+              f"30-second calibration if you want to confirm cross-CLI memory.",
+              color=GREEN)
+    elif chosen_fuel in ("codex", "gemini", "claude"):
         speak(f"To talk to me: just run '{chosen_fuel}' in any terminal. I'll be "
               f"reachable through it via MCP — no extra chat command needed.")
         speak(f"Try it now: open a terminal and type '{chosen_fuel}', "
