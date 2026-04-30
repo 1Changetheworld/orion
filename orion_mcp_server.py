@@ -1076,28 +1076,30 @@ def setup_mcp_configs():
     # ~/.claude/settings.json mcpServers, which Claude Code silently ignores —
     # the cause of the 2026-04-29 dog-food failure where Claude in the VM
     # identified as Orion but had zero brain MCP tools loaded.
+    # Setup is RE-RUNNABLE: always remove an existing orion-brain entry
+    # before adding the current one. Stale paths (after repo move /
+    # venv recreate) were caught in the 2026-04-29 dog-food test where
+    # ~/.claude.json still pointed at a deleted .venv\Scripts\python.exe
+    # and Claude crashed at MCP startup.
     claude_added = False
     claude_cli = shutil.which("claude")
     if claude_cli:
         try:
-            existing = subprocess.run(
-                [claude_cli, "mcp", "list"],
+            # Remove existing entry (no-op if absent — don't check return code).
+            subprocess.run(
+                [claude_cli, "mcp", "remove", "orion-brain"],
                 capture_output=True, text=True, timeout=15
             )
-            if existing.returncode == 0 and "orion-brain" in (existing.stdout or ""):
-                configured.append("Claude Code: already configured (via `claude mcp list`)")
+            add = subprocess.run(
+                [claude_cli, "mcp", "add", "--scope", "user", "orion-brain",
+                 "--", python_path, server_path],
+                capture_output=True, text=True, timeout=15
+            )
+            if add.returncode == 0:
+                configured.append("Claude Code: configured via `claude mcp add` (refreshed)")
                 claude_added = True
             else:
-                add = subprocess.run(
-                    [claude_cli, "mcp", "add", "--scope", "user", "orion-brain",
-                     "--", python_path, server_path],
-                    capture_output=True, text=True, timeout=15
-                )
-                if add.returncode == 0:
-                    configured.append("Claude Code: configured via `claude mcp add`")
-                    claude_added = True
-                else:
-                    print(f"  [!] `claude mcp add` failed (rc={add.returncode}): {(add.stderr or '').strip()}")
+                print(f"  [!] `claude mcp add` failed (rc={add.returncode}): {(add.stderr or '').strip()}")
         except Exception as e:
             print(f"  [!] Claude CLI invocation failed: {e}")
 
@@ -1136,44 +1138,60 @@ def setup_mcp_configs():
             if codex_config.exists():
                 existing = codex_config.read_text(encoding="utf-8")
 
-            # Idempotent: only append if section not present
-            if "[mcp_servers.orion-brain]" not in existing:
-                # Escape backslashes + quotes for TOML double-quoted strings
-                def _toml_str(s: str) -> str:
-                    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+            # Strip any pre-existing orion-brain blocks (main + tool sub-sections)
+            # so re-runs refresh stale paths instead of leaving zombie configs.
+            # Caught 2026-04-29 — Codex's MCP startup crashed because
+            # config.toml still pointed at a deleted .venv\Scripts\python.exe
+            # and the original "if not in existing: append" idempotency
+            # check happily skipped, leaving the broken paths in place.
+            if "[mcp_servers.orion-brain]" in existing:
+                kept_lines = []
+                in_orion = False
+                for line in existing.splitlines(keepends=True):
+                    stripped = line.strip()
+                    if stripped.startswith("[mcp_servers.orion-brain"):
+                        in_orion = True
+                        continue
+                    if in_orion and stripped.startswith("[") and not stripped.startswith("[mcp_servers.orion-brain"):
+                        in_orion = False
+                    if not in_orion:
+                        kept_lines.append(line)
+                existing = "".join(kept_lines).rstrip() + "\n"
 
-                # Tools Codex should surface + auto-approve. Mirrors a
-                # known-working reference configuration. Without these
-                # declarations, Codex may default to blocking tools or
-                # failing to expose them entirely.
-                _codex_tools = [
-                    "orion_recall", "orion_memorize", "orion_identity",
-                    "orion_project_state", "orion_cross_model",
-                    "orion_get_message", "orion_skills",
-                    "orion_list_contested", "orion_resolve_contradiction",
-                    "orion_user_model", "orion_synthesize", "orion_heartbeat",
-                ]
+            # Escape backslashes + quotes for TOML double-quoted strings
+            def _toml_str(s: str) -> str:
+                return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-                tool_blocks = "\n".join(
-                    f"\n[mcp_servers.orion-brain.tools.{name}]\n"
-                    f'approval_mode = "approve"\n'
-                    for name in _codex_tools
-                )
+            # Tools Codex should surface + auto-approve. Mirrors a
+            # known-working reference configuration. Without these
+            # declarations, Codex may default to blocking tools or
+            # failing to expose them entirely.
+            _codex_tools = [
+                "orion_recall", "orion_memorize", "orion_identity",
+                "orion_project_state", "orion_cross_model",
+                "orion_get_message", "orion_skills",
+                "orion_list_contested", "orion_resolve_contradiction",
+                "orion_user_model", "orion_synthesize", "orion_heartbeat",
+            ]
 
-                block = (
-                    "\n\n[mcp_servers.orion-brain]\n"
-                    f"command = {_toml_str(mcp_entry['command'])}\n"
-                    f"args = [{', '.join(_toml_str(a) for a in mcp_entry['args'])}]\n"
-                    f"startup_timeout_sec = 60\n"   # tolerant of slow hardware (Pi 5, ARM)
-                    f"{tool_blocks}"
-                )
-                # Ensure a clean newline before append
-                if existing and not existing.endswith("\n"):
-                    existing += "\n"
-                codex_config.write_text(existing + block, encoding="utf-8")
-                configured.append(f"Codex: {codex_config}")
-            else:
-                configured.append(f"Codex: {codex_config} (already configured)")
+            tool_blocks = "\n".join(
+                f"\n[mcp_servers.orion-brain.tools.{name}]\n"
+                f'approval_mode = "approve"\n'
+                for name in _codex_tools
+            )
+
+            block = (
+                "\n\n[mcp_servers.orion-brain]\n"
+                f"command = {_toml_str(mcp_entry['command'])}\n"
+                f"args = [{', '.join(_toml_str(a) for a in mcp_entry['args'])}]\n"
+                f"startup_timeout_sec = 60\n"   # tolerant of slow hardware (Pi 5, ARM)
+                f"{tool_blocks}"
+            )
+            # Ensure a clean newline before append
+            if existing and not existing.endswith("\n"):
+                existing += "\n"
+            codex_config.write_text(existing + block, encoding="utf-8")
+            configured.append(f"Codex: {codex_config} (refreshed)")
 
             # Also write mcp.json for forward-compat in case Codex ever
             # supports that format too — harmless either way.

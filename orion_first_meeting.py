@@ -71,15 +71,35 @@ def _flag_path(cli: str) -> Path:
 # to invoke the brain over MCP from outside the CLI session.
 # ─────────────────────────────────────────────────────────
 
+def _verify_paths_resolve(command: str, args: list) -> tuple[bool, str]:
+    """A registered MCP entry is only useful if the python interpreter and
+    the script it points to still exist on disk. The 2026-04-29 dog-food
+    test caught configs with stale paths after a repo cleanup — Codex's
+    boot failed with 'system cannot find the path specified (os error 3)'.
+    Verify the underlying files resolve before claiming the brain is
+    actually wired.
+    """
+    if command and not Path(command).exists():
+        return False, f"interpreter missing: {command}"
+    for a in args or []:
+        if isinstance(a, str) and a.endswith(".py") and not Path(a).exists():
+            return False, f"server script missing: {a}"
+    return True, "paths resolve"
+
+
 def _probe_claude_mcp() -> tuple[bool, str]:
     f = Path.home() / ".claude.json"
     if not f.exists():
         return False, "~/.claude.json not found"
     try:
         data = json.loads(f.read_text(encoding="utf-8"))
-        if data.get("mcpServers", {}).get("orion-brain"):
-            return True, "registered in ~/.claude.json"
-        return False, "orion-brain not in ~/.claude.json mcpServers"
+        entry = data.get("mcpServers", {}).get("orion-brain")
+        if not entry:
+            return False, "orion-brain not in ~/.claude.json mcpServers"
+        ok, why = _verify_paths_resolve(entry.get("command", ""), entry.get("args", []))
+        if not ok:
+            return False, f"~/.claude.json registered but {why}"
+        return True, "registered in ~/.claude.json (paths resolve)"
     except Exception as e:
         return False, f"could not parse ~/.claude.json: {e.__class__.__name__}"
 
@@ -90,9 +110,34 @@ def _probe_codex_mcp() -> tuple[bool, str]:
         return False, "~/.codex/config.toml not found"
     try:
         text = f.read_text(encoding="utf-8")
-        if "[mcp_servers.orion-brain]" in text:
-            return True, "registered in ~/.codex/config.toml"
-        return False, "orion-brain not in ~/.codex/config.toml"
+        if "[mcp_servers.orion-brain]" not in text:
+            return False, "orion-brain not in ~/.codex/config.toml"
+        # Crude TOML parse — pull command and args lines from the section.
+        # Avoids a hard dependency on tomllib (Python 3.11+) so this hook
+        # works on any Python 3 the user has.
+        section = text.split("[mcp_servers.orion-brain]", 1)[1]
+        # Stop at the next bracketed section (excluding sub-keys we don't care about)
+        end = section.find("\n[")
+        section = section[:end] if end >= 0 else section
+        cmd = ""
+        args: list = []
+        for line in section.splitlines():
+            line = line.strip()
+            if line.startswith("command"):
+                # command = "C:\\..."
+                cmd = line.split("=", 1)[1].strip().strip('"').replace("\\\\", "\\")
+            elif line.startswith("args"):
+                # args = ["C:\\...\\foo.py"]
+                raw = line.split("=", 1)[1].strip().strip("[]")
+                args = []
+                for piece in raw.split(","):
+                    cleaned = piece.strip().strip('"').replace("\\\\", "\\")
+                    if cleaned:
+                        args.append(cleaned)
+        ok, why = _verify_paths_resolve(cmd, args)
+        if not ok:
+            return False, f"~/.codex/config.toml registered but {why}"
+        return True, "registered in ~/.codex/config.toml (paths resolve)"
     except Exception as e:
         return False, f"could not read ~/.codex/config.toml: {e.__class__.__name__}"
 
@@ -103,9 +148,13 @@ def _probe_gemini_mcp() -> tuple[bool, str]:
         return False, "~/.gemini/settings.json not found"
     try:
         data = json.loads(f.read_text(encoding="utf-8"))
-        if data.get("mcpServers", {}).get("orion-brain"):
-            return True, "registered in ~/.gemini/settings.json"
-        return False, "orion-brain not in ~/.gemini/settings.json mcpServers"
+        entry = data.get("mcpServers", {}).get("orion-brain")
+        if not entry:
+            return False, "orion-brain not in ~/.gemini/settings.json mcpServers"
+        ok, why = _verify_paths_resolve(entry.get("command", ""), entry.get("args", []))
+        if not ok:
+            return False, f"~/.gemini/settings.json registered but {why}"
+        return True, "registered in ~/.gemini/settings.json (paths resolve)"
     except Exception as e:
         return False, f"could not parse ~/.gemini/settings.json: {e.__class__.__name__}"
 
