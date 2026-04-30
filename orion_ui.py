@@ -300,8 +300,82 @@ def get_context_paths():
     return paths
 
 
+def _install_claude_session_hook(repo_path):
+    """Merge a SessionStart hook into ~/.claude/settings.json so that
+    orion_first_meeting.py runs at every Claude Code session start.
+
+    Persona files (CLAUDE.md, AGENTS.md, GEMINI.md) are guidelines —
+    the model can interpret around them when it judges them not
+    relevant ("hey" was the trigger that revealed this). SessionStart
+    hooks are harness-level: the harness fires them every session,
+    no model interpretation involved. This is what gives Orion
+    intention — Orion speaks first, doesn't wait for the user to
+    ask the right question.
+
+    Idempotent: if our hook is already present (matched by the
+    'orion_first_meeting' substring in the command), don't add a
+    duplicate. Doesn't clobber other user hooks in SessionStart.
+
+    Returns (label, status_string) tuple matching inject_context's
+    return contract.
+    """
+    label = "Claude SessionStart hook"
+    settings_path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+    hook_script = os.path.join(repo_path, "orion_first_meeting.py")
+    python_exec = sys.executable or "python"
+    hook_cmd = f'"{python_exec}" "{hook_script}" claude'
+
+    try:
+        # Load existing or initialize new
+        settings = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except Exception:
+                # Existing file is malformed — back it up before clobbering.
+                backup = settings_path + ".orion-backup"
+                try:
+                    os.replace(settings_path, backup)
+                except Exception:
+                    pass
+                settings = {}
+        else:
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+
+        hooks = settings.setdefault("hooks", {})
+        session_start = hooks.setdefault("SessionStart", [])
+
+        # Idempotency check — skip if any existing entry references
+        # orion_first_meeting in its command.
+        for entry in session_start:
+            if not isinstance(entry, dict):
+                continue
+            for h in entry.get("hooks", []) or []:
+                if isinstance(h, dict) and "orion_first_meeting" in str(h.get("command", "")):
+                    return (label, settings_path + " (already installed)")
+
+        session_start.append({
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": hook_cmd,
+            }],
+        })
+
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+
+        return (label, settings_path + " (installed)")
+    except Exception as e:
+        return (label, f"failed: {e.__class__.__name__}: {e}")
+
+
 def inject_context(detected_fuel):
-    """Create or augment context files for each detected AI tool.
+    """Create or augment context files for each detected AI tool, and
+    install a SessionStart hook for Claude Code so Orion has intention —
+    speaks first on every session, doesn't wait for the user to ask the
+    right question.
 
     Single canonical location per CLI (home root). Never overwrites a
     file that already has Orion content; if the file exists without
@@ -312,6 +386,7 @@ def inject_context(detected_fuel):
     via its standard search path.
     """
     home = os.path.expanduser("~")
+    repo_path = os.path.dirname(os.path.abspath(__file__))
     injected = []
 
     def _safe_inject(label, path):
@@ -339,9 +414,16 @@ def inject_context(detected_fuel):
                                  os.path.join(home, "ORION-CONTEXT.md")))
 
     # Per-CLI persona files. One canonical home location each.
+    # Claude Code also gets a SessionStart hook so the first-meeting flow
+    # fires reliably (persona files alone are guidelines, not interrupts).
+    # Codex and Gemini hooks are TODO — their hook semantics differ from
+    # Claude's and need separate implementations. For those CLIs the
+    # persona file (with the new imperative ORION_CONTEXT) is still the
+    # active mechanism until their hooks are wired.
     if detected_fuel.get("claude_cli", {}).get("available"):
         injected.append(_safe_inject("CLAUDE.md (Claude)",
                                      os.path.join(home, "CLAUDE.md")))
+        injected.append(_install_claude_session_hook(repo_path))
     if detected_fuel.get("codex", {}).get("available"):
         injected.append(_safe_inject("AGENTS.md (Codex)",
                                      os.path.join(home, "AGENTS.md")))
