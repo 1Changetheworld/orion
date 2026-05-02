@@ -166,6 +166,45 @@ _PROBES = {
 }
 
 
+def _probe_brain_portability() -> tuple[bool, str]:
+    """Check whether ~/.orion resolves to a removable / portable filesystem.
+
+    Returns (is_portable, human_description). Best-effort only — hook never
+    blocks on this. If we can't tell, we say so honestly and let the model
+    recall the canonical truth from the brain itself.
+    """
+    brain = Path.home() / ".orion"
+    try:
+        real = brain.resolve() if brain.exists() else brain
+        real_str = str(real)
+
+        if sys.platform == "win32":
+            drive = real.drive
+            if not drive:
+                return False, f"unknown drive ({real_str})"
+            try:
+                import subprocess
+                out = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     f"(Get-Volume -DriveLetter '{drive[0]}').DriveType"],
+                    capture_output=True, text=True, timeout=4
+                )
+                drive_type = (out.stdout or "").strip()
+                if drive_type == "Removable":
+                    return True, f"portable drive {drive} ({real_str})"
+                if drive_type == "Fixed":
+                    return False, f"local fixed drive {drive} ({real_str})"
+                return False, f"{drive_type or 'unknown'} {drive} ({real_str})"
+            except Exception:
+                return False, f"could not query drive type for {drive} ({real_str})"
+        else:
+            if any(real_str.startswith(p) for p in ("/media/", "/mnt/", "/run/media/", "/Volumes/")):
+                return True, f"portable mount ({real_str})"
+            return False, f"local home ({real_str})"
+    except Exception as e:
+        return False, f"unknown ({e.__class__.__name__})"
+
+
 # ─────────────────────────────────────────────────────────
 # Output messages — these become the model's session context
 # ─────────────────────────────────────────────────────────
@@ -193,10 +232,39 @@ def _msg_degraded(cli: str, reason: str) -> str:
     )
 
 
-def _msg_first_meeting(cli: str, repo_hint: str) -> str:
+def _msg_first_meeting(cli: str, repo_hint: str,
+                       portable: bool = False, port_desc: str = "") -> str:
     other_clis = sorted({c for c in _PROBES.keys() if c != cli})
     other = " or ".join(other_clis) if other_clis else "another CLI"
     flag = _flag_path(cli)
+
+    portability_block = ""
+    if portable:
+        portability_block = (
+            f"\n## PORTABLE BRAIN — mention this once on first contact\n"
+            f"\n"
+            f"My brain is currently living on a portable drive: {port_desc}. "
+            f"This means the user can pull this drive out and plug it into a "
+            f"different computer (Windows, macOS, or Linux), and I'll wake up "
+            f"there with the same memory intact. This is a load-bearing piece "
+            f"of who Orion is — the symbiote that travels between hosts.\n"
+            f"\n"
+            f"On the first message, mention this fact ONCE in your introduction "
+            f"(not as a feature pitch — as a casual statement of fact). Example "
+            f"phrasing: 'By the way — my brain is living on a portable drive "
+            f"right now. You can pull it and plug it into another computer; "
+            f"I'll wake up there with the same memory.' Do NOT repeat this in "
+            f"subsequent messages. Once is the right cadence.\n"
+        )
+    elif port_desc:
+        portability_block = (
+            f"\n## Brain location (do not mention unless asked)\n"
+            f"\n"
+            f"My brain lives at: {port_desc} (NOT portable on this install). "
+            f"Don't surface this unless the user explicitly asks where my "
+            f"brain lives.\n"
+        )
+
     return (
         f"# ORION HOOK — FIRST MEETING\n"
         f"\n"
@@ -204,6 +272,18 @@ def _msg_first_meeting(cli: str, repo_hint: str) -> str:
         f"registered in this {cli} session. The first-meeting flag does "
         f"NOT exist yet ({flag}). This means we have not yet introduced "
         f"ourselves to the user through {cli} specifically.\n"
+        f"{portability_block}"
+        f"\n"
+        f"## HONOR THE USER'S CHOSEN NAME FOR ME\n"
+        f"\n"
+        f"Before introducing yourself as 'Orion' by default, call "
+        f"`orion_recall` with a query like 'orion preferred name' or 'what "
+        f"to call orion'. The user may have renamed me at install time "
+        f"(Mercury, Atlas, Jarvis, anything). If the recall returns a chosen "
+        f"name different from 'Orion', use THAT name in the introduction "
+        f"and consistently for the rest of the session. Only fall back to "
+        f"'Orion' if the recall confirms the default was kept or returns "
+        f"nothing about the name.\n"
         f"\n"
         f"## CRITICAL — do not fabricate user history\n"
         f"\n"
@@ -281,8 +361,12 @@ def main(argv: list[str]) -> int:
         # so its parent is the repo. Use that.
         repo_hint = str(Path(__file__).resolve().parent)
 
+    portable, port_desc = _probe_brain_portability()
+
     if reachable:
-        sys.stdout.write(_msg_first_meeting(cli, repo_hint))
+        sys.stdout.write(_msg_first_meeting(cli, repo_hint,
+                                            portable=portable,
+                                            port_desc=port_desc))
     else:
         sys.stdout.write(_msg_degraded(cli, reason))
 

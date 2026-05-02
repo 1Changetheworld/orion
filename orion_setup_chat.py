@@ -18,6 +18,7 @@ not a config wizard. The full brain synthesizes with a model after.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -146,13 +147,25 @@ def cli_auth_status(tool_name: str) -> str:
         oauth = home / ".gemini" / "oauth_creds.json"
         return "authed" if oauth.exists() else "unauthed"
     if tool_name == "claude":
-        cfg = home / ".claude" / "settings.json"
+        # Claude Code's actual auth lives in ~/.claude.json (home root, NOT
+        # under ~/.claude/). The earlier check pointed at ~/.claude/settings.json
+        # which the cleanup script deletes — leading to false "unauthed" reports
+        # in the 2026-05-02 install. Read the real location and verify a
+        # token-shaped key is present (oauthAccount or installMethod proves a
+        # real Claude Code session has happened on this machine).
+        cfg = home / ".claude.json"
         if not cfg.exists():
             return "unauthed"
         try:
-            # Claude CLI has various config — treat presence of a non-empty
-            # file as "authed" for now. Refine if needed.
-            return "authed" if cfg.stat().st_size > 10 else "unauthed"
+            with open(cfg, encoding="utf-8") as f:
+                data = json.load(f)
+            # A populated .claude.json that has any of these keys is from a
+            # logged-in Claude Code session (they only appear after auth).
+            for key in ("oauthAccount", "userID", "firstStartTime", "numStartups"):
+                if key in data:
+                    return "authed"
+            # Fallback: substantial file size still implies an authed install
+            return "authed" if cfg.stat().st_size > 1024 else "unauthed"
         except Exception:
             return "unknown"
     if tool_name == "ollama":
@@ -176,16 +189,98 @@ def find_ready_fuel(tools: dict) -> tuple[str, str] | None:
     return None
 
 
+def detect_brain_portability() -> dict:
+    """Return a description of where Orion's brain physically lives and
+    whether that location is portable (removable drive, USB stick, external).
+
+    Resolves ~/.orion through any junctions/symlinks to find the *real*
+    underlying path and drive type. If the brain dir doesn't exist yet
+    (this is the first install), we describe what would happen given the
+    current state of ~/.orion's resolution.
+
+    Returns: dict with keys
+      - 'brain_path': str — resolved real path of the brain root
+      - 'drive_letter' or 'mount_point': str — host-relevant locator
+      - 'is_portable': bool — True if removable drive / external storage
+      - 'description': str — short human-readable summary
+    """
+    brain_link = Path.home() / ".orion"
+    try:
+        # Path.resolve() walks junctions on Windows AND symlinks on POSIX.
+        # If the link doesn't exist yet, fall back to its declared parent.
+        if brain_link.exists():
+            real = brain_link.resolve()
+        else:
+            real = brain_link
+        real_str = str(real)
+
+        if sys.platform == "win32":
+            drive = real.drive  # e.g. "C:" or "E:"
+            is_portable = False
+            description = f"local on {drive}"
+            if drive:
+                # Probe the drive type with a tiny PowerShell call. Falls
+                # back to "unknown / treat as local" on any error.
+                try:
+                    out = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command",
+                         f"(Get-Volume -DriveLetter '{drive[0]}').DriveType"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    drive_type = (out.stdout or "").strip()
+                    if drive_type == "Removable":
+                        is_portable = True
+                        description = f"portable drive ({drive})"
+                    elif drive_type == "Fixed":
+                        description = f"local fixed drive ({drive})"
+                    elif drive_type:
+                        description = f"{drive_type.lower()} drive ({drive})"
+                except Exception:
+                    pass
+            return {
+                "brain_path": real_str,
+                "drive_letter": drive,
+                "is_portable": is_portable,
+                "description": description,
+            }
+        else:
+            # POSIX: removable drives typically mount under /media or /mnt
+            is_portable = any(
+                real_str.startswith(prefix)
+                for prefix in ("/media/", "/mnt/", "/run/media/", "/Volumes/")
+            )
+            description = "portable mount" if is_portable else "local home"
+            return {
+                "brain_path": real_str,
+                "mount_point": str(real.anchor) if real.anchor else "/",
+                "is_portable": is_portable,
+                "description": description,
+            }
+    except Exception as e:
+        return {
+            "brain_path": str(brain_link),
+            "is_portable": False,
+            "description": f"unknown ({e.__class__.__name__})",
+        }
+
+
 # ─────────────────────────────────────────────────────────
 # Brain seeding — writes to graph_memory via orion_ontology
 # ─────────────────────────────────────────────────────────
 
 def seed_brain(user_name: str, user_summary: str, tools: dict,
-               chosen_fuel: str, user_address: str = "") -> dict:
+               chosen_fuel: str, user_address: str = "",
+               orion_name: str = "Orion",
+               portability: dict | None = None) -> dict:
     """Populate the fresh brain with first-meeting facts.
 
     Uses orion_ontology.resolve_entity so canonicalization/bias-toward-NEW
     discipline applies from node zero.
+
+    orion_name: what the user chose to call Orion (default "Orion"). Stored
+        as a preference so persona files can recall it via 'orion preferred name'.
+    portability: result of detect_brain_portability(). If is_portable is True,
+        seed a node so Orion knows he lives on a portable drive.
     """
     try:
         import orion_ontology as ont
@@ -272,6 +367,51 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
         skip_contradiction_check=True,
     )
     nodes_written += 1
+
+    # 7. Orion's preferred name — user-chosen identity for me.
+    # Persona files recall this via 'orion preferred name' / 'what to call orion'
+    # so my self-introductions use the user's chosen name, not always "Orion".
+    g.store(
+        content=(
+            f"The user calls me '{orion_name}' (default Orion)."
+            if orion_name and orion_name != "Orion"
+            else "The user calls me Orion (default name kept)."
+        ),
+        node_type="identity",
+        tags=["orion-name", "orion-identity", "user-preference", "self-name"],
+        skip_contradiction_check=True,
+    )
+    nodes_written += 1
+
+    # 8. Brain location + portability — Orion knows where he lives and
+    # whether he can travel. Persona files recall this so the model can
+    # mention portability once on first contact when applicable.
+    if portability:
+        loc_text = (
+            f"My brain lives at {portability.get('brain_path', 'unknown')} "
+            f"({portability.get('description', 'unknown location')}). "
+        )
+        if portability.get("is_portable"):
+            loc_text += (
+                "This is a PORTABLE drive — the user can pull this drive out "
+                "and plug it into a different computer (Windows, macOS, or Linux), "
+                "and I'll wake up there with this same memory intact. "
+                "I should mention this once on first contact in any new CLI, "
+                "so the user knows they can travel with me."
+            )
+        else:
+            loc_text += (
+                "This is a fixed/local drive — I live on this machine specifically. "
+                "If the user wants me portable, they'd reinstall me onto a "
+                "removable drive (USB stick, external SSD)."
+            )
+        g.store(
+            content=loc_text,
+            node_type="identity",
+            tags=["brain-location", "portability", "install-snapshot", "orion-identity"],
+            skip_contradiction_check=True,
+        )
+        nodes_written += 1
 
     try:
         g.save()
@@ -391,6 +531,20 @@ def run():
     else:
         speak("Noted — no honorific, just conversation.")
 
+    # --- ORION'S NAME — let the user rename me ---
+    pause(0.3)
+    speak("My default name is Orion — but you can call me whatever you want. "
+          "Some people prefer Mercury, Atlas, Jarvis, a nickname, anything. "
+          "(Press enter to keep 'Orion'.)")
+    orion_name_input = ask(prompt_label="call me").strip()
+    if not orion_name_input or orion_name_input.lower() in ("orion", "no", "skip", "nothing"):
+        orion_name = "Orion"
+        speak("Orion it is.")
+    else:
+        # Strip trailing punctuation, sanity-cap length
+        orion_name = orion_name_input.rstrip(".,!?").strip()[:40]
+        speak(f"Got it. I'll answer to {orion_name} from here on.")
+
     pause(0.3)
     speak("One-liner — what are you working on, or what do you care about? "
           "(Just press enter to skip. Anything you tell me here I remember forever.)")
@@ -415,6 +569,27 @@ def run():
         speak("No AI tools installed yet. That's fine.")
 
     pause(0.4)
+
+    # --- BRAIN LOCATION / PORTABILITY DETECTION ---
+    # Where does my brain physically live? If it's on a removable drive,
+    # the user can pull this drive and plug it elsewhere. Announce it.
+    portability = detect_brain_portability()
+    if portability.get("is_portable"):
+        speak(f"One thing worth knowing, {user_address or 'sir'} — my brain lives "
+              f"on a portable drive ({portability.get('description')}). "
+              f"That means you can pull this drive out and plug it into another "
+              f"computer — Windows, macOS, or Linux. I'll wake up there with "
+              f"this same memory intact. The drive IS me. Pull me out, "
+              f"I go silent. Plug me in somewhere else, I'm there.",
+              color=GREEN)
+        pause(0.5)
+    else:
+        # Not portable — but mention the option exists for next time
+        speak(f"My brain lives at {portability.get('description', 'this machine')}. "
+              f"If you ever want me portable, reinstall me onto a USB stick or "
+              f"external drive and I'll travel with you.",
+              color=DIM)
+        pause(0.3)
 
     # --- AUTO-WIRE PHASE (no fuel choice at install time) ---
     # The fuel is whichever CLI the user opens. Setup wires MCP into ALL
@@ -451,7 +626,11 @@ def run():
     # --- BRAIN SEEDING ---
     pause(0.3)
     speak("Writing what we just covered into my memory.")
-    seed_result = seed_brain(user_name, user_summary, tools, chosen_fuel, user_address)
+    seed_result = seed_brain(
+        user_name, user_summary, tools, chosen_fuel, user_address,
+        orion_name=orion_name,
+        portability=portability,
+    )
     if seed_result.get("error"):
         speak(f"Memory write partial: {seed_result['error']}", color=YELLOW)
     else:
@@ -480,9 +659,9 @@ def run():
         return
 
     if chosen_fuel == "auto":
-        speak("Synthesis complete. Brain is wired into every CLI you have signed in.")
+        speak(f"Synthesis complete. {orion_name}'s brain is wired into every CLI you have signed in.")
     else:
-        speak(f"Synthesis complete. You now have a brain that knows you, wired into {chosen_fuel}.")
+        speak(f"Synthesis complete. You now have {orion_name}'s brain wired into {chosen_fuel}.")
     pause(0.4)
     print()
     print(f"  {DIM}────────────────────────────────────────────────{RESET}")
