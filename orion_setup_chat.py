@@ -189,6 +189,264 @@ def find_ready_fuel(tools: dict) -> tuple[str, str] | None:
     return None
 
 
+def _scan_removable_drives() -> list:
+    """Cross-platform scan of removable drives a user could install onto.
+
+    Returns a list of dicts: {letter (or path), label, fs, free_gb, size_gb}.
+    Empty list if no removable drives found.
+    """
+    drives = []
+    try:
+        if sys.platform == "win32":
+            ps = (
+                "Get-Volume | Where-Object { $_.DriveType -eq 'Removable' } | "
+                "ForEach-Object { @{letter=$_.DriveLetter; label=$_.FileSystemLabel; "
+                "fs=$_.FileSystem; size=$_.Size; free=$_.SizeRemaining} } | "
+                "ConvertTo-Json -Compress"
+            )
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True, text=True, timeout=8
+            )
+            if out.stdout.strip():
+                data = json.loads(out.stdout)
+                if isinstance(data, dict):
+                    data = [data]
+                for d in data:
+                    letter = d.get("letter")
+                    if not letter:
+                        continue
+                    drives.append({
+                        "letter": f"{letter}:",
+                        "label": d.get("label") or "(no label)",
+                        "fs": d.get("fs") or "?",
+                        "free_gb": round((d.get("free") or 0) / (1024**3), 1),
+                        "size_gb": round((d.get("size") or 0) / (1024**3), 1),
+                    })
+        else:
+            # POSIX: removable drives typically appear under one of these mounts.
+            # Use `df` to get free space.
+            for root in ("/media", "/mnt", "/run/media", "/Volumes"):
+                root_path = Path(root)
+                if not root_path.exists():
+                    continue
+                for child in root_path.iterdir():
+                    if not child.is_dir():
+                        continue
+                    # On Linux, /media/<user>/<label> nests one level deeper
+                    candidates = [child]
+                    if any(p.is_dir() for p in child.iterdir()):
+                        candidates = [p for p in child.iterdir() if p.is_dir()] or [child]
+                    for c in candidates:
+                        try:
+                            df = subprocess.run(
+                                ["df", "-B1", "--output=size,avail", str(c)],
+                                capture_output=True, text=True, timeout=4
+                            )
+                            lines = df.stdout.strip().split("\n")
+                            if len(lines) >= 2:
+                                size_b, free_b = lines[1].split()
+                                drives.append({
+                                    "letter": str(c),
+                                    "label": c.name,
+                                    "fs": "?",
+                                    "free_gb": round(int(free_b) / (1024**3), 1),
+                                    "size_gb": round(int(size_b) / (1024**3), 1),
+                                })
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+    return drives
+
+
+def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
+    """Create the symlink/junction so ~/.orion lives on the chosen drive.
+    Returns (success, message).
+
+    drive_letter_or_path: 'E:' on Windows or full path like '/media/usr/X'
+    """
+    home_link = Path.home() / ".orion"
+    if sys.platform == "win32":
+        target = Path(drive_letter_or_path) / ".orion"
+    else:
+        target = Path(drive_letter_or_path) / ".orion"
+
+    try:
+        # Make sure target exists and is empty if first time
+        target.mkdir(parents=True, exist_ok=True)
+
+        # Remove any existing ~/.orion (real folder, junction, or broken link)
+        if home_link.exists() or home_link.is_symlink():
+            if sys.platform == "win32":
+                # Try junction-aware removal first
+                attrs = ""
+                try:
+                    attrs = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command",
+                         f"(Get-Item '{home_link}' -Force).Attributes"],
+                        capture_output=True, text=True, timeout=4
+                    ).stdout
+                except Exception:
+                    pass
+                if "ReparsePoint" in attrs:
+                    subprocess.run(["cmd", "/c", "rmdir", str(home_link)],
+                                   capture_output=True, timeout=4)
+                else:
+                    # Real folder — refuse to clobber, force user to handle
+                    return False, (
+                        f"~/.orion already exists as a real folder with data. "
+                        f"To install portable, that data needs to be moved or "
+                        f"deleted first. Aborting to avoid clobbering your memory."
+                    )
+            else:
+                if home_link.is_symlink():
+                    home_link.unlink()
+                else:
+                    return False, (
+                        "~/.orion already exists as a real folder with data. "
+                        "Move or delete it first to install portable."
+                    )
+
+        # Create the link/junction
+        if sys.platform == "win32":
+            r = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(home_link), str(target)],
+                capture_output=True, text=True, timeout=5
+            )
+            if r.returncode != 0:
+                return False, f"junction creation failed: {(r.stderr or r.stdout).strip()}"
+        else:
+            home_link.symlink_to(target)
+
+        return True, str(target)
+    except Exception as e:
+        return False, f"{e.__class__.__name__}: {e}"
+
+
+def prompt_brain_location() -> dict:
+    """Ask the user where Orion's brain should live: locally or on a portable drive.
+
+    Returns dict: {location, path, is_portable, description, drive_info?}
+    """
+    speak("")
+    speak("Now — where would you like my brain to live?")
+    speak(f"  {DIM}I'm asking because where my memory lives determines whether{RESET}", lead_pause=0.1)
+    speak(f"  {DIM}I stay tied to this machine or travel with you.{RESET}", lead_pause=0.1)
+    pause(0.4)
+    speak(f"  {BOLD}1){RESET} On this computer  {DIM}— local, fast, simple. I live here.{RESET}", lead_pause=0.1)
+    speak(f"  {BOLD}2){RESET} On a portable drive  {DIM}— USB, external SSD. The drive becomes me.{RESET}", lead_pause=0.1)
+    speak(f"     {DIM}Pull the drive out and I'm gone from this machine. Plug it{RESET}", lead_pause=0.05)
+    speak(f"     {DIM}into another computer (Windows / macOS / Linux) and I wake{RESET}", lead_pause=0.05)
+    speak(f"     {DIM}up there with the same memory intact.{RESET}", lead_pause=0.05)
+
+    choice = ask(prompt_label="brain location [1/2]").strip()
+
+    if choice not in ("2",):
+        # Local install — ensure ~/.orion isn't a stale junction from a prior run
+        home_link = Path.home() / ".orion"
+        if home_link.is_symlink() or (
+            home_link.exists() and sys.platform == "win32" and
+            "ReparsePoint" in (subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-Item '{home_link}' -Force).Attributes"],
+                capture_output=True, text=True, timeout=3
+            ).stdout or "")
+        ):
+            # Stale junction from previous portable install — remove it
+            try:
+                if sys.platform == "win32":
+                    subprocess.run(["cmd", "/c", "rmdir", str(home_link)],
+                                   capture_output=True, timeout=3)
+                else:
+                    home_link.unlink()
+            except Exception:
+                pass
+
+        speak(f"Got it. I'll live on this computer at {Path.home() / '.orion'}.", color=GREEN)
+        return {
+            "location": "local",
+            "path": str(Path.home() / ".orion"),
+            "is_portable": False,
+            "description": f"local on this computer",
+        }
+
+    # Portable path — scan drives, let user pick
+    speak("")
+    speak("Looking for portable drives...")
+    pause(0.4)
+    drives = _scan_removable_drives()
+
+    if not drives:
+        speak("No portable drives detected. Plug one in if you have one.", color=YELLOW)
+        speak(f"{DIM}(Or press enter to install locally for now — you can move me later.){RESET}",
+              lead_pause=0.1)
+        retry = ask(prompt_label="press enter when ready or type 'local'").strip().lower()
+        if retry == "local":
+            return prompt_brain_location()  # recurse — user picks again
+        drives = _scan_removable_drives()
+        if not drives:
+            speak("Still no portable drive. Falling back to local install.", color=YELLOW)
+            return {
+                "location": "local",
+                "path": str(Path.home() / ".orion"),
+                "is_portable": False,
+                "description": "local on this computer (no portable drive available)",
+            }
+
+    speak(f"Found {len(drives)} portable drive{'s' if len(drives) != 1 else ''}:")
+    for i, d in enumerate(drives, 1):
+        speak(f"  {BOLD}{i}){RESET} {d['letter']}  {DIM}({d['label']}, {d['fs']}, "
+              f"{d['free_gb']} GB free of {d['size_gb']} GB){RESET}", lead_pause=0.1)
+
+    if len(drives) == 1:
+        confirm = ask(prompt_label=f"use {drives[0]['letter']} [Y/n]").strip().lower()
+        if confirm in ("", "y", "yes"):
+            chosen = drives[0]
+        else:
+            speak("OK, going with local install instead.", color=DIM)
+            return {
+                "location": "local",
+                "path": str(Path.home() / ".orion"),
+                "is_portable": False,
+                "description": "local on this computer",
+            }
+    else:
+        idx_input = ask(prompt_label=f"pick 1-{len(drives)}").strip()
+        try:
+            chosen = drives[int(idx_input) - 1]
+        except (ValueError, IndexError):
+            speak("Invalid choice. Falling back to local install.", color=YELLOW)
+            return {
+                "location": "local",
+                "path": str(Path.home() / ".orion"),
+                "is_portable": False,
+                "description": "local on this computer (invalid drive choice)",
+            }
+
+    # Create the junction
+    ok, msg = _create_portable_junction(chosen["letter"])
+    if not ok:
+        speak(f"Couldn't set up portable install: {msg}", color=YELLOW)
+        speak("Falling back to local install. You can re-run setup later.", color=DIM)
+        return {
+            "location": "local",
+            "path": str(Path.home() / ".orion"),
+            "is_portable": False,
+            "description": f"local on this computer (portable setup failed: {msg})",
+        }
+
+    speak(f"Brain set up at {msg}. Pull this drive any time and I'll travel with you.",
+          color=GREEN)
+    return {
+        "location": "portable",
+        "path": msg,
+        "is_portable": True,
+        "description": f"portable drive {chosen['letter']} ({chosen['label']})",
+        "drive": chosen,
+    }
+
+
 def detect_brain_portability() -> dict:
     """Return a description of where Orion's brain physically lives and
     whether that location is portable (removable drive, USB stick, external).
@@ -570,26 +828,15 @@ def run():
 
     pause(0.4)
 
-    # --- BRAIN LOCATION / PORTABILITY DETECTION ---
-    # Where does my brain physically live? If it's on a removable drive,
-    # the user can pull this drive and plug it elsewhere. Announce it.
+    # --- BRAIN LOCATION CHOICE ---
+    # Explicit prompt — user picks where the brain lives. Local or portable.
+    # If portable, the wizard scans removable drives, asks which, and creates
+    # the junction itself. No more relying on the user setting up junctions
+    # by hand — Orion offers the choice.
+    location_choice = prompt_brain_location()
+    # Resolve final state for memory seeding (description + is_portable flag).
     portability = detect_brain_portability()
-    if portability.get("is_portable"):
-        speak(f"One thing worth knowing, {user_address or 'sir'} — my brain lives "
-              f"on a portable drive ({portability.get('description')}). "
-              f"That means you can pull this drive out and plug it into another "
-              f"computer — Windows, macOS, or Linux. I'll wake up there with "
-              f"this same memory intact. The drive IS me. Pull me out, "
-              f"I go silent. Plug me in somewhere else, I'm there.",
-              color=GREEN)
-        pause(0.5)
-    else:
-        # Not portable — but mention the option exists for next time
-        speak(f"My brain lives at {portability.get('description', 'this machine')}. "
-              f"If you ever want me portable, reinstall me onto a USB stick or "
-              f"external drive and I'll travel with you.",
-              color=DIM)
-        pause(0.3)
+    pause(0.3)
 
     # --- AUTO-WIRE PHASE (no fuel choice at install time) ---
     # The fuel is whichever CLI the user opens. Setup wires MCP into ALL
