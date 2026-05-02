@@ -4,7 +4,7 @@
 #   1. Verify Python 3.10+ is available (install via winget if missing)
 #   2. Create a venv inside the repo and install pip deps
 #   3. Offer to install Ollama (optional, for free local fuel)
-#   4. Write an `orion.cmd` launcher to %USERPROFILE%\.orion\bin and add to user PATH
+#   4. Write an `orion.cmd` launcher to %USERPROFILE%\.orion-bin and add to user PATH
 #   5. Run the setup wizard (orion_setup_chat.py) and preflight
 #
 # What this script does NOT do:
@@ -180,8 +180,15 @@ if ($ollamaCheck) {
 # ----------------------------------------------------------------
 # Step 4: Write orion.cmd launcher + add to user PATH
 # ----------------------------------------------------------------
+#
+# IMPORTANT: launcher dir is NOT under ~/.orion. The brain location
+# (~/.orion) is reserved for memory data — the wizard asks the user
+# whether that should live locally or on a portable drive. If the
+# launcher creates ~/.orion first, the wizard would see a non-empty
+# folder and refuse to junction (caught 2026-05-02 dog-food install).
+# Keep launcher and brain decoupled.
 
-$LauncherDir = Join-Path $env:USERPROFILE '.orion\bin'
+$LauncherDir = Join-Path $env:USERPROFILE '.orion-bin'
 $Launcher    = Join-Path $LauncherDir 'orion.cmd'
 
 if (-not (Test-Path $LauncherDir)) {
