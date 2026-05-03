@@ -178,21 +178,25 @@ if ($ollamaCheck) {
 }
 
 # ----------------------------------------------------------------
-# Step 4: Write orion.cmd launcher + add to user PATH
+# Step 4: Write orion.cmd launcher INSIDE the repo, junction from home
 # ----------------------------------------------------------------
 #
-# IMPORTANT: launcher dir is NOT under ~/.orion. The brain location
-# (~/.orion) is reserved for memory data — the wizard asks the user
-# whether that should live locally or on a portable drive. If the
-# launcher creates ~/.orion first, the wizard would see a non-empty
-# folder and refuse to junction (caught 2026-05-02 dog-food install).
-# Keep launcher and brain decoupled.
+# The launcher physically lives at <repo>/bin/orion.cmd — wherever the
+# repo is. If the repo is on a USB stick, the launcher follows. The
+# user's PATH points at ~/.orion-bin, which is a junction to <repo>/bin.
+# When the USB is unplugged, the junction dangles, the launcher
+# vanishes, `orion` is not found. Same load-bearing principle as the
+# brain dir.
+#
+# The brain dir at ~/.orion stays untouched here — only the wizard's
+# brain-location prompt creates it (or junctions it to a portable drive).
 
-$LauncherDir = Join-Path $env:USERPROFILE '.orion-bin'
-$Launcher    = Join-Path $LauncherDir 'orion.cmd'
+$LauncherSrcDir = Join-Path $ScriptDir 'bin'
+$LauncherSrc    = Join-Path $LauncherSrcDir 'orion.cmd'
+$LauncherLink   = Join-Path $env:USERPROFILE '.orion-bin'
 
-if (-not (Test-Path $LauncherDir)) {
-    New-Item -ItemType Directory -Path $LauncherDir -Force | Out-Null
+if (-not (Test-Path $LauncherSrcDir)) {
+    New-Item -ItemType Directory -Path $LauncherSrcDir -Force | Out-Null
 }
 
 $launcherContent = @"
@@ -202,20 +206,33 @@ REM Runs orion.py via the repo's venv so deps are always available.
 "$VenvPython" "$ScriptDir\orion.py" %*
 "@
 
-Set-Content -Path $Launcher -Value $launcherContent -Encoding ascii
-Ok "Launcher installed: $Launcher"
+Set-Content -Path $LauncherSrc -Value $launcherContent -Encoding ascii
+Ok "Launcher installed at: $LauncherSrc"
+
+# Junction ~/.orion-bin -> <repo>/bin so it follows the repo. If a real
+# folder or stale junction is at that path, replace it.
+if (Test-Path $LauncherLink) {
+    $existing = Get-Item $LauncherLink -Force
+    if ($existing.Attributes -match "ReparsePoint") {
+        cmd /c rmdir "$LauncherLink" 2>&1 | Out-Null
+    } else {
+        Remove-Item $LauncherLink -Recurse -Force
+    }
+}
+$mklinkOut = cmd /c mklink /J "$LauncherLink" "$LauncherSrcDir" 2>&1
+Ok "Junction created: $LauncherLink -> $LauncherSrcDir"
 
 # Add to user PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
 if (-not $userPath) { $userPath = '' }
 
-if (($userPath -split ';') -notcontains $LauncherDir) {
-    $newPath = if ($userPath) { "$userPath;$LauncherDir" } else { $LauncherDir }
+if (($userPath -split ';') -notcontains $LauncherLink) {
+    $newPath = if ($userPath) { "$userPath;$LauncherLink" } else { $LauncherLink }
     [Environment]::SetEnvironmentVariable('PATH', $newPath, 'User')
-    Ok "Added $LauncherDir to user PATH"
+    Ok "Added $LauncherLink to user PATH"
     Warn "Open a NEW PowerShell window for the PATH change to take effect."
 } else {
-    Ok "$LauncherDir already in user PATH"
+    Ok "$LauncherLink already in user PATH"
 }
 
 # ----------------------------------------------------------------

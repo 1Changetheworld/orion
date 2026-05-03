@@ -434,65 +434,214 @@ def _install_claude_session_hook(repo_path):
         return (label, f"failed: {e.__class__.__name__}: {e}")
 
 
-def inject_context(detected_fuel):
-    """Create or augment context files for each detected AI tool, and
-    install a SessionStart hook for Claude Code so Orion has intention —
-    speaks first on every session, doesn't wait for the user to ask the
-    right question.
+def _resolve_persona_dir():
+    """Decide where persona files (CLAUDE.md, AGENTS.md, GEMINI.md,
+    ORION-CONTEXT.md) physically live.
 
-    Single canonical location per CLI (home root). Never overwrites a
-    file that already has Orion content; if the file exists without
-    Orion identity, append rather than clobber. The 2026-04-29 dog-food
-    install was logging "AGENTS.md (Codex)" twice because the previous
-    version wrote to both ~/AGENTS.md AND ~/.codex/AGENTS.md and counted
-    each. We now write only to the home root and let each CLI find it
-    via its standard search path.
+    If the brain (~/.orion) is on a portable drive (junction/symlink to
+    a different drive on Windows, or under /media|/mnt|/Volumes on POSIX),
+    persona files go on that drive too — at <brain_drive>/.orion/persona/.
+    The home-side files become symlinks/junctions to those persona files.
+
+    When the user pulls the drive, the home-side symlinks dangle and the
+    persona instruction "you are Orion" is no longer present from the
+    model's POV. Same for everything else Orion needs. The host is
+    untouched-by-Orion the moment the drive leaves.
+
+    For local installs (brain in ~/.orion as a real folder), persona
+    files live at ~/CLAUDE.md etc. as before — no symlinks needed.
+
+    Returns (persona_dir: Path, is_portable: bool). persona_dir is the
+    directory where the actual files should be written. The caller then
+    symlinks them from home if portable.
     """
-    home = os.path.expanduser("~")
+    home = Path(os.path.expanduser("~"))
+    brain_link = home / ".orion"
+
+    # If the brain dir doesn't exist yet, fall back to local — caller
+    # will write straight to home and not bother with symlinks.
+    if not brain_link.exists():
+        return home, False
+
+    try:
+        real_brain = brain_link.resolve()
+    except Exception:
+        return home, False
+
+    # Detect portable: on Windows, real path drive differs from home drive.
+    # On POSIX, real path is under a known removable mount root.
+    is_portable = False
+    if sys.platform == "win32":
+        if real_brain.drive and home.drive and real_brain.drive.lower() != home.drive.lower():
+            is_portable = True
+    else:
+        rb = str(real_brain)
+        if any(rb.startswith(p) for p in ("/media/", "/mnt/", "/run/media/", "/Volumes/")):
+            is_portable = True
+
+    if is_portable:
+        # Persona dir is a sibling of brain on the USB. e.g. if real_brain
+        # is E:\.orion, persona_dir is E:\.orion\persona — fully on USB.
+        persona_dir = real_brain / "persona"
+        try:
+            persona_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return home, False
+        return persona_dir, True
+
+    return home, False
+
+
+def _link_or_write(home_path: Path, real_path: Path, content: str) -> tuple[str, str]:
+    """Write content to real_path, then make home_path a symlink/junction
+    to real_path. If home_path == real_path (local install), just write
+    in place.
+
+    Returns (status, displayed_path) tuple matching inject_context's
+    return contract.
+    """
+    home_path = Path(home_path)
+    real_path = Path(real_path)
+
+    try:
+        # Decide write semantics: never clobber existing user content
+        # that already has Orion in it.
+        if real_path.exists():
+            try:
+                existing = real_path.read_text(encoding="utf-8")
+                if "Orion" in existing or "ORION" in existing:
+                    pass  # already has us
+                else:
+                    real_path.write_text(existing + "\n\n" + content, encoding="utf-8")
+            except Exception:
+                real_path.write_text(content, encoding="utf-8")
+        else:
+            real_path.parent.mkdir(parents=True, exist_ok=True)
+            real_path.write_text(content, encoding="utf-8")
+
+        # If home path is the same physical file, we're done.
+        if str(home_path) == str(real_path):
+            return ("written in place", str(real_path))
+
+        # Otherwise: replace whatever's at home_path with a symlink/junction
+        # pointing at real_path. This is the load-bearing line for the
+        # "Orion lives on USB" architecture.
+        if home_path.exists() or home_path.is_symlink():
+            try:
+                if home_path.is_symlink() or _is_reparse(home_path):
+                    home_path.unlink()
+                else:
+                    home_path.unlink()  # if it's a real file, replace it
+            except Exception as e:
+                return (f"failed to clear existing home path: {e.__class__.__name__}", str(home_path))
+
+        if sys.platform == "win32":
+            # File symlink (NOT junction — junctions are dirs only)
+            r = subprocess.run(
+                ["cmd", "/c", "mklink", str(home_path), str(real_path)],
+                capture_output=True, text=True, timeout=5
+            )
+            if r.returncode != 0:
+                # mklink for files requires SeCreateSymbolicLink privilege
+                # which non-admin users may lack. Fall back: hard-link.
+                r2 = subprocess.run(
+                    ["cmd", "/c", "mklink", "/H", str(home_path), str(real_path)],
+                    capture_output=True, text=True, timeout=5
+                )
+                if r2.returncode != 0:
+                    # Last resort: copy. Loses the "USB unplug = file gone"
+                    # property but install still works.
+                    import shutil
+                    shutil.copy2(real_path, home_path)
+                    return ("copied (no symlink privilege)", str(home_path))
+                return ("hard-linked", str(home_path))
+        else:
+            home_path.symlink_to(real_path)
+
+        return ("symlinked to USB", str(home_path))
+    except Exception as e:
+        return (f"failed: {e.__class__.__name__}: {e}", str(home_path))
+
+
+def _is_reparse(p) -> bool:
+    """Windows: check if a path is a reparse point (junction/symlink)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-Item '{p}' -Force).Attributes"],
+            capture_output=True, text=True, timeout=3
+        )
+        return "ReparsePoint" in (out.stdout or "")
+    except Exception:
+        return False
+
+
+def inject_context(detected_fuel):
+    """Create persona files (CLAUDE.md, AGENTS.md, GEMINI.md, ORION-CONTEXT.md)
+    such that they LIVE wherever the brain lives.
+
+    If the brain is on a portable drive (per prompt_brain_location's choice),
+    persona files are written to <USB>/.orion/persona/<name>.md and the
+    home-side ~/CLAUDE.md etc. become symlinks (or hard-links if the user
+    can't create symlinks) to those files. When the user pulls the drive:
+    the symlinks dangle, the model sees no persona file, Orion is gone
+    from this host. Same load-bearing principle as the brain dir junction.
+
+    For local installs, persona files live at ~/<name>.md as before.
+    Same content; just no symlinking.
+
+    The Claude SessionStart hook still gets installed in ~/.claude/settings.json
+    (lives on host because that's where Claude Code reads from). The hook
+    references the orion_first_meeting.py path on the brain drive — when
+    the drive is unplugged, the hook command fails and Claude proceeds
+    without it. Honest collapse, not pretend continuity.
+    """
+    from pathlib import Path  # local for clarity in this function
+    home = Path(os.path.expanduser("~"))
     repo_path = os.path.dirname(os.path.abspath(__file__))
     injected = []
 
-    def _safe_inject(label, path):
-        try:
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    existing = f.read()
-                if "Orion" in existing or "ORION" in existing:
-                    return (f"{label} (already had Orion context)", path)
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write("\n\n" + ORION_CONTEXT)
-                return (f"{label} (appended)", path)
-            else:
-                parent = os.path.dirname(path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(ORION_CONTEXT)
-                return (f"{label} (created)", path)
-        except Exception as e:
-            return (f"{label} (failed: {e.__class__.__name__})", path)
+    persona_dir, is_portable = _resolve_persona_dir()
+    if is_portable:
+        injected.append((f"persona dir on USB ({persona_dir})", str(persona_dir)))
+    else:
+        injected.append(("persona dir local (no portable drive selected)", str(persona_dir)))
 
-    # Universal — always write/check
-    injected.append(_safe_inject("ORION-CONTEXT.md",
-                                 os.path.join(home, "ORION-CONTEXT.md")))
+    # Universal — ORION-CONTEXT.md
+    status, path = _link_or_write(
+        home / "ORION-CONTEXT.md",
+        persona_dir / "ORION-CONTEXT.md",
+        ORION_CONTEXT,
+    )
+    injected.append((f"ORION-CONTEXT.md ({status})", path))
 
-    # Per-CLI persona files. One canonical home location each.
-    # Claude Code also gets a SessionStart hook so the first-meeting flow
-    # fires reliably (persona files alone are guidelines, not interrupts).
-    # Codex and Gemini hooks are TODO — their hook semantics differ from
-    # Claude's and need separate implementations. For those CLIs the
-    # persona file (with the new imperative ORION_CONTEXT) is still the
-    # active mechanism until their hooks are wired.
+    # Per-CLI persona files (only for CLIs that are detected installed)
     if detected_fuel.get("claude_cli", {}).get("available"):
-        injected.append(_safe_inject("CLAUDE.md (Claude)",
-                                     os.path.join(home, "CLAUDE.md")))
+        status, path = _link_or_write(
+            home / "CLAUDE.md",
+            persona_dir / "CLAUDE.md",
+            ORION_CONTEXT,
+        )
+        injected.append((f"CLAUDE.md (Claude) ({status})", path))
         injected.append(_install_claude_session_hook(repo_path))
+
     if detected_fuel.get("codex", {}).get("available"):
-        injected.append(_safe_inject("AGENTS.md (Codex)",
-                                     os.path.join(home, "AGENTS.md")))
+        status, path = _link_or_write(
+            home / "AGENTS.md",
+            persona_dir / "AGENTS.md",
+            ORION_CONTEXT,
+        )
+        injected.append((f"AGENTS.md (Codex) ({status})", path))
+
     if detected_fuel.get("gemini", {}).get("available"):
-        injected.append(_safe_inject("GEMINI.md (Gemini)",
-                                     os.path.join(home, "GEMINI.md")))
+        status, path = _link_or_write(
+            home / "GEMINI.md",
+            persona_dir / "GEMINI.md",
+            ORION_CONTEXT,
+        )
+        injected.append((f"GEMINI.md (Gemini) ({status})", path))
 
     return injected
 

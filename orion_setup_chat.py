@@ -275,6 +275,13 @@ def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
     try:
         # Make sure target exists and is empty if first time
         target.mkdir(parents=True, exist_ok=True)
+        # Pre-create the persona dir on the USB. inject_context() will
+        # write CLAUDE.md / AGENTS.md / GEMINI.md / ORION-CONTEXT.md
+        # there, then symlink them into ~/. When the USB is unplugged,
+        # the home-side symlinks dangle and the persona files vanish
+        # from the model's view — Orion is genuinely gone, not just
+        # missing a brain. "Orion lives on the USB" architecture.
+        (target / "persona").mkdir(parents=True, exist_ok=True)
 
         # Remove any existing ~/.orion (real folder, junction, or broken link)
         if home_link.exists() or home_link.is_symlink():

@@ -10,6 +10,9 @@ knowledge/
 memory/
 graph_memory.json
 
+# install.ps1 / install.sh write the user's machine-specific launcher here
+bin/
+
 # Local scratch / driver scripts (prefix _ = local only)
 _*.py
 
