@@ -260,6 +260,126 @@ def _scan_removable_drives() -> list:
     return drives
 
 
+def _redirect_cli_transcripts(usb_drive_path: str) -> list:
+    """Junction the per-CLI transcript directories onto the USB so all
+    conversation transcripts physically live on the drive.
+
+    Cross-CLI dirs handled (Windows + POSIX use same paths):
+      - ~/.claude/projects   -> <usb>/.orion/transcripts/claude
+      - ~/.codex/sessions    -> <usb>/.orion/transcripts/codex
+      - ~/.gemini/tmp        -> <usb>/.orion/transcripts/gemini
+
+    Existing local content is moved to the USB target before junctioning,
+    so we don't clobber whatever's there. When the user pulls the USB,
+    junctions dangle and no new transcripts can be written to the host.
+    Privacy: nothing about our conversations stays on the host.
+
+    Returns list of (cli_name, status_message) tuples.
+    """
+    import shutil
+    home = Path.home()
+    cli_dirs = {
+        "claude": home / ".claude" / "projects",
+        "codex":  home / ".codex" / "sessions",
+        "gemini": home / ".gemini" / "tmp",
+    }
+    transcripts_root = Path(usb_drive_path) / ".orion" / "transcripts"
+    try:
+        transcripts_root.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return [("setup", f"could not create {transcripts_root}: {e.__class__.__name__}")]
+
+    results = []
+    for cli_name, local_dir in cli_dirs.items():
+        usb_target = transcripts_root / cli_name
+        try:
+            usb_target.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            results.append((cli_name, f"could not create USB target: {e.__class__.__name__}"))
+            continue
+
+        # If local dir is already a junction (re-running setup), just
+        # confirm + move on
+        if local_dir.exists():
+            is_link = False
+            if sys.platform == "win32":
+                try:
+                    out = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command",
+                         f"(Get-Item '{local_dir}' -Force).Attributes"],
+                        capture_output=True, text=True, timeout=4
+                    )
+                    is_link = "ReparsePoint" in (out.stdout or "")
+                except Exception:
+                    pass
+            else:
+                is_link = local_dir.is_symlink()
+
+            if is_link:
+                results.append((cli_name, f"already linked"))
+                continue
+
+            # Real local dir with content — migrate to USB first
+            try:
+                for item in local_dir.iterdir():
+                    target_path = usb_target / item.name
+                    if not target_path.exists():
+                        try:
+                            shutil.move(str(item), str(target_path))
+                        except Exception:
+                            # Fall back to copy + remove if move fails
+                            # (cross-device move on some OSes)
+                            if item.is_dir():
+                                shutil.copytree(str(item), str(target_path))
+                                shutil.rmtree(str(item))
+                            else:
+                                shutil.copy2(str(item), str(target_path))
+                                item.unlink()
+            except Exception as e:
+                results.append((cli_name, f"migration partial: {e.__class__.__name__}"))
+                # Continue anyway — try the junction
+
+            # Remove the (now empty or near-empty) local dir
+            try:
+                if local_dir.exists():
+                    if any(local_dir.iterdir()):
+                        # Still has stuff — copy remaining to USB and force remove
+                        for item in local_dir.iterdir():
+                            target_path = usb_target / item.name
+                            if not target_path.exists():
+                                try:
+                                    shutil.move(str(item), str(target_path))
+                                except Exception:
+                                    pass
+                    shutil.rmtree(str(local_dir), ignore_errors=True)
+            except Exception:
+                pass
+        else:
+            # Local dir doesn't exist yet — ensure parent so junction can be created
+            try:
+                local_dir.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+        # Create junction (Windows) or symlink (POSIX)
+        try:
+            if sys.platform == "win32":
+                r = subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(local_dir), str(usb_target)],
+                    capture_output=True, text=True, timeout=5
+                )
+                if r.returncode != 0:
+                    results.append((cli_name, f"junction failed: {(r.stderr or r.stdout).strip()}"))
+                    continue
+            else:
+                local_dir.symlink_to(usb_target)
+            results.append((cli_name, f"junctioned -> {usb_target}"))
+        except Exception as e:
+            results.append((cli_name, f"link failed: {e.__class__.__name__}: {e}"))
+
+    return results
+
+
 def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
     """Create the symlink/junction so ~/.orion lives on the chosen drive.
     Returns (success, message).
@@ -445,12 +565,32 @@ def prompt_brain_location() -> dict:
 
     speak(f"Brain set up at {msg}. Pull this drive any time and I'll travel with you.",
           color=GREEN)
+
+    # Redirect per-CLI conversation transcripts to USB too. Without this,
+    # Claude/Codex/Gemini still write their session jsonls to the host
+    # (~/.claude/projects, ~/.codex/sessions, ~/.gemini/tmp) — a real
+    # privacy leak when the drive is pulled. With this, transcripts
+    # physically live on the USB. Pull drive = no trace of conversations
+    # remains on the host. Truer to "Orion lives on the USB".
+    pause(0.3)
+    speak("One more thing — your conversation transcripts (Claude / Codex / "
+          "Gemini session logs) currently live on this machine. I'll route "
+          "them to the USB too, so when you pull the drive, no record of "
+          "what we talked about stays here.")
+    transcript_results = _redirect_cli_transcripts(chosen["letter"])
+    for cli_name, status in transcript_results:
+        if "junctioned" in status or "already linked" in status:
+            speak(f"  {cli_name} transcripts: {status}", color=GREEN, lead_pause=0.05)
+        else:
+            speak(f"  {cli_name} transcripts: {status}", color=YELLOW, lead_pause=0.05)
+
     return {
         "location": "portable",
         "path": msg,
         "is_portable": True,
         "description": f"portable drive {chosen['letter']} ({chosen['label']})",
         "drive": chosen,
+        "transcripts_redirected": transcript_results,
     }
 
 
