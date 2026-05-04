@@ -105,6 +105,116 @@ def ask(prompt_text: str = "", prompt_label: str = None) -> str:
         return ""
 
 
+# ─────────────────────────────────────────────────────────
+# Perceptive intent classifier — proto-Orion's understanding layer.
+# No LLM needed (no Ollama dependency, per founder's hard-no on
+# structural Ollama dependency). Pure deterministic heuristics that
+# handle natural human phrasing instead of demanding literal answers.
+# Caught 2026-05-03 when "Orion is fine" got stored as Orion's name.
+# Per feedback_wizard-must-be-perceptive.md.
+# ─────────────────────────────────────────────────────────
+
+def classify_intent(user_input: str, default_value: str | None = None) -> tuple[str, str]:
+    """Classify the user's intent in response to a wizard prompt.
+
+    Returns (intent, value) where intent is one of:
+      'keep'  — user accepted default ("yes", "fine", "Orion is fine", "ok", "")
+      'skip'  — user explicitly rejected ("no", "skip", "nothing", "nah")
+      'new'   — user provided a new value (the value is in `value`, cleaned)
+      'ambiguous' — cannot tell; caller should re-ask
+
+    The classifier is deliberately conservative: when in doubt, prefer
+    'keep' (or 'ambiguous' if no default) over interpreting unfamiliar
+    input as a new value. Better to ask the user to clarify than to
+    store garbage.
+    """
+    text = (user_input or "").strip()
+
+    # Empty input — accept default (per existing wizard convention)
+    if not text:
+        return ("keep" if default_value else "skip", default_value or "")
+
+    lower = text.lower().rstrip(".,!?").strip()
+
+    # Single-word acceptance patterns
+    keep_words = {
+        "yes", "y", "yeah", "yep", "yup", "ok", "okay", "k",
+        "sure", "fine", "good", "great", "cool", "perfect",
+        "default", "keep", "leave", "same", "no change",
+    }
+    if lower in keep_words:
+        return ("keep", default_value or "")
+
+    # Single-word rejection patterns
+    skip_words = {
+        "no", "n", "nope", "nah", "skip", "nothing", "none",
+        "later", "pass", "cancel", "abort",
+    }
+    if lower in skip_words:
+        return ("skip", "")
+
+    # Multi-word phrases that mean "keep the default"
+    keep_phrases = [
+        "is fine", "that is fine", "thats fine", "that's fine",
+        "is good", "that is good", "thats good", "that's good",
+        "is great", "is perfect", "works for me", "works fine",
+        "no change", "leave it", "leave it as is", "leave as is",
+        "keep it", "keep the default", "keep that", "keep default",
+        "sounds good", "all good", "looks good", "is ok", "thats ok", "that's ok",
+        "fine with me", "i am fine with", "im fine with", "i'm fine with",
+        "stick with", "go with default",
+    ]
+    for phrase in keep_phrases:
+        if phrase in lower:
+            return ("keep", default_value or "")
+
+    # If the user's response contains the default value AND the response is
+    # short, they're probably keeping the default. "Orion is fine", "use Orion",
+    # "Orion works" — all should resolve to keep, not "new value = the phrase".
+    if default_value:
+        if default_value.lower() in lower and len(lower.split()) <= 4:
+            return ("keep", default_value)
+
+    # User wants to change. Strip common preambles to extract the actual value.
+    cleaned = text.rstrip(".,!?").strip()
+    preambles = [
+        "call me ", "address me as ", "i'd like ", "i would like ",
+        "id like ", "actually ", "actually, ", "use ", "let's go with ",
+        "lets go with ", "go with ", "make it ", "name me ", "rename to ",
+        "change to ", "i prefer ", "prefer ", "my name is ", "i am ",
+        "im ", "i'm ", "name's ", "name is ", "the name ", "name ",
+    ]
+    cleaned_lower = cleaned.lower()
+    for prefix in preambles:
+        if cleaned_lower.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+
+    # Sanity cap on length
+    cleaned = cleaned[:60]
+
+    # If after stripping preambles we end up empty, treat as ambiguous
+    if not cleaned:
+        return ("ambiguous", "")
+
+    return ("new", cleaned)
+
+
+def confirm_value(value: str, what_for: str = "") -> bool:
+    """Show what we understood, ask user to confirm before persisting.
+
+    Returns True if user confirms (yes / empty / acceptance phrase),
+    False otherwise. The 2026-05-03 'Orion is fine' bug would have been
+    caught here: the user would see 'I'll answer to Orion is fine'
+    and immediately say no.
+    """
+    label = f"confirm '{value}'" if not what_for else f"confirm {what_for}"
+    speak(f"  Got it — {what_for or value}. Sound right? [Y/n]", lead_pause=0.1)
+    response = ask(prompt_label=label).strip()
+    intent, _ = classify_intent(response, default_value="yes")
+    return intent == "keep"
+
+
 # Form-of-address for the current user. Updated during onboarding.
 # Defaults to 'you' so we never assume before asking.
 _USER_LABEL = "you"
@@ -980,20 +1090,27 @@ def run():
     speak(f"  {DIM}— a nickname of your choice{RESET}", lead_pause=0.1)
     speak(f"  {DIM}— 'nothing' / press enter, and I'll skip honorifics entirely{RESET}", lead_pause=0.1)
 
-    address_input = ask(prompt_label="address").lower().strip()
-    if not address_input or address_input in ("nothing", "none", "skip", "no"):
-        user_address = ""   # Orion addresses them by nothing
-        prompt_label = user_name.split()[0].lower() if user_name else "you"
-    elif "name" in address_input and user_name:
-        user_address = user_name.split()[0]  # first name
+    address_raw = ask(prompt_label="address")
+    # Special handling: "name" / "use my name" / "just my name" shortcut
+    if user_name and "name" in (address_raw or "").lower() and len((address_raw or "").split()) <= 5:
+        user_address = user_name.split()[0]
         prompt_label = user_name.split()[0].lower()
     else:
-        # Take whatever they typed at face value — their choice, literally
-        # (Strip trailing punctuation.)
-        user_address = address_input.rstrip(".,!?").strip()
-        # Cap at 40 chars as sanity guard
-        user_address = user_address[:40]
-        prompt_label = user_address.lower()
+        intent, value = classify_intent(address_raw, default_value="")
+        if intent in ("skip", "ambiguous") or (intent == "keep" and not value):
+            user_address = ""
+            prompt_label = user_name.split()[0].lower() if user_name else "you"
+        else:
+            # New address — confirm before persisting. Prevents the
+            # 'I'd like to be called sir please' style input from being
+            # stored as the literal address.
+            proposed = (value or address_raw).rstrip(".,!?").strip().lower()[:40]
+            if proposed and confirm_value(proposed, what_for=f"I'll call you '{proposed}'"):
+                user_address = proposed
+                prompt_label = proposed
+            else:
+                user_address = ""
+                prompt_label = user_name.split()[0].lower() if user_name else "you"
 
     # Update the shell prompt label so subsequent input shows the right form
     set_user_label(prompt_label)
@@ -1009,13 +1126,22 @@ def run():
           "Some people prefer Mercury, Atlas, Jarvis, a nickname, anything. "
           "(Press enter to keep 'Orion'.)")
     orion_name_input = ask(prompt_label="call me").strip()
-    if not orion_name_input or orion_name_input.lower() in ("orion", "no", "skip", "nothing"):
+    intent, value = classify_intent(orion_name_input, default_value="Orion")
+    if intent in ("keep", "skip", "ambiguous"):
         orion_name = "Orion"
         speak("Orion it is.")
     else:
-        # Strip trailing punctuation, sanity-cap length
-        orion_name = orion_name_input.rstrip(".,!?").strip()[:40]
-        speak(f"Got it. I'll answer to {orion_name} from here on.")
+        # New value — confirm before storing. This is the layer that
+        # would have caught the 2026-05-03 "Orion is fine" bug:
+        # classify_intent already routes that to 'keep', but if some
+        # other phrasing slips through, the confirm step shows the user
+        # exactly what we parsed before we persist it.
+        if confirm_value(value, what_for=f"I'll answer to '{value}'"):
+            orion_name = value[:40]
+            speak(f"Locked in. I'll answer to {orion_name} from here on.", color=GREEN)
+        else:
+            orion_name = "Orion"
+            speak("Got it — sticking with Orion then.", color=DIM)
 
     pause(0.3)
     speak("One-liner — what are you working on, or what do you care about? "
