@@ -446,6 +446,51 @@ def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
         else:
             home_link.symlink_to(target)
 
+        # Write the presence beacon — the passive ligand the host presence
+        # agent will detect on plug-in. Per the cellular design vocabulary,
+        # this is what makes the USB recognizable as Orion (vs a random USB).
+        # See project_orion-presence-architecture.md.
+        # IMPORTANT: deliberately does NOT enumerate specific CLIs here.
+        # Per feedback_avoid-cli-specific-hardcoding.md, the host agent does
+        # runtime CLI discovery; the beacon just declares "Orion is here".
+        try:
+            import uuid as _uuid
+            import platform as _platform
+            beacon_path = target / "presence-beacon.json"
+            existing_id = None
+            if beacon_path.exists():
+                try:
+                    existing = json.loads(beacon_path.read_text(encoding="utf-8"))
+                    existing_id = existing.get("orion_id")
+                except Exception:
+                    pass
+            beacon = {
+                "orion_id": existing_id or str(_uuid.uuid4()),
+                "schema_version": 1,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "created_on_host": {
+                    "os": _platform.system().lower(),
+                    "arch": _platform.machine(),
+                    "hostname": _platform.node(),
+                },
+                "paths": {
+                    "brain": "/.orion/brain",
+                    "persona": "/.orion/persona",
+                    "transcripts": "/.orion/transcripts",
+                    "repo": "/orion",
+                },
+                "wants": {
+                    "discovery_method": "scan + adapter-registry",
+                    "auto_bootstrap": True,
+                    "notify_user": True,
+                },
+            }
+            beacon_path.write_text(json.dumps(beacon, indent=2), encoding="utf-8")
+        except Exception as e:
+            # Beacon failure shouldn't kill the install — bootstrap-actor
+            # fallback path can still run manually
+            print(f"  [!] presence beacon write failed: {e.__class__.__name__}")
+
         return True, str(target)
     except Exception as e:
         return False, f"{e.__class__.__name__}: {e}"
@@ -525,6 +570,28 @@ def prompt_brain_location() -> dict:
     for i, d in enumerate(drives, 1):
         speak(f"  {BOLD}{i}){RESET} {d['letter']}  {DIM}({d['label']}, {d['fs']}, "
               f"{d['free_gb']} GB free of {d['size_gb']} GB){RESET}", lead_pause=0.1)
+
+    # Explicit consent disclosure — user needs to know what picking a drive
+    # actually means. Picking a portable drive grants Orion read+write access
+    # to it whenever plugged in. Existing files on the drive are NOT touched,
+    # but the drive becomes Orion's home directory equivalent. Pull it = Orion
+    # is gone from this machine. Per the founder's 2026-05-03 ask: full
+    # transparency about what Orion does with the drive.
+    pause(0.3)
+    speak("Before you pick — here's what choosing a drive actually means:", color=YELLOW)
+    speak(f"  {DIM}- I'll create folders for my brain, persona, conversation transcripts,{RESET}",
+          lead_pause=0.05)
+    speak(f"  {DIM}  and OS-specific runtimes (.venv-windows, .venv-linux, .venv-macos).{RESET}",
+          lead_pause=0.05)
+    speak(f"  {DIM}- Anything you already have on the drive stays. I will NOT delete it.{RESET}",
+          lead_pause=0.05)
+    speak(f"  {DIM}- But the drive becomes mine to read and write whenever I'm plugged in.{RESET}",
+          lead_pause=0.05)
+    speak(f"  {DIM}- Pull the drive and I'm gone from this computer entirely.{RESET}",
+          lead_pause=0.05)
+    speak(f"  {DIM}- Plug it into a different machine and I'll wake up there.{RESET}",
+          lead_pause=0.05)
+    pause(0.3)
 
     if len(drives) == 1:
         confirm = ask(prompt_label=f"use {drives[0]['letter']} [Y/n]").strip().lower()
