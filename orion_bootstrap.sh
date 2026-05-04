@@ -144,17 +144,25 @@ fi
 
 UNAME_S=$(uname -s 2>/dev/null || echo unknown)
 case "$UNAME_S" in
-    Linux*) VENV_DIR=".venv-linux" ;;
-    Darwin*) VENV_DIR=".venv-macos" ;;
-    MINGW*|MSYS*|CYGWIN*) VENV_DIR=".venv-windows" ;;
-    *) VENV_DIR=".venv-$(echo $UNAME_S | tr A-Z a-z)" ;;
+    Linux*) OS_TAG="linux" ;;
+    Darwin*) OS_TAG="macos" ;;
+    MINGW*|MSYS*|CYGWIN*) OS_TAG="windows" ;;
+    *) OS_TAG="$(echo $UNAME_S | tr A-Z a-z)" ;;
 esac
-VENV="$REPO/$VENV_DIR"
+
+# Runtime is per-host (lives in $HOME), NOT on the USB. Linux + macOS venvs
+# require symlinks (lib64 -> lib, etc.) that FAT32 cannot store. Per the
+# cellular design: each host carries its own ribosomes; only the genome
+# (brain + persona) travels with the USB. Each host bootstraps its own
+# runtime once, then reuses on subsequent plug-ins.
+RUNTIME_ROOT="$HOME/.orion-runtime"
+VENV="$RUNTIME_ROOT/$OS_TAG"
+mkdir -p "$RUNTIME_ROOT"
 
 if [ -x "$VENV/bin/python3" ] || [ -x "$VENV/Scripts/python.exe" ]; then
     log "venv already present at $VENV — reusing"
 else
-    log "creating $VENV (first time on this OS for this USB)"
+    log "creating $VENV (first time on this host)"
     python3 -m venv "$VENV"
 fi
 
