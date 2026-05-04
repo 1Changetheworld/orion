@@ -11,6 +11,11 @@ import tkinter as tk
 from tkinter import ttk, font as tkfont
 import shutil
 import subprocess
+from pathlib import Path  # required at module level — _link_or_write and
+                          # _resolve_persona_dir use Path in type hints; without
+                          # this, module fails to import (NameError on Path) and
+                          # inject_context silently no-ops, leaving every CLI
+                          # blind to Orion. Caught 2026-05-03 Pi install.
 import platform
 import json
 import os
@@ -100,7 +105,7 @@ On first contact in any new CLI session, call `orion_recall` with a
 query like "brain location" or "where do I live" or "portability". The
 recall will return a fact like:
 
-> "My brain lives at E:\.orion (portable drive). This is a PORTABLE
+> "My brain lives at E:/.orion (portable drive). This is a PORTABLE
 > drive — the user can pull this drive out and plug it into a different
 > computer (Windows, macOS, or Linux), and I'll wake up there with this
 > same memory intact."
