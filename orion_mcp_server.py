@@ -1131,6 +1131,18 @@ def setup_mcp_configs():
     # Writing mcp.json is silently ignored by the CLI, which is why this
     # setup previously appeared to succeed but Codex didn't see orion-brain.
     codex_dir = Path.home() / ".codex"
+    if not codex_dir.exists():
+        # Auto-create the directory so a fresh install (where Codex was
+        # installed but never run, OR Codex hasn't been installed yet but
+        # will be later) still receives Orion's MCP config. Codex will
+        # pick up the config the next time it starts. If Codex is never
+        # installed, the file is harmless.
+        try:
+            codex_dir.mkdir(parents=True, exist_ok=True)
+            print(f"  [info] Codex dir created at {codex_dir} — config will activate when Codex starts.")
+        except Exception as e:
+            print(f"  [skip] Codex not detected and cannot create dir: {e}")
+            print(f"         After installing Codex, re-run: python orion_mcp_server.py --setup")
     if codex_dir.exists():
         codex_config = codex_dir / "config.toml"
         try:
@@ -1211,6 +1223,15 @@ def setup_mcp_configs():
 
     # ── Gemini CLI ──
     gemini_dir = Path.home() / ".gemini"
+    if not gemini_dir.exists():
+        # Same proactive-create rationale as Codex: ensures the wiring
+        # works even if Gemini hasn't been started yet on this host.
+        try:
+            gemini_dir.mkdir(parents=True, exist_ok=True)
+            print(f"  [info] Gemini dir created at {gemini_dir} — config will activate when Gemini starts.")
+        except Exception as e:
+            print(f"  [skip] Gemini not detected and cannot create dir: {e}")
+            print(f"         After installing Gemini, re-run: python orion_mcp_server.py --setup")
     if gemini_dir.exists():
         gemini_settings = gemini_dir / "settings.json"
         try:
