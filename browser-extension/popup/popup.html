@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Orion</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <img src="../icons/icon-48.png" alt="" width="32" height="32" />
+    <h1>Orion</h1>
+    <span class="status" id="status">checking…</span>
+  </header>
+
+  <main>
+    <form id="recallForm" autocomplete="off">
+      <input
+        type="text"
+        id="query"
+        name="query"
+        placeholder="Ask your brain anything…"
+        autofocus
+        required
+      />
+      <button type="submit">Recall</button>
+    </form>
+
+    <div id="result" class="result" aria-live="polite"></div>
+  </main>
+
+  <footer>
+    <a href="#" id="openOptions">Settings</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/1Changetheworld/orion" target="_blank" rel="noreferrer">github</a>
+  </footer>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

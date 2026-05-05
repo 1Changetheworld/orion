@@ -1,0 +1,125 @@
+/* Orion popup — minimal styling, reads cleanly on dark and light browsers. */
+:root {
+  color-scheme: dark light;
+  --bg: #0d141c;
+  --fg: #e6edf3;
+  --muted: #8b97a4;
+  --accent: #4dd0e1;
+  --accent-dim: #1a3a40;
+  --border: #1f2933;
+  --error: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  width: 360px;
+  min-height: 320px;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  flex: 1;
+}
+
+.status {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.status.ok { color: var(--accent); }
+.status.err { color: var(--error); }
+
+main {
+  padding: 12px 14px;
+}
+
+form {
+  display: flex;
+  gap: 6px;
+}
+
+input[type="text"] {
+  flex: 1;
+  padding: 8px 10px;
+  background: #0a1018;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+button {
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #0a1018;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.08); }
+button:active { filter: brightness(0.95); }
+button[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+.result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #0a1018;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 80px;
+  max-height: 280px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: #c9d1d9;
+}
+
+.result:empty::before {
+  content: "Results will show here.";
+  color: var(--muted);
+  font-style: italic;
+}
+
+.result.error { color: var(--error); }
+
+footer {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+footer a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+footer a:hover { color: var(--fg); }
+
+footer .dot { margin: 0 4px; }

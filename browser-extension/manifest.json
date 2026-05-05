@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Orion — your portable AI memory",
+  "short_name": "Orion",
+  "version": "0.1.0",
+  "description": "Reach Orion's brain from any browser tab. Recall what Orion knows about anything you're reading, without leaving the page.",
+  "author": "1Changetheworld",
+  "homepage_url": "https://github.com/1Changetheworld/orion",
+
+  "permissions": [
+    "storage"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1:5556/*",
+    "http://localhost:5556/*"
+  ],
+
+  "background": {
+    "service_worker": "background/service_worker.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_title": "Orion",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_popup": "popup/popup.html"
+  },
+
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "orion@1changetheworld.dev",
+      "strict_min_version": "115.0"
+    }
+  }
+}
