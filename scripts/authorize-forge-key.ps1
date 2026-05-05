@@ -25,16 +25,27 @@ if ($isAdmin) {
 }
 
 New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
-if (-not (Test-Path $target)) { New-Item -ItemType File -Path $target -Force | Out-Null }
 
-# ---- Append key idempotently ----
-$existing = Get-Content $target -ErrorAction SilentlyContinue
-if ($existing -notcontains $KEY) {
-    Add-Content -Path $target -Value $KEY
-    Write-Host "Key appended to $target" -ForegroundColor Green
-} else {
-    Write-Host "Key already present in $target" -ForegroundColor Yellow
+# ---- Rewrite the file from scratch with explicit ASCII encoding ----
+# Why rewrite (not just append): a prior multi-line paste can leave
+# orphan comment fragments and BOM-encoded content. OpenSSH on Windows
+# can be picky about encoding (UTF-16 / UTF-8 BOM tripped past attempts).
+# We collect the FORGE key + any other valid pubkey lines already in
+# the file, then write everything back fresh in ASCII with LF endings.
+$kept = New-Object System.Collections.Generic.List[string]
+$kept.Add($KEY)
+if (Test-Path $target) {
+    foreach ($line in (Get-Content $target -ErrorAction SilentlyContinue)) {
+        $trimmed = $line.Trim()
+        # Keep only well-formed pubkey lines that aren't already our FORGE key.
+        if ($trimmed -match '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+)\s+\S+(\s+.+)?$' -and $trimmed -ne $KEY) {
+            $kept.Add($trimmed)
+        }
+    }
 }
+$content = ($kept -join "`n") + "`n"
+[System.IO.File]::WriteAllText($target, $content, [System.Text.Encoding]::ASCII)
+Write-Host "Wrote $($kept.Count) key(s) to $target (ASCII, LF)" -ForegroundColor Green
 
 # ---- Tighten ACL — OpenSSH refuses keys if file is too permissive ----
 if ($isAdmin) {
