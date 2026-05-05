@@ -1,0 +1,91 @@
+{
+  "name": "orion",
+  "displayName": "Orion — your portable AI memory",
+  "description": "Reach Orion's brain from any VS Code editor. Recall what you know about anything you're working on without leaving the editor.",
+  "version": "0.1.0",
+  "publisher": "1changetheworld",
+  "license": "AGPL-3.0",
+  "homepage": "https://github.com/1Changetheworld/orion",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1Changetheworld/orion.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "ai",
+    "memory",
+    "brain",
+    "orion",
+    "mcp"
+  ],
+  "icon": "icons/orion-128.png",
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "orion.recall",
+        "title": "Orion: Recall",
+        "category": "Orion"
+      },
+      {
+        "command": "orion.memorize",
+        "title": "Orion: Memorize selection",
+        "category": "Orion"
+      },
+      {
+        "command": "orion.identity",
+        "title": "Orion: Show identity",
+        "category": "Orion"
+      },
+      {
+        "command": "orion.health",
+        "title": "Orion: Check brain status",
+        "category": "Orion"
+      }
+    ],
+    "configuration": {
+      "title": "Orion",
+      "properties": {
+        "orion.brainBase": {
+          "type": "string",
+          "default": "http://127.0.0.1:5556",
+          "description": "URL of the Orion brain service. Default is local. Change only if you set ORION_BRAIN_PORT or bind to a non-default address."
+        },
+        "orion.authToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token from ~/.orion/auth-token. Generated once when orion_brain_service.py first starts.",
+          "markdownDescription": "Bearer token from `~/.orion/auth-token`. Generated once when `orion_brain_service.py` first starts."
+        },
+        "orion.recallLimit": {
+          "type": "number",
+          "default": 5,
+          "description": "Max results returned by Orion: Recall."
+        },
+        "orion.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Orion brain status in the bottom status bar."
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorHasSelection",
+          "command": "orion.memorize",
+          "group": "orion@1"
+        }
+      ]
+    }
+  }
+}
