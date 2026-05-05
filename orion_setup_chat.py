@@ -1022,6 +1022,102 @@ def wire_mcp_into_configured_tools() -> str:
         return f"MCP wiring skipped: {e.__class__.__name__}"
 
 
+def prepare_brain_service_auth_token() -> str:
+    """Generate (or read) the bearer token used by the HTTP brain service.
+
+    The token lives at ~/.orion/auth-token and is used by the browser
+    extension + VS Code extension when calling orion_brain_service.py.
+    Pre-generating it during install means the user can paste it
+    immediately after install instead of running the brain service
+    once just to create the token.
+    """
+    try:
+        from orion_brain_service import get_or_create_auth_token
+        return get_or_create_auth_token()
+    except Exception:
+        return ""
+
+
+def print_extension_install_help(token: str) -> None:
+    """Print actionable install steps for the browser + VS Code extensions.
+
+    Auto-installs the VS Code extension if `code` CLI is available so
+    one wizard command lands all surfaces; falls back to printed
+    instructions otherwise. The browser extension cannot be installed
+    by an external script (extensions ride the browser's signed-package
+    pipeline), so we always print the manual load-unpacked steps for it.
+    """
+    browser_ext = _REPO_DIR / "browser-extension"
+    vscode_ext = _REPO_DIR / "vscode-extension"
+
+    speak(f"Browser extension is at: {browser_ext}")
+    speak("  To install in Chrome / Edge / Brave / Arc:", lead_pause=0.05)
+    speak("    1. Open chrome://extensions", lead_pause=0.05)
+    speak("    2. Enable Developer mode (top right)", lead_pause=0.05)
+    speak("    3. Click Load Unpacked, point at the path above", lead_pause=0.05)
+    speak("    4. Click the Orion icon -> Settings -> paste your token", lead_pause=0.05)
+
+    code_cli = shutil.which("code")
+    if code_cli:
+        # We can't `code --install-extension <directory>` — VS Code's CLI
+        # only accepts marketplace IDs or VSIX files. Bundle a vsix-shaped
+        # zip on the fly (vsce-equivalent: VS Code accepts a properly-
+        # structured zip with package.json at root). Skip if it fails;
+        # fall through to printed instructions.
+        try:
+            import zipfile, tempfile
+            vsix_path = Path(tempfile.gettempdir()) / "orion-vscode-0.1.0.vsix"
+            with zipfile.ZipFile(vsix_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                # VSIX format: extension/ root + [Content_Types].xml + .vsixmanifest
+                # Minimal viable package: VS Code accepts dropping the dir
+                # contents under "extension/" prefix in the zip.
+                for f in vscode_ext.rglob("*"):
+                    if f.is_file():
+                        arc = "extension/" + str(f.relative_to(vscode_ext)).replace("\\", "/")
+                        zf.write(f, arc)
+                zf.writestr("[Content_Types].xml",
+                    '<?xml version="1.0" encoding="utf-8"?>\n'
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+                    '<Default Extension="json" ContentType="application/json" />\n'
+                    '<Default Extension="js" ContentType="application/javascript" />\n'
+                    '<Default Extension="png" ContentType="image/png" />\n'
+                    '<Default Extension="md" ContentType="text/markdown" />\n'
+                    '</Types>\n')
+                zf.writestr("extension.vsixmanifest",
+                    '<?xml version="1.0" encoding="utf-8"?>\n'
+                    '<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">\n'
+                    '<Metadata><Identity Language="en-US" Id="orion" Version="0.1.0" Publisher="1changetheworld"/>\n'
+                    '<DisplayName>Orion</DisplayName>\n'
+                    '<Description>Portable AI memory.</Description>\n'
+                    '</Metadata><Installation><InstallationTarget Id="Microsoft.VisualStudio.Code"/></Installation>\n'
+                    '<Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/></Assets>\n'
+                    '</PackageManifest>\n')
+            install = subprocess.run(
+                [code_cli, "--install-extension", str(vsix_path), "--force"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if install.returncode == 0:
+                speak(f"VS Code extension installed automatically.", color=GREEN)
+            else:
+                speak("VS Code extension auto-install didn't take. Manual path:")
+                speak(f"  cd {vscode_ext}", lead_pause=0.05)
+                speak("  Press F5 in VS Code to debug-load, or package via vsce.", lead_pause=0.05)
+        except Exception:
+            speak("VS Code extension auto-install hit a snag. Manual path:")
+            speak(f"  cd {vscode_ext}", lead_pause=0.05)
+            speak("  Press F5 in VS Code to debug-load, or package via vsce.", lead_pause=0.05)
+    else:
+        speak(f"VS Code extension is at: {vscode_ext}")
+        speak("  Install: open the folder in VS Code, press F5 (extension dev host),")
+        speak("           or package with `vsce package` and `code --install-extension`.")
+
+    if token:
+        speak("")
+        speak(f"Auth token (paste into extension Settings):", color=CYAN)
+        speak(f"  {token}", color=GREEN)
+        speak(f"  Stored at: ~/.orion/auth-token", lead_pause=0.05)
+
+
 # ─────────────────────────────────────────────────────────
 # Context file injection — uses orion_ui.inject_context
 # ─────────────────────────────────────────────────────────
@@ -1237,6 +1333,16 @@ def run():
     if injected:
         names = ", ".join(name for name, _ in injected[:4])
         speak(f"Wrote: {names}", color=GREEN)
+
+    # --- PREPARE BRAIN SERVICE + EXTENSION SURFACES ---
+    # The HTTP brain service (separate from STDIO MCP) is what the
+    # browser + VS Code extensions talk to. Pre-generate the auth token
+    # so the user can paste it immediately, and print actionable install
+    # steps for both extensions.
+    pause(0.3)
+    speak("Setting up your non-CLI surfaces (browser + IDE extensions).")
+    auth_token = prepare_brain_service_auth_token()
+    print_extension_install_help(auth_token)
 
     # --- HANDOFF ---
     pause(0.5)

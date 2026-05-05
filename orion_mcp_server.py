@@ -1252,6 +1252,87 @@ def setup_mcp_configs():
         except Exception as e:
             print(f"  [!] Gemini config failed: {e}")
 
+    # ── Claude Desktop (the GUI app, not Claude Code CLI) ──
+    # Config path differs by OS. The format mirrors Claude Code's
+    # settings.json mcpServers block.
+    if sys.platform == "darwin":
+        claude_desktop_dir = Path.home() / "Library" / "Application Support" / "Claude"
+    elif sys.platform == "win32":
+        claude_desktop_dir = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Claude"
+    else:
+        # Linux: Anthropic doesn't ship a Claude Desktop Linux build as of
+        # 2026-05, but XDG_CONFIG_HOME is the right guess for if/when they do.
+        claude_desktop_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "Claude"
+    claude_desktop_config = claude_desktop_dir / "claude_desktop_config.json"
+    if claude_desktop_dir.exists() or claude_desktop_config.exists():
+        try:
+            settings = {}
+            if claude_desktop_config.exists():
+                with open(claude_desktop_config, encoding='utf-8') as f:
+                    settings = json.load(f)
+            settings.setdefault("mcpServers", {})["orion-brain"] = mcp_entry
+            claude_desktop_dir.mkdir(parents=True, exist_ok=True)
+            with open(claude_desktop_config, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=2)
+            configured.append(f"Claude Desktop: {claude_desktop_config}")
+        except Exception as e:
+            print(f"  [!] Claude Desktop config failed: {e}")
+
+    # ── Cursor IDE ──
+    # Cursor ships an Electron VS Code fork that reads MCP from
+    # ~/.cursor/mcp.json (per-user). Also accepts workspace-scoped via
+    # .cursor/mcp.json in a project — we stick to user scope here.
+    cursor_dir = Path.home() / ".cursor"
+    if cursor_dir.exists():
+        cursor_mcp = cursor_dir / "mcp.json"
+        try:
+            settings = {}
+            if cursor_mcp.exists():
+                with open(cursor_mcp, encoding='utf-8') as f:
+                    settings = json.load(f)
+            settings.setdefault("mcpServers", {})["orion-brain"] = mcp_entry
+            with open(cursor_mcp, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=2)
+            configured.append(f"Cursor: {cursor_mcp}")
+        except Exception as e:
+            print(f"  [!] Cursor config failed: {e}")
+
+    # ── VS Code (native MCP, available 1.99+ as of Apr 2025) ──
+    # VS Code 1.99+ supports MCP natively via mcp.servers in user settings.
+    # The settings.json path varies by OS.
+    if sys.platform == "darwin":
+        vscode_user_dir = Path.home() / "Library" / "Application Support" / "Code" / "User"
+    elif sys.platform == "win32":
+        vscode_user_dir = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Code" / "User"
+    else:
+        vscode_user_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "Code" / "User"
+    vscode_settings = vscode_user_dir / "settings.json"
+    if vscode_user_dir.exists():
+        try:
+            settings = {}
+            if vscode_settings.exists():
+                with open(vscode_settings, encoding='utf-8') as f:
+                    raw = f.read()
+                # VS Code settings.json may contain // comments — be lenient.
+                # Try strict JSON first, fall back to stripping line comments.
+                try:
+                    settings = json.loads(raw)
+                except json.JSONDecodeError:
+                    import re as _re
+                    cleaned = _re.sub(r"^\s*//.*$", "", raw, flags=_re.MULTILINE)
+                    settings = json.loads(cleaned) if cleaned.strip() else {}
+            # VS Code uses mcp.servers (top-level "mcp" object with "servers" map)
+            settings.setdefault("mcp", {}).setdefault("servers", {})["orion-brain"] = {
+                "type": "stdio",
+                "command": mcp_entry["command"],
+                "args": mcp_entry["args"],
+            }
+            with open(vscode_settings, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=2)
+            configured.append(f"VS Code (native MCP): {vscode_settings}")
+        except Exception as e:
+            print(f"  [!] VS Code native MCP config failed: {e}")
+
     # ── Summary ──
     if configured:
         print("MCP server configured in:")
