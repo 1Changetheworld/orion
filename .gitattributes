@@ -1,0 +1,21 @@
+# Unix scripts must keep LF endings even when the repo is cloned on
+# Windows, because the working tree can be copied to a USB drive and
+# executed on macOS / Linux. CRLF would break the shebang.
+*.sh        text eol=lf
+*.command   text eol=lf
+*.desktop   text eol=lf
+.directory  text eol=lf
+
+# Windows-only scripts use CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary assets — never line-ending converted.
+*.ico       binary
+*.icns      binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.pdf       binary

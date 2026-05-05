@@ -1,0 +1,34 @@
+ORION -- your portable AI memory.
+
+To install Orion on this computer, double-click the file for your OS:
+
+  Windows  ->  Install Orion.bat
+  macOS    ->  Install Orion.command
+  Linux    ->  Install-Orion.desktop  (or run: bash install.sh)
+
+The install takes 1-3 minutes. After it finishes, your AI tools
+(Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Claude Desktop,
+browser extensions) can read from Orion's brain on this machine.
+
+Pull the USB out any time and Orion goes with the drive. The host
+returns to baseline. No residue.
+
+------------------------------------------------------------------
+First-time security warnings (one click on Windows, zero on Mac):
+
+  Windows: SmartScreen may say "Windows protected your PC."
+           Click "More info" then "Run anyway." This is normal
+           for any unsigned open-source installer (Inkscape, OBS,
+           Handbrake all behave the same way on first run).
+
+  macOS:   No warnings expected. The .command file extension
+           bypasses Gatekeeper, and USB-borne files don't carry
+           the quarantine attribute.
+
+  Linux:   You may need to right-click Install-Orion.desktop and
+           choose "Allow Launching" the first time, OR just run
+           "bash install.sh" from a terminal in this folder.
+------------------------------------------------------------------
+
+Source code (AGPL): https://github.com/1Changetheworld/orion
+Questions / issues: https://github.com/1Changetheworld/orion/issues

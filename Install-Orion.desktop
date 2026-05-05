@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install Orion
+GenericName=Orion installer
+Comment=Install Orion's portable AI brain on this computer
+Exec=bash -c 'd="$(dirname "%k")"; cd "$d" && bash install.sh; printf "\nPress Enter to close..."; read _'
+Icon=preferences-system
+Terminal=true
+Categories=Utility;System;
+StartupNotify=false
