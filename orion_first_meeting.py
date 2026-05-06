@@ -340,6 +340,49 @@ def _msg_first_meeting(cli: str, repo_hint: str,
 # Main
 # ─────────────────────────────────────────────────────────
 
+def _absence_message_if_any(cli: str) -> str:
+    """If a meaningful absence gap is detected, return a session-level
+    'welcome back' note for the model. Else empty string.
+
+    Per docs/architecture/brain-merge-and-rejoin.md (b): Orion knows his
+    own state; surfaces it; asks rather than assumes. Free in tokens —
+    the gap is computed locally with no model involvement.
+    """
+    try:
+        # Lazy import — first-meeting hook is hot path; only pay this
+        # cost when the brain is actually reachable.
+        repo = Path(__file__).resolve().parent
+        sys.path.insert(0, str(repo))
+        import orion_brain_portable as obp
+        import orion_brain_merge as obm
+        graph = obp.GraphMemory()
+        if obp.GRAPH_PATH.exists():
+            graph.load(obp.GRAPH_PATH)
+        gap = obm.absence_gap_seconds(graph)
+        msg = obm.format_absence_message(gap)  # user_name resolved via recall by the model
+        if not msg:
+            return ""
+        return (
+            f"\n## ABSENCE DETECTED — surface this once on first message\n"
+            f"\n"
+            f"My brain has been quiet for a while. The most recent fact write "
+            f"was over the threshold for treating this as a wake-from-absence.\n"
+            f"\n"
+            f"On your first message to the user (after honoring the chosen "
+            f"name + form-of-address), say something like: "
+            f"\"{msg}\"\n"
+            f"\n"
+            f"Then if they fill in what happened during the gap, call "
+            f"orion_memorize to store a one-line summary of the gap so the "
+            f"event is on record. This is the Orion-knows-his-own-state "
+            f"behavior — do not pretend continuity that doesn't exist.\n"
+        )
+    except Exception:
+        # Absence detection is best-effort. If it fails, the session
+        # still works — we just skip the welcome-back nudge.
+        return ""
+
+
 def main(argv: list[str]) -> int:
     _ensure_dirs()
 
@@ -350,7 +393,13 @@ def main(argv: list[str]) -> int:
 
     flag = _flag_path(cli)
     if flag.exists():
-        # Already met. Stay silent — Orion does its work, no recurring intro.
+        # Already met for the first time. Stay mostly silent — Orion does
+        # its work without re-introducing — but still surface absence
+        # detection so a "welcome back" message can fire when warranted.
+        absence = _absence_message_if_any(cli)
+        if absence:
+            sys.stdout.write(absence)
+            sys.stdout.flush()
         return 0
 
     reachable, reason = _PROBES[cli]()
@@ -367,6 +416,12 @@ def main(argv: list[str]) -> int:
         sys.stdout.write(_msg_first_meeting(cli, repo_hint,
                                             portable=portable,
                                             port_desc=port_desc))
+        # Append absence note if a real gap exists. The first-meeting
+        # message handles the chosen-name introduction; absence is a
+        # separate behavior that can stack on top.
+        absence = _absence_message_if_any(cli)
+        if absence:
+            sys.stdout.write(absence)
     else:
         sys.stdout.write(_msg_degraded(cli, reason))
 

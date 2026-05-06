@@ -498,6 +498,56 @@ def _redirect_cli_transcripts(usb_drive_path: str) -> list:
     return results
 
 
+def _offer_brain_merge_choice(home_brain: Path, usb_brain: Path) -> str:
+    """When ~/.orion already has data and the user wants portable, ask
+    what to do. Returns 'merge', 'replace', or 'keep_separate'.
+
+    Per docs/architecture/brain-merge-and-rejoin.md.
+    """
+    speak("")
+    speak(f"  {YELLOW}!{RESET}  This host already has an Orion brain at {home_brain}.")
+    speak("  Both brains are legitimate. What should I do?")
+    speak(f"    {BOLD}1){RESET} Merge — pull this host's facts into the USB brain.")
+    speak(f"       {DIM}Conflicts get tagged 'contested' for you to resolve later.{RESET}", lead_pause=0.05)
+    speak(f"    {BOLD}2){RESET} Replace — archive this host's brain, USB becomes the active one.")
+    speak(f"       {DIM}Local data is moved to ~/.orion-backup-merge-<timestamp>, not deleted.{RESET}", lead_pause=0.05)
+    speak(f"    {BOLD}3){RESET} Keep separate — USB stays untouched, host's brain stays here.")
+    speak(f"       {DIM}USB Orion is for elsewhere. You can swap which brain is active later.{RESET}", lead_pause=0.05)
+    raw = ask(prompt_label="brain choice [1/2/3]").strip()
+    if raw.startswith("1") or "merge" in raw.lower():
+        return "merge"
+    if raw.startswith("2") or "replace" in raw.lower():
+        return "replace"
+    return "keep_separate"
+
+
+def _do_brain_merge(source_dir: Path, target_dir: Path) -> None:
+    """Run the actual graph merge from source into target. Surfaces stats."""
+    try:
+        import orion_brain_merge as obm
+        result = obm.merge_brain_dirs(source_dir=source_dir, target_dir=target_dir)
+        speak(f"  Merge: {result.summary()}", color=GREEN)
+        if result.contested:
+            speak(
+                f"  {YELLOW}{result.contested} contested fact(s) — resolve via "
+                f"orion_resolve_contradiction when you're ready.{RESET}",
+                lead_pause=0.05,
+            )
+    except Exception as e:
+        speak(f"  Merge skipped: {e.__class__.__name__}: {e}", color=YELLOW)
+
+
+def _archive_local_brain(brain_dir: Path) -> Path:
+    """Move a brain dir aside before clobbering. Never destroys data."""
+    try:
+        import orion_brain_merge as obm
+        return obm.archive_brain_dir(brain_dir, label="merge")
+    except Exception:
+        # Best-effort: if archival fails, fall through to the existing
+        # rmdir/Remove-Item path on the next install attempt.
+        return brain_dir
+
+
 def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
     """Create the symlink/junction so ~/.orion lives on the chosen drive.
     Returns (success, message).
@@ -538,20 +588,41 @@ def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
                     subprocess.run(["cmd", "/c", "rmdir", str(home_link)],
                                    capture_output=True, timeout=4)
                 else:
-                    # Real folder — refuse to clobber, force user to handle
-                    return False, (
-                        f"~/.orion already exists as a real folder with data. "
-                        f"To install portable, that data needs to be moved or "
-                        f"deleted first. Aborting to avoid clobbering your memory."
-                    )
+                    # Real folder with data — offer brain-meets-brain choice
+                    # (per docs/architecture/brain-merge-and-rejoin.md).
+                    choice = _offer_brain_merge_choice(home_link, target)
+                    if choice == "merge":
+                        # Pull host's facts into the USB brain, then archive
+                        # host's brain so the home symlink can be created.
+                        _do_brain_merge(source_dir=home_link, target_dir=target)
+                        archived = _archive_local_brain(home_link)
+                        speak(f"  Local brain archived to: {archived}", color=DIM)
+                    elif choice == "replace":
+                        archived = _archive_local_brain(home_link)
+                        speak(f"  Local brain archived to: {archived}", color=DIM)
+                    else:  # keep_separate or any unknown answer
+                        return False, (
+                            "User chose to keep host's existing Orion separate. "
+                            "USB will not be junctioned to ~/.orion on this host."
+                        )
             else:
                 if home_link.is_symlink():
                     home_link.unlink()
                 else:
-                    return False, (
-                        "~/.orion already exists as a real folder with data. "
-                        "Move or delete it first to install portable."
-                    )
+                    # Same brain-meets-brain choice on POSIX
+                    choice = _offer_brain_merge_choice(home_link, target)
+                    if choice == "merge":
+                        _do_brain_merge(source_dir=home_link, target_dir=target)
+                        archived = _archive_local_brain(home_link)
+                        speak(f"  Local brain archived to: {archived}", color=DIM)
+                    elif choice == "replace":
+                        archived = _archive_local_brain(home_link)
+                        speak(f"  Local brain archived to: {archived}", color=DIM)
+                    else:
+                        return False, (
+                            "User chose to keep host's existing Orion separate. "
+                            "USB will not be symlinked to ~/.orion on this host."
+                        )
 
         # Create the link/junction
         if sys.platform == "win32":
