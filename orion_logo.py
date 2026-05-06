@@ -256,6 +256,22 @@ def render(stream=None, animate: bool = True, twinkle_frames: int = 8) -> None:
     stream.write("\n")
     stream.flush()
 
+    # Tagline reveal — "the memory is the intelligence  ·  the model is jet fuel"
+    # Restored 2026-05-06 after founder noted it was missing from boot.
+    # Typewriter effect at ~50 chars/sec for the human "typing in" feel; in
+    # non-animated mode we just print it once and move on.
+    tagline_color = _fg(_TAGLINE_RGB, palette)
+    if animate:
+        stream.write("  " + tagline_color)
+        for ch in _TAGLINE:
+            stream.write(ch)
+            stream.flush()
+            time.sleep(0.018)
+        stream.write(_RESET + "\n\n")
+    else:
+        stream.write(f"  {tagline_color}{_TAGLINE}{_RESET}\n\n")
+    stream.flush()
+
     if not animate:
         return
 

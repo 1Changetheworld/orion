@@ -479,7 +479,15 @@ def _redirect_cli_transcripts(usb_drive_path: str) -> list:
                     capture_output=True, text=True, timeout=5
                 )
                 if r.returncode != 0:
-                    results.append((cli_name, f"junction failed: {(r.stderr or r.stdout).strip()}"))
+                    err = (r.stderr or r.stdout).strip()
+                    # Windows refuses cross-volume junctions when the target
+                    # is on an exFAT/FAT32 removable drive ("Local NTFS volumes
+                    # are required"). That's not a failure of Orion — it's a
+                    # known Windows constraint. Surface a humanized message.
+                    if "NTFS" in err or "Local volume" in err.lower():
+                        results.append((cli_name, "stays on host (USB is exFAT — Windows blocks cross-FS junctions)"))
+                    else:
+                        results.append((cli_name, f"junction failed: {err}"))
                     continue
             else:
                 local_dir.symlink_to(usb_target)
