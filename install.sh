@@ -30,6 +30,13 @@ set -e
 # ----------------------------------------------------------------
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Tell git this repo is safe even when it lives on a removable drive
+# (FAT/exFAT don't record file ownership, which git treats as suspicious).
+# Idempotent.
+if command -v git >/dev/null 2>&1; then
+    git config --global --add safe.directory "$SCRIPT_DIR" >/dev/null 2>&1 || true
+fi
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
