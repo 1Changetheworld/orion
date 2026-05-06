@@ -54,6 +54,18 @@ Info "=== Orion install (Windows) ==="
 Info "Repo: $ScriptDir"
 Say ""
 
+# Register the repo as safe even when it's on exFAT/FAT (USB drives
+# don't record file ownership, which git treats as suspicious by
+# default). Without this `orion update` -- and any other git command
+# run from inside the repo -- silently fails on USB installs.
+# Idempotent.
+$gitOk = Get-Command git -ErrorAction SilentlyContinue
+if ($gitOk) {
+    $gitPath = ($ScriptDir -replace '\\', '/')
+    & git config --global --add safe.directory $gitPath 2>&1 | Out-Null
+    Ok "git safe.directory registered for $gitPath"
+}
+
 # ----------------------------------------------------------------
 # Step 1: Python 3.10+ - winget install if missing
 # ----------------------------------------------------------------
