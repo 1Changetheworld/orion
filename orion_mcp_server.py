@@ -57,6 +57,124 @@ from orion_brain_portable import (
 
 
 # ═══════════════════════════════════════════════════════════════
+# CROSS-PROCESS CACHE — proxy to central brain HTTP service so all
+# MCP processes (Claude, Codex, Gemini) share live state. Without this,
+# each CLI's MCP process has its own in-memory brain, and writes from
+# one CLI are invisible to the others until restart. With this, every
+# tool call routes through orion_brain_service.py (one process, one
+# brain), so writes are immediately visible everywhere.
+#
+# Falls back to the local handler if the HTTP service is unreachable —
+# preserves offline / standalone operation.
+# Documented in: project_orion-cross-process-cache-bug.md
+# ═══════════════════════════════════════════════════════════════
+
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+
+_BRAIN_HTTP_URL = os.environ.get("ORION_BRAIN_HTTP_URL", "http://127.0.0.1:5556")
+_BRAIN_HTTP_AUTH_TOKEN_PATH = Path(os.path.expanduser(os.environ.get(
+    "ORION_AUTH_TOKEN_PATH", "~/.orion/auth-token"
+)))
+_BRAIN_HTTP_PROBE_CACHE = {"available": None, "checked_at": 0.0, "auto_started": False}
+
+
+def _brain_http_health_check(timeout: float = 1.5) -> bool:
+    try:
+        with urllib.request.urlopen(f"{_BRAIN_HTTP_URL}/health", timeout=timeout) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _brain_http_auto_start() -> None:
+    """Start orion_brain_service.py in the background if it isn't running.
+
+    Race-safe: if multiple MCP processes start simultaneously, the second
+    one's bind fails and the service started by the first wins. Detached
+    so it survives this MCP process exiting.
+    """
+    if _BRAIN_HTTP_PROBE_CACHE["auto_started"]:
+        return
+    _BRAIN_HTTP_PROBE_CACHE["auto_started"] = True
+    service = _this_dir / "orion_brain_service.py"
+    if not service.exists():
+        return
+    try:
+        kwargs = {
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+            "stdin": subprocess.DEVNULL,
+            "cwd": str(_this_dir),
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008  # DETACHED_PROCESS
+            )
+        else:
+            kwargs["start_new_session"] = True
+        subprocess.Popen([sys.executable, str(service)], **kwargs)
+        # Brief wait for /health to come up (Win cold-start can be slow)
+        for _ in range(20):
+            time.sleep(0.25)
+            if _brain_http_health_check(timeout=0.6):
+                return
+    except Exception:
+        pass
+
+
+def _brain_http_proxy_available() -> bool:
+    """Lazy + cached probe: is the central brain HTTP service reachable?
+
+    Re-probes every 30s so a service that crashes/restarts mid-session
+    eventually re-engages without restarting the MCP process. Auto-starts
+    the service the first time we see it's missing.
+
+    Returns False when running INSIDE orion_brain_service.py — we don't
+    want the brain service proxying its own /mcp endpoint to itself.
+    """
+    # Skip proxy if we ARE the brain service — direct local call is faster.
+    if os.environ.get("ORION_INSIDE_BRAIN_SERVICE") == "1":
+        return False
+    now = time.time()
+    if _BRAIN_HTTP_PROBE_CACHE["available"] is not None:
+        if now - _BRAIN_HTTP_PROBE_CACHE["checked_at"] < 30.0:
+            return _BRAIN_HTTP_PROBE_CACHE["available"]
+    ok = _brain_http_health_check()
+    if not ok and not _BRAIN_HTTP_PROBE_CACHE["auto_started"]:
+        _brain_http_auto_start()
+        ok = _brain_http_health_check()
+    _BRAIN_HTTP_PROBE_CACHE["available"] = ok
+    _BRAIN_HTTP_PROBE_CACHE["checked_at"] = now
+    return ok
+
+
+def _proxy_tool_call_to_http(tool_name: str, tool_args: dict) -> list:
+    """Forward a tool call to orion_brain_service.py over HTTP.
+
+    Returns the content list the central service produced. Raises on
+    transport failure so the caller can fall back to local handlers.
+    """
+    try:
+        token = _BRAIN_HTTP_AUTH_TOKEN_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        # Service hasn't generated the token yet — treat as unavailable.
+        raise RuntimeError("auth token not yet generated")
+    body = json.dumps({"name": tool_name, "arguments": tool_args}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{_BRAIN_HTTP_URL}/v1/call",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        result = json.loads(r.read())
+    return result.get("content", [])
+
+
+# ═══════════════════════════════════════════════════════════════
 # TOOL DEFINITIONS — Schema + handlers
 # ═══════════════════════════════════════════════════════════════
 
@@ -900,6 +1018,29 @@ def handle_message(msg: dict) -> dict:
                 _f.write(f"[{_stamp}] tools/call {tool_name} args={_args_repr}\n")
         except Exception:
             pass  # Logging must never break the real call
+
+        # Cross-process cache fix (2026-05-06): if the central brain HTTP
+        # service is reachable, route every tool call through it. That way
+        # Claude / Codex / Gemini all share live state — a write in one
+        # CLI is immediately visible to recall in another, no restart.
+        # Falls back to the local handler if the service is unreachable,
+        # preserving offline / standalone operation.
+        if _brain_http_proxy_available():
+            try:
+                t0 = time.perf_counter()
+                content = _proxy_tool_call_to_http(tool_name, tool_args)
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                if content and isinstance(content[-1], dict) and content[-1].get("type") == "text":
+                    text = content[-1]["text"]
+                    if "[mcp overhead:" not in text and "[recall:" not in text:
+                        content[-1]["text"] = f"{text}\n\n[mcp overhead: {elapsed_ms:.1f}ms via shared brain]"
+                return _make_response(id_val, {"content": content, "isError": False})
+            except Exception as e:
+                # Log but don't fail — fall through to local handler.
+                try:
+                    sys.stderr.write(f"[orion-mcp] proxy fell back to local: {e}\n")
+                except Exception:
+                    pass
 
         handler = _HANDLERS.get(tool_name)
         if not handler:

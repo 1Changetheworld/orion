@@ -303,6 +303,10 @@ class BrainHandler(BaseHTTPRequestHandler):
 # ─────────────────────────────────────────────────────────────────
 
 def serve():
+    # Mark ourselves so orion_mcp_server.py (which we re-import for the
+    # /mcp endpoint dispatch) skips its proxy logic. Without this, every
+    # /mcp tools/call would HTTP-loop back to /v1/call on the same process.
+    os.environ["ORION_INSIDE_BRAIN_SERVICE"] = "1"
     server = ThreadedServer((BIND, PORT), BrainHandler)
     print(f"Orion Brain Service listening on http://{BIND}:{PORT}", flush=True)
     print(f"Bearer token: {AUTH_TOKEN_PATH}", flush=True)
