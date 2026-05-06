@@ -553,6 +553,32 @@ def _create_portable_junction(drive_letter_or_path: str) -> tuple[bool, str]:
             )
             if r.returncode != 0:
                 return False, f"junction creation failed: {(r.stderr or r.stdout).strip()}"
+
+            # Verify the junction is traversable. Windows 11 blocks
+            # subdirectory creation through junctions whose target is on
+            # an "untrusted" filesystem (typically exFAT/FAT32 on
+            # removable media — WinError 448). Caught 2026-05-06 when
+            # the brain import crashed mkdir-ing ~/.orion/brain because
+            # the USB was exFAT.
+            try:
+                probe = home_link / ".orion-junction-probe"
+                probe.mkdir(exist_ok=True)
+                probe.rmdir()
+            except OSError as e:
+                # Roll back: remove the junction and report so caller
+                # can fall back to local install.
+                subprocess.run(["cmd", "/c", "rmdir", str(home_link)],
+                               capture_output=True, timeout=4)
+                winerr = getattr(e, "winerror", None)
+                if winerr == 448:
+                    return False, (
+                        "Windows refuses to traverse the junction to this "
+                        "USB drive (WinError 448 — untrusted mount point). "
+                        "This happens when the USB is formatted exFAT or "
+                        "FAT32. Reformat the drive as NTFS to use it as "
+                        "Orion's brain, or pick local install for now."
+                    )
+                return False, f"junction probe failed: {e}"
         else:
             home_link.symlink_to(target)
 
@@ -1165,11 +1191,21 @@ def run():
     pause(0.5)
 
     # --- IDENTITY GATHERING ---
+    # Per feedback_wizard-must-be-perceptive.md: every user-facing prompt
+    # gets a confirm step so typos can be re-entered before persisting.
+    # The earlier wizard confirmed address + orion_name but skipped name —
+    # caught 2026-05-06 when a typo in the name field had no escape.
     speak("First, who am I talking to?")
-    user_name = ask(prompt_label="name")
-    if not user_name:
-        user_name = ""
-        speak("No name given — that's fine, we can do this without one.")
+    while True:
+        user_name = ask(prompt_label="name").strip()
+        if not user_name:
+            speak("No name given — that's fine, we can do this without one.")
+            user_name = ""
+            break
+        # Confirm before persisting
+        if confirm_value(user_name, what_for=f"your name is '{user_name}'"):
+            break
+        speak("Got it — let's try that again.")
 
     # Form-of-address. Orion will not assume anything.
     pause(0.3)
@@ -1319,6 +1355,39 @@ def run():
     else:
         speak(f"{seed_result['nodes_written']} facts integrated. Entity #{seed_result['user_id']} = you.",
               color=GREEN)
+
+    # Write USER.md so identity injection picks up the actual user, not
+    # the placeholder. Caught 2026-05-06 — the brain.identity.USER.md
+    # default ("Example User") was being injected into the model's
+    # system prompt because the wizard never overwrote it. Result was
+    # the model knowing nothing about the actual user.
+    try:
+        from orion_brain_portable import USER_PATH
+        addr_line = (
+            f"Preferred form of address: {user_address}"
+            if user_address
+            else "Preferred form of address: none — call them by their name or no honorific"
+        )
+        orion_line = (
+            f"User chose to call Orion: {orion_name}"
+            if orion_name and orion_name != "Orion"
+            else "User kept the default name 'Orion'"
+        )
+        summary_line = f"\nWhat they're working on: {user_summary}" if user_summary else ""
+        user_md = (
+            f"User: {user_name or '(no name given)'}\n"
+            f"{addr_line}\n"
+            f"{orion_line}{summary_line}\n"
+            f"\n"
+            f"Preferences:\n"
+            f"- Notify about ALL errors — silent failures are unacceptable\n"
+            f"- Don't over-explain things already known\n"
+            f"- Style matters alongside function\n"
+        )
+        USER_PATH.write_text(user_md, encoding="utf-8")
+        speak(f"Identity written to {USER_PATH}", color=DIM)
+    except Exception as e:
+        speak(f"USER.md write skipped: {e.__class__.__name__}", color=YELLOW)
 
     # --- WIRE MCP + CONTEXT FILES ---
     pause(0.2)
