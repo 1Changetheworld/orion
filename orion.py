@@ -898,6 +898,17 @@ def main():
         orion_setup_chat.run()
         return 0
 
+    # `orion update` — pull latest from origin and re-wire MCP. The way
+    # users keep up with new fixes/features without re-cloning manually.
+    # Documented in docs/architecture/ alongside the design intent.
+    if args[0].lower() in ("update", "upgrade"):
+        try:
+            import orion_update
+        except ImportError as e:
+            print(f"{RED}  orion_update module not found: {e}{RESET}")
+            return 1
+        return orion_update.main()
+
     # Unified Frankenstein chat mode — every layer active in one loop
     if args[0].lower() == "chat":
         try:
