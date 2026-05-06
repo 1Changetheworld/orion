@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
 # ----------------------------------------------------------------
-# Helpers — parity with install.sh (info/ok/warn/fail)
+# Helpers - parity with install.sh (info/ok/warn/fail)
 # ----------------------------------------------------------------
 
 function Say  { param($m); Write-Host $m }
@@ -37,7 +37,7 @@ function Ask  {
     param([string]$Prompt)
     # Drain any queued keystrokes so Read-Host blocks on fresh input.
     # Without this, paste buffers / typeahead consume prompts immediately
-    # and Read-Host returns "" — caught in 2026-04-29 dog-food install
+    # and Read-Host returns "" - caught in 2026-04-29 dog-food install
     # where every prompt was silently skipped.
     try {
         while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) }
@@ -55,7 +55,7 @@ Info "Repo: $ScriptDir"
 Say ""
 
 # ----------------------------------------------------------------
-# Step 1: Python 3.10+ — winget install if missing
+# Step 1: Python 3.10+ - winget install if missing
 # ----------------------------------------------------------------
 
 $pythonCmd = $null
@@ -143,11 +143,11 @@ if (Test-Path $reqFile) {
 
 $ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
 if (-not $ollamaCheck) {
-    # Soft offer — Ollama is one fuel option among many, not a default.
+    # Soft offer - Ollama is one fuel option among many, not a default.
     # The wizard handles fuel selection; the install script just makes
     # the option available if the user already wants it.
     Say ""
-    Say "  (Optional) Ollama runs models locally — useful for offline / private fuel."
+    Say "  (Optional) Ollama runs models locally - useful for offline / private fuel."
     $resp = Ask "Install Ollama? [y/N, default N]"
     if ($resp -match '^[Yy]') {
         $wingetCheck = Get-Command winget -ErrorAction SilentlyContinue
@@ -163,7 +163,7 @@ if (-not $ollamaCheck) {
     Ok "Ollama already installed"
 }
 
-# Model selection — only if Ollama is now callable
+# Model selection - only if Ollama is now callable
 $ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
 if ($ollamaCheck) {
     Say ""
@@ -189,14 +189,14 @@ if ($ollamaCheck) {
 # Step 4: Write orion.cmd launcher INSIDE the repo, junction from home
 # ----------------------------------------------------------------
 #
-# The launcher physically lives at <repo>/bin/orion.cmd — wherever the
+# The launcher physically lives at <repo>/bin/orion.cmd - wherever the
 # repo is. If the repo is on a USB stick, the launcher follows. The
 # user's PATH points at ~/.orion-bin, which is a junction to <repo>/bin.
 # When the USB is unplugged, the junction dangles, the launcher
 # vanishes, `orion` is not found. Same load-bearing principle as the
 # brain dir.
 #
-# The brain dir at ~/.orion stays untouched here — only the wizard's
+# The brain dir at ~/.orion stays untouched here - only the wizard's
 # brain-location prompt creates it (or junctions it to a portable drive).
 
 $LauncherSrcDir = Join-Path $ScriptDir 'bin'
