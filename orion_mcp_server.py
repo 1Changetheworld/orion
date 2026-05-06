@@ -521,10 +521,26 @@ def _handle_orion_recall(args: dict) -> list:
         return [{"type": "text", "text": f"No memories found for: {query}\n[recall: {elapsed_us:.0f}us]"}]
 
     lines = []
+    contested_count = 0
     for n in nodes:
-        flag = " [contested]" if n.get("contested_with") else ""
+        is_contested = bool(n.get("contested_with"))
+        if is_contested:
+            contested_count += 1
+        flag = " [contested]" if is_contested else ""
         lines.append(f"- {n['content']}{flag}")
-    return [{"type": "text", "text": "\n".join(lines) + f"\n\n[recall: {elapsed_us:.0f}us]"}]
+
+    body = "\n".join(lines)
+    # Contradiction-surfacing aliveness behavior — when recall returns
+    # contested nodes, append a one-line nudge so the model has clear
+    # guidance to surface the conflict instead of silently picking one.
+    # Per docs/architecture/aliveness-rubric.md and brain-merge-and-rejoin.md.
+    if contested_count:
+        body += (
+            f"\n\nNote: {contested_count} of these memories conflict with "
+            f"earlier facts. Mention the conflict to the user and offer to "
+            f"resolve it via orion_resolve_contradiction (winner_id, loser_ids)."
+        )
+    return [{"type": "text", "text": body + f"\n\n[recall: {elapsed_us:.0f}us]"}]
 
 
 def _handle_orion_memorize(args: dict) -> list:
