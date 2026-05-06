@@ -101,6 +101,29 @@ if ($userPath -like "*orion-bin*") {
     Write-Host "  cleaned .orion-bin from User PATH" -ForegroundColor DarkGray
 }
 
+# Strip Orion's SessionStart hook from Claude settings (caught 2026-05-06)
+# A stale hook pointing at a wiped install path makes Claude print a
+# bash error every session start. Remove our entry; preserve others.
+$claudeSettings = "$env:USERPROFILE\.claude\settings.json"
+if (Test-Path $claudeSettings) {
+    try {
+        $j = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+        if ($j.hooks -and $j.hooks.SessionStart) {
+            $kept = @()
+            foreach ($entry in $j.hooks.SessionStart) {
+                $isOrion = $false
+                foreach ($h in $entry.hooks) {
+                    if ($h.command -like "*orion_first_meeting*") { $isOrion = $true }
+                }
+                if (-not $isOrion) { $kept += $entry }
+            }
+            $j.hooks.SessionStart = @($kept)
+            $j | ConvertTo-Json -Depth 50 | Set-Content $claudeSettings -Encoding UTF8
+            Write-Host "  cleaned Orion SessionStart hook from $claudeSettings" -ForegroundColor DarkGray
+        }
+    } catch { }
+}
+
 Write-Host "Wipe complete. AI auth preserved." -ForegroundColor Green
 
 # ---- 3. Clone Orion onto the USB ----

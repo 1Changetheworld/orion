@@ -414,15 +414,22 @@ def _install_claude_session_hook(repo_path):
         hooks = settings.setdefault("hooks", {})
         session_start = hooks.setdefault("SessionStart", [])
 
-        # Idempotency check — skip if any existing entry references
-        # orion_first_meeting in its command.
-        for entry in session_start:
+        # Replace any prior orion_first_meeting entries instead of skipping.
+        # Caught 2026-05-06: the previous "skip if exists" logic let a hook
+        # from an old install (Desktop\orion-test) outlive the cleanup,
+        # so Claude's session start kept invoking a python.exe that had
+        # been deleted. Now we filter out our own entries before appending,
+        # so each install refreshes the hook to the current install path.
+        # Other users' SessionStart hooks are preserved untouched.
+        def _is_orion_entry(entry):
             if not isinstance(entry, dict):
-                continue
+                return False
             for h in entry.get("hooks", []) or []:
                 if isinstance(h, dict) and "orion_first_meeting" in str(h.get("command", "")):
-                    return (label, settings_path + " (already installed)")
+                    return True
+            return False
 
+        session_start[:] = [e for e in session_start if not _is_orion_entry(e)]
         session_start.append({
             "matcher": "*",
             "hooks": [{
