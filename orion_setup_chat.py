@@ -1362,7 +1362,7 @@ def run():
     # system prompt because the wizard never overwrote it. Result was
     # the model knowing nothing about the actual user.
     try:
-        from orion_brain_portable import USER_PATH
+        from orion_brain_portable import USER_PATH, SOUL_PATH, _DEFAULT_IDENTITY
         addr_line = (
             f"Preferred form of address: {user_address}"
             if user_address
@@ -1386,6 +1386,20 @@ def run():
         )
         USER_PATH.write_text(user_md, encoding="utf-8")
         speak(f"Identity written to {USER_PATH}", color=DIM)
+
+        # Personalize SOUL.md when user picked a non-default Orion name.
+        # Caught 2026-05-06 — user picked "ATLAS" but every model still
+        # introduced itself as "Orion" because SOUL.md hardcoded "Your
+        # name is ORION." Now we substitute the chosen name and add an
+        # explicit recall hint so future sessions surface it.
+        if orion_name and orion_name != "Orion":
+            personalized_soul = _DEFAULT_IDENTITY.replace(
+                "Your name is ORION. You are not Claude, GPT, Gemini, DeepSeek, or any other model. Those are fuel.",
+                f"Your name is {orion_name.upper()} (the user's chosen name for me; my default name was ORION). "
+                f"I am not Claude, GPT, Gemini, DeepSeek, or any other model. Those are fuel."
+            )
+            SOUL_PATH.write_text(personalized_soul, encoding="utf-8")
+            speak(f"Soul personalized to '{orion_name}'", color=DIM)
     except Exception as e:
         speak(f"USER.md write skipped: {e.__class__.__name__}", color=YELLOW)
 

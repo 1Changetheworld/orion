@@ -121,7 +121,9 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 "$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
-"$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt"
+# --quiet matches the signal-to-noise the user expects from official
+# installers. Failures still surface because pip prints errors anyway.
+"$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" --quiet
 ok "Python deps installed in venv"
 
 # ----------------------------------------------------------------

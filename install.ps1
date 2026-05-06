@@ -124,9 +124,12 @@ Info "Upgrading pip in venv..."
 $reqFile = Join-Path $ScriptDir 'requirements.txt'
 if (Test-Path $reqFile) {
     Info "Installing pip deps from requirements.txt..."
-    & $VenvPip install -r $reqFile
+    # --quiet suppresses the per-package wall of text. Failures still
+    # surface because pip prints errors regardless of -q. Matches the
+    # signal-to-noise the user expects from official installers.
+    & $VenvPip install -r $reqFile --quiet
     if ($LASTEXITCODE -ne 0) {
-        Fail "pip install failed. Inspect output above."
+        Fail "pip install failed. Re-run with verbose: $VenvPip install -r $reqFile"
         exit 1
     }
     Ok "Python deps installed in venv"
@@ -140,7 +143,12 @@ if (Test-Path $reqFile) {
 
 $ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
 if (-not $ollamaCheck) {
-    $resp = Ask "Install Ollama for free local AI fuel? [y/N]"
+    # Soft offer — Ollama is one fuel option among many, not a default.
+    # The wizard handles fuel selection; the install script just makes
+    # the option available if the user already wants it.
+    Say ""
+    Say "  (Optional) Ollama runs models locally — useful for offline / private fuel."
+    $resp = Ask "Install Ollama? [y/N, default N]"
     if ($resp -match '^[Yy]') {
         $wingetCheck = Get-Command winget -ErrorAction SilentlyContinue
         if ($wingetCheck) {
