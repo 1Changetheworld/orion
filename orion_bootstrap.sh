@@ -136,9 +136,16 @@ log "beacon OK (orion_id=$ORION_ID)"
 # 3. OS-specific venv on USB (parallel to other-OS venvs)
 # ─────────────────────────────────────────────────────────
 
-REPO="$USB/orion"
-if [ ! -d "$REPO" ]; then
-    err "expected $REPO (the orion source) — not found on USB"
+# Layout-aware: prefer the production ship layout (.orion-system/) which
+# is hidden by dot-prefix; fall back to the dev-clone layout (orion/).
+# Both are valid; users from a shipped USB get the first, contributors
+# cloning the repo to a USB get the second.
+if [ -d "$USB/.orion-system" ]; then
+    REPO="$USB/.orion-system"
+elif [ -d "$USB/orion" ]; then
+    REPO="$USB/orion"
+else
+    err "no Orion source found on USB at $USB (looked for .orion-system/ and orion/)"
     exit 2
 fi
 
