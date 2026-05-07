@@ -250,12 +250,24 @@ fi
 BRAIN_GRAPH="$SCRIPT_DIR/.orion/brain/graph_memory.json"
 USB_BRAIN_GRAPH="$(dirname "$SCRIPT_DIR")/.orion/brain/graph_memory.json"
 
+# Pick the correct --usb arg for orion_bootstrap.sh based on which
+# layout we're in. orion_bootstrap.sh expects the USB ROOT (the dir
+# whose direct child is .orion/, NOT the engine dir).
+#   Dev-clone layout: install.sh + .orion/ are siblings, USB root = SCRIPT_DIR
+#   Ship layout:      install.sh in .orion-system/, .orion/ at parent, USB root = parent
+USB_ROOT=""
+if [ -f "$BRAIN_GRAPH" ]; then
+    USB_ROOT="$SCRIPT_DIR"
+elif [ -f "$USB_BRAIN_GRAPH" ]; then
+    USB_ROOT="$(dirname "$SCRIPT_DIR")"
+fi
+
 say ""
-if [ -f "$BRAIN_GRAPH" ] || [ -f "$USB_BRAIN_GRAPH" ]; then
+if [ -n "$USB_ROOT" ]; then
     info "Existing Orion brain detected on this drive."
     info "Waking Orion on this device — no wizard, just wire this host up."
     say ""
-    bash "$SCRIPT_DIR/orion_bootstrap.sh" --quiet --notify --usb "$SCRIPT_DIR"
+    bash "$SCRIPT_DIR/orion_bootstrap.sh" --quiet --notify --usb "$USB_ROOT"
 elif [[ "$*" == *"--classic"* ]]; then
     info "Running classic setup wizard..."
     say ""
