@@ -4,7 +4,7 @@ Type=Application
 Name=Wake Orion
 GenericName=Wake Orion on this Linux device
 Comment=Wake Orion on this device. If the drive has an existing brain, ~30s no-questions wire-up. Otherwise runs first-time setup.
-Exec=bash -c 'p="%k"; p="${p#file://}"; d="$(dirname "$p")"; if [ -d "$d/.orion-system" ]; then bash "$d/.orion-system/install.sh"; else bash "$d/install.sh"; fi; printf "\nPress Enter to close..."; read _'
+Exec=bash -c 'for d in /media/$USER/* /run/media/$USER/* /mnt/* /Volumes/*; do [ -d "$d/.orion-system" ] && { bash "$d/.orion-system/install.sh"; printf "\nPress Enter to close..."; read _; exit 0; }; [ -f "$d/install.sh" ] && [ -f "$d/Wake-Orion.desktop" ] && { bash "$d/install.sh"; printf "\nPress Enter to close..."; read _; exit 0; }; done; echo "ERROR: could not find an Orion drive at any standard mount path."; printf "\nPress Enter to close..."; read _'
 Icon=preferences-system
 Terminal=true
 Categories=Utility;System;
