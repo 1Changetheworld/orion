@@ -212,10 +212,11 @@ else
     # re-ask. New hosts inherit the brain's identity automatically.
     # Per project_orion-presence-architecture.md.
     log "auto-wire mode — running inject_context + setup_mcp_configs without wizard"
-    "$VENV_PYTHON" - "$USB" <<'PYEOF'
+    "$VENV_PYTHON" - "$USB" "$REPO" <<'PYEOF'
 import sys, os, subprocess
 usb = sys.argv[1]
-sys.path.insert(0, f"{usb}/orion")
+repo = sys.argv[2]
+sys.path.insert(0, repo)
 
 # 1. Junction ~/.orion -> <usb>/.orion (so brain is reachable via standard path)
 from pathlib import Path
@@ -246,7 +247,7 @@ for label, _path in results:
 
 # 3. MCP registration in all detected CLIs (Claude/Codex/Gemini configs)
 mcp_result = subprocess.run(
-    [sys.executable, f"{usb}/orion/orion_mcp_server.py", "--setup"],
+    [sys.executable, f"{repo}/orion_mcp_server.py", "--setup"],
     capture_output=True, text=True, timeout=30
 )
 for line in (mcp_result.stdout or "").splitlines():
