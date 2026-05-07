@@ -118,12 +118,35 @@ else
 fi
 
 # ----------------------------------------------------------------
-# Python venv + pip deps
+# Per-host Python venv (NEVER on USB — repo carries source code,
+# each host runs its own OS-correct binaries)
 # ----------------------------------------------------------------
+#
+# Caught 2026-05-07 Pi dog-food: the Win VM's install left a Windows-
+# format venv at <USB>/.venv (Scripts/, .exe binaries). When the user
+# moved the USB to the Pi and ran install.sh, line 130's
+# "$SCRIPT_DIR/.venv/bin/pip" failed because Linux expects bin/, not
+# Scripts/. The fix is structural: the venv is per-host runtime
+# (cell-specific ribosomes), not a USB-side artifact (genome). The
+# USB stays platform-neutral.
+#
+# Aligns with project_orion-portability-validated.md which already had
+# the bootstrap creating ~/.orion-runtime/<os>/ on auto-wire — first-
+# time install just wasn't following the same convention.
 
-VENV_DIR="$SCRIPT_DIR/.venv"
-if [ ! -d "$VENV_DIR" ]; then
-    info "Creating venv at $VENV_DIR"
+case "$(uname -s)" in
+    Darwin) RUNTIME_OS="macos" ;;
+    Linux)  RUNTIME_OS="linux" ;;
+    *)      RUNTIME_OS="$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+esac
+VENV_DIR="$HOME/.orion-runtime/$RUNTIME_OS"
+
+# If a USB-side .venv exists from a prior install on a different OS,
+# leave it alone — it's harmless on disk but we're not using it.
+if [ ! -x "$VENV_DIR/bin/pip" ]; then
+    info "Creating per-host venv at $VENV_DIR"
+    mkdir -p "$(dirname "$VENV_DIR")"
+    rm -rf "$VENV_DIR"  # Wipe any partial / wrong-OS leftover
     python3 -m venv "$VENV_DIR"
 fi
 
@@ -131,7 +154,7 @@ fi
 # --quiet matches the signal-to-noise the user expects from official
 # installers. Failures still surface because pip prints errors anyway.
 "$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" --quiet
-ok "Python deps installed in venv"
+ok "Python deps installed in venv ($VENV_DIR)"
 
 # ----------------------------------------------------------------
 # Optional: Ollama (free local fuel)

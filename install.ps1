@@ -109,21 +109,29 @@ if (-not $pythonCmd) {
 }
 
 # ----------------------------------------------------------------
-# Step 2: Python venv + pip deps
+# Step 2: Per-host Python venv (NEVER on USB — repo carries source
+# code, each host runs its own OS-correct binaries)
 # ----------------------------------------------------------------
+#
+# The repo on USB stays platform-neutral. Each host (Windows / Mac /
+# Linux) has its own venv at $HOME\.orion-runtime\<os>\. Lets the same
+# repo move between Windows VM, macOS, and Linux Pi without venvs
+# colliding (Win Scripts/.exe vs Linux bin/).
 
-$VenvDir = Join-Path $ScriptDir '.venv'
-if (-not (Test-Path $VenvDir)) {
-    Info "Creating venv at $VenvDir"
+$VenvDir = Join-Path $env:USERPROFILE '.orion-runtime\windows'
+$VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
+$VenvPip    = Join-Path $VenvDir 'Scripts\pip.exe'
+
+if (-not (Test-Path $VenvPython)) {
+    Info "Creating per-host venv at $VenvDir"
+    if (Test-Path $VenvDir) { Remove-Item $VenvDir -Recurse -Force }
+    New-Item -ItemType Directory -Path (Split-Path $VenvDir -Parent) -Force | Out-Null
     & $pythonCmd -m venv $VenvDir
     if ($LASTEXITCODE -ne 0) {
         Fail "venv creation failed"
         exit 1
     }
 }
-
-$VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
-$VenvPip    = Join-Path $VenvDir 'Scripts\pip.exe'
 
 if (-not (Test-Path $VenvPython)) {
     Fail "venv Python not found at $VenvPython"
