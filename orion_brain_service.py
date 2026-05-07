@@ -280,6 +280,63 @@ class BrainHandler(BaseHTTPRequestHandler):
                 self._respond_error(500, "tool execution error", str(e))
             return
 
+        # ── /chat — legacy-compatible communication-channel endpoint ──
+        # Existing iMessage / Telegram / phone daemons (per
+        # docs/architecture/brain-as-network.md) POST to a brain endpoint
+        # with shape {message, interface, user_id, sender}. The legacy
+        # orion_server.py on port 5555 handled this. As we unify the brain
+        # under one service, this endpoint preserves that contract so
+        # existing channel daemons keep working unchanged when migrated to
+        # the new service.
+        #
+        # Authenticated like everything else (bearer token). If a channel
+        # daemon needs to call from another host (e.g., COMMAND's iMessage
+        # daemon hitting a cloud-mode brain), it presents the bearer.
+        if self.path == "/chat":
+            message = (payload.get("message") or "").strip()
+            interface = payload.get("interface") or "unknown"
+            sender = payload.get("sender") or payload.get("user_id") or "unknown"
+            if not message:
+                self._respond_error(400, "field 'message' required")
+                return
+            try:
+                # Recall what the brain knows about this sender's last context,
+                # then memorize the incoming message. Models reading the brain
+                # later see the channel's traffic as part of one continuous
+                # memory stream.
+                handler = _HANDLERS.get("orion_recall")
+                recall = handler({"query": message, "limit": 5}) if handler else []
+                recall_text = ""
+                for blk in recall:
+                    if isinstance(blk, dict) and blk.get("type") == "text":
+                        recall_text = blk.get("text", "")
+                        break
+                # Memorize the inbound message attributed to its channel + sender
+                mem_handler = _HANDLERS.get("orion_memorize")
+                if mem_handler:
+                    mem_handler({
+                        "content": f"[{interface}/{sender}] {message}",
+                        "tags": ["inbound-message", interface, sender],
+                        "type": "conversation",
+                    })
+                # The brain's job here is recall + memorize. The channel
+                # adapter is responsible for synthesizing a reply (via its
+                # fuel of choice — Claude CLI, Codex, Ollama, etc.). We
+                # return the recall context so the adapter can compose.
+                # If the caller wants pure context, they get it; if they
+                # want a generated response, they call orion_chat (TBD)
+                # or compose locally.
+                self._respond_json(200, {
+                    "status": "ok",
+                    "interface": interface,
+                    "sender": sender,
+                    "context": recall_text,
+                    "response": recall_text or "Message stored. No prior context found.",
+                })
+            except Exception as e:
+                self._respond_error(500, "chat dispatch error", str(e))
+            return
+
         # ── MCP over HTTP: delegate to the JSON-RPC dispatcher ──
         if self.path == "/mcp":
             try:

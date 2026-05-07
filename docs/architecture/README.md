@@ -40,3 +40,4 @@ diffable, reviewable) keeps the design coherent across time and contributors.
 This is the cellular pattern applied to documentation itself: the principles
 ARE part of the body, not stored in a separate "consciousness" elsewhere.
 - [Zero-Touch First Host (research)](zero-touch-first-host.md) — Three paths to break the 'one command per host' friction. Companion-device authorization, custom hardware, signed AutoPlay. Recommended v1 + v2 sequence.
+- [Cloud-Memory Mode](cloud-memory-mode.md) — 2026-05-07. Companion to drive-mode: brain runs on the user's own cloud (Pi/VPS/Tailscale Funnel), reachable from any device with login + bearer token. Drive-mode for visceral demo, cloud-mode for power users. Both ship.
