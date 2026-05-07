@@ -26,7 +26,14 @@ echo ""
 
 # ExFAT/FAT32 don't preserve the +x bit, so we invoke install.sh via
 # bash directly rather than relying on its executable bit.
-bash "$SCRIPT_DIR/install.sh"
+# Layout-aware: if the USB has the source nested in .orion-system/
+# (production ship layout), use that. Otherwise fall back to the
+# dev-clone layout where install.sh is alongside this file.
+if [ -d "$SCRIPT_DIR/.orion-system" ]; then
+    bash "$SCRIPT_DIR/.orion-system/install.sh"
+else
+    bash "$SCRIPT_DIR/install.sh"
+fi
 EXITCODE=$?
 
 echo ""

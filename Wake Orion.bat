@@ -25,7 +25,13 @@ echo    Source: %SCRIPT_DIR%
 echo ================================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\install.ps1"
+REM Layout-aware: prefer .orion-system\install.ps1 (production ship
+REM layout), fall back to install.ps1 alongside this file (dev clone).
+if exist "%SCRIPT_DIR%\.orion-system\install.ps1" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\.orion-system\install.ps1"
+) else (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\install.ps1"
+)
 
 set EXITCODE=%ERRORLEVEL%
 
