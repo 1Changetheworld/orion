@@ -520,6 +520,20 @@ def _handle_orion_recall(args: dict) -> list:
     if not nodes:
         return [{"type": "text", "text": f"No memories found for: {query}\n[recall: {elapsed_us:.0f}us]"}]
 
+    # Detect whether ranking fell back to recency (no keyword overlap).
+    # The graph's recall now returns recent nodes when nothing matches
+    # the query semantically — surface that to the model so it doesn't
+    # claim "you said X" based on a fallback. Heuristic: zero query
+    # word overlap with all returned content+tags = recency fallback.
+    qwords = set(query.lower().split())
+    fallback = True
+    for n in nodes:
+        content_words = set(str(n.get("content", "")).lower().split())
+        tag_words = {str(t).lower() for t in (n.get("tags") or [])}
+        if qwords & content_words or qwords & tag_words:
+            fallback = False
+            break
+
     lines = []
     contested_count = 0
     for n in nodes:
@@ -528,6 +542,8 @@ def _handle_orion_recall(args: dict) -> list:
             contested_count += 1
         flag = " [contested]" if is_contested else ""
         lines.append(f"- {n['content']}{flag}")
+    if fallback:
+        lines.insert(0, f"(no exact match for '{query}' — showing {len(nodes)} most-recent stored facts:)")
 
     body = "\n".join(lines)
     # Contradiction-surfacing aliveness behavior — when recall returns

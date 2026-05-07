@@ -459,7 +459,25 @@ class GraphMemory:
                     # Final rank: text relevance weighted by decayed confidence
                     scored.append((text_score * max(eff_conf, 0.05), eff_conf, nid))
             scored.sort(reverse=True)
-            return [self.nodes[nid] for _, _, nid in scored[:limit]]
+            if scored:
+                return [self.nodes[nid] for _, _, nid in scored[:limit]]
+
+            # Recency fallback — when the query has no keyword overlap with
+            # any stored node, return the most-recently-written nodes
+            # instead of an empty result. Caught 2026-05-06 dog-food: Codex
+            # stored 5 test facts on the Pi; Claude's abstract recall queries
+            # ("all stored facts memories notes") matched 0 tag words, so
+            # the user saw "no memories found" even though the writes were
+            # in the graph. Without this fallback, the brain has the data
+            # but TF-IDF strict-match hides it from cross-CLI continuity.
+            by_recency = sorted(
+                candidates,
+                key=lambda nid: self.nodes[nid].get(
+                    "last_confirmed_at", self.nodes[nid].get("created", 0)
+                ),
+                reverse=True,
+            )
+            return [self.nodes[nid] for nid in by_recency[:limit]]
 
         # No query: return highest-confidence nodes first
         scored = [
