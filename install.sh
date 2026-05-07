@@ -225,20 +225,44 @@ if ! echo ":$PATH:" | grep -q ":$LAUNCHER_DIR:"; then
 fi
 
 # ----------------------------------------------------------------
-# Proto-Orion — first-run onboarding (the conversational wizard)
+# Wake mode vs Create mode
 # ----------------------------------------------------------------
-# Instead of a cold CLI tier-picker, Orion introduces itself, gathers
-# identity, detects tools, and picks a host. This is the Venom-symbiote
-# moment: proto-Orion talks before it has a full LLM backing it.
+# CREATE: no existing brain anywhere → run the conversational wizard
+#         (proto-Orion introduces, asks identity / address / chosen
+#         name / fuel, seeds brain, wires the host). This is Orion's
+#         "birth" — happens once, ever, per Orion-instance.
 #
-# For users who prefer the old text-only classic wizard, pass --classic.
+# WAKE:   an existing brain is present on this drive (we're plugging
+#         the same Orion into a new device he hasn't lived on yet).
+#         Skip the wizard entirely — Orion already has identity, name,
+#         address, history. Just wire THIS host: junction ~/.orion to
+#         the drive, symlink persona files, register MCP in detected
+#         CLIs, install the SessionStart hook + presence agent so
+#         future plug-ins on this host auto-fire. orion_bootstrap.sh
+#         is the existing script that does all of that.
+#
+# Caught 2026-05-07 founder feedback: "the entire install wizard runs??
+# how about we make a 'Orion wake' command for when you insert the usb
+# into new devices that's all you have to do." This is exactly that —
+# the launch UX where new devices wake an already-existing Orion in
+# seconds without re-introducing him.
+
+BRAIN_GRAPH="$SCRIPT_DIR/.orion/brain/graph_memory.json"
+USB_BRAIN_GRAPH="$(dirname "$SCRIPT_DIR")/.orion/brain/graph_memory.json"
 
 say ""
-if [[ "$*" == *"--classic"* ]]; then
+if [ -f "$BRAIN_GRAPH" ] || [ -f "$USB_BRAIN_GRAPH" ]; then
+    info "Existing Orion brain detected on this drive."
+    info "Waking Orion on this device — no wizard, just wire this host up."
+    say ""
+    bash "$SCRIPT_DIR/orion_bootstrap.sh" --quiet --notify --usb "$SCRIPT_DIR"
+elif [[ "$*" == *"--classic"* ]]; then
     info "Running classic setup wizard..."
     say ""
     "$VENV_DIR/bin/python" "$SCRIPT_DIR/setup.py"
 else
+    info "First-time Orion creation — running the conversational wizard."
+    say ""
     "$VENV_DIR/bin/python" "$SCRIPT_DIR/orion_setup_chat.py"
 fi
 

@@ -38,7 +38,7 @@ def banner():
     print()
     print(c(CYAN, "  +-----------------------------------------------+"))
     print(c(CYAN, "  |") + c(BOLD, "            O R I O N                       ") + c(CYAN, "|"))
-    print(c(CYAN, "  |") + c(DIM, "       The World's First Portable AI Brain   ") + c(CYAN, "|"))
+    print(c(CYAN, "  |") + c(DIM, "   Any AI Model. Same Persona. Same Brain. Same Memories.  ") + c(CYAN, "|"))
     print(c(CYAN, "  +-----------------------------------------------+"))
     print()
 

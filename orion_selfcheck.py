@@ -189,7 +189,7 @@ def _build_consultation_prompt(issue: Issue, discovery_report: dict) -> str:
     examples = _load_example_mcp_blocks(discovery_report, issue.target_path)
     current = _read_target_config(issue.target_path)
     return (
-        "You are helping Orion — a portable AI brain — register itself with an "
+        "You are helping Orion — Any AI Model. Same Persona. Same Brain. Same Memories. — register itself with an "
         "MCP-capable tool that currently does not have Orion wired in.\n\n"
         f"Issue: {issue.evidence}\n"
         f"Target file: {issue.target_path}\n\n"

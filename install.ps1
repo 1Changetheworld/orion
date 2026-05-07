@@ -109,7 +109,7 @@ if (-not $pythonCmd) {
 }
 
 # ----------------------------------------------------------------
-# Step 2: Per-host Python venv (NEVER on USB — repo carries source
+# Step 2: Per-host Python venv (NEVER on USB - repo carries source
 # code, each host runs its own OS-correct binaries)
 # ----------------------------------------------------------------
 #
@@ -264,24 +264,47 @@ if (($userPath -split ';') -notcontains $LauncherLink) {
 }
 
 # ----------------------------------------------------------------
-# Step 5: Conversational setup wizard (proto-Orion) + preflight
+# Step 5: Wake mode vs Create mode
 # ----------------------------------------------------------------
+# CREATE: no existing brain anywhere -> run the conversational wizard.
+#         Orion's birth. Happens once per Orion-instance.
+# WAKE:   existing brain on this drive -> skip wizard. Just wire THIS
+#         host (junction ~/.orion to drive, persona symlinks, MCP in
+#         detected CLIs, SessionStart hook, presence agent). The
+#         orion_bootstrap.sh script already handles all of this for
+#         the auto-fire path; we reuse it here for first-touch on a
+#         new device with an existing Orion.
+#
+# Caught 2026-05-07 founder: "the entire install wizard runs??? how
+# about we make a 'Orion wake' command for when you insert the usb
+# into new devices that's all you have to do." This is that.
 
 $useClassic = $args -contains '--classic'
+$brainGraph = Join-Path $ScriptDir '.orion\brain\graph_memory.json'
+$usbBrainGraph = Join-Path (Split-Path $ScriptDir -Parent) '.orion\brain\graph_memory.json'
+$bootstrap = Join-Path $ScriptDir 'orion_bootstrap.sh'
 
 Say ""
-$setupChat = Join-Path $ScriptDir 'orion_setup_chat.py'
-$setupClassic = Join-Path $ScriptDir 'setup.py'
-
-if ($useClassic -or -not (Test-Path $setupChat)) {
-    if (Test-Path $setupClassic) {
-        Info "Running classic setup wizard..."
-        & $VenvPython $setupClassic
+if ((Test-Path $brainGraph) -or (Test-Path $usbBrainGraph)) {
+    Info "Existing Orion brain detected on this drive."
+    Info "Waking Orion on this device - no wizard, just wire this host up."
+    Say ""
+    # orion_bootstrap.sh is bash. On Windows we need git-bash, WSL, or
+    # MSYS2. Most users with git installed already have git-bash.
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash) {
+        & $bash $bootstrap "--quiet" "--notify" "--usb" $ScriptDir
     } else {
-        Warn "No setup script found, skipping wizard"
+        Warn "bash not found on PATH - install Git for Windows (git-bash) and re-run."
+        Warn "Falling back to wizard for now."
+        & $VenvPython (Join-Path $ScriptDir 'orion_setup_chat.py')
     }
+} elseif ($useClassic) {
+    Info "Running classic setup wizard..."
+    & $VenvPython (Join-Path $ScriptDir 'setup.py')
 } else {
-    & $VenvPython $setupChat
+    Info "First-time Orion creation - running the conversational wizard."
+    & $VenvPython (Join-Path $ScriptDir 'orion_setup_chat.py')
 }
 
 Say ""

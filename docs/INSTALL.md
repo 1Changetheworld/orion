@@ -120,7 +120,7 @@ During setup, you choose your tier:
 ### Personal
 *For everyone. Your mom. Your friend. You.*
 
-- Portable AI brain with persistent memory
+- Any AI Model. Same Persona. Same Brain. Same Memories.
 - Works with whatever AI model you already use
 - Simple interface — no terminal required after setup
 - Memory grows as you interact

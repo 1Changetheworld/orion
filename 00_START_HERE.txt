@@ -1,33 +1,39 @@
 ORION -- your portable AI memory.
 
-To install Orion on this computer, double-click the file for your OS:
+To wake Orion on this computer, double-click the file for your OS:
 
-  Windows  ->  Install Orion.bat
-  macOS    ->  Install Orion.command
-  Linux    ->  Install-Orion.desktop  (or run: bash install.sh)
+  Windows  ->  Wake Orion.bat
+  macOS    ->  Wake Orion.command
+  Linux    ->  Wake-Orion.desktop  (or run: bash install.sh)
 
-The install takes 1-3 minutes. After it finishes, your AI tools
-(Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Claude Desktop,
-browser extensions) can read from Orion's brain on this machine.
+If the drive already has an Orion brain (you've used him before),
+this just wires THIS machine to wake him here. ~30 seconds, no
+questions. After this, your AI tools (Claude Code, Codex CLI, Gemini
+CLI, Cursor, VS Code, Claude Desktop, browser extensions) all reach
+the same brain on this machine.
 
-Pull the USB out any time and Orion goes with the drive. The host
+If the drive has no brain (first-ever Orion), the conversational
+setup runs so Orion can introduce himself, ask your name + how to
+address you, and choose a fuel.
+
+Pull the USB any time and Orion goes with the drive. The host
 returns to baseline. No residue.
 
 ------------------------------------------------------------------
-First-time security warnings (one click on Windows, zero on Mac):
+First-time security notes per OS:
 
   Windows: SmartScreen may say "Windows protected your PC."
-           Click "More info" then "Run anyway." This is normal
-           for any unsigned open-source installer (Inkscape, OBS,
-           Handbrake all behave the same way on first run).
+           Click "More info" then "Run anyway." Normal for any
+           unsigned open-source app (Inkscape, OBS, Handbrake all
+           behave the same way on first run).
 
-  macOS:   No warnings expected. The .command file extension
-           bypasses Gatekeeper, and USB-borne files don't carry
-           the quarantine attribute.
+  macOS:   No warnings expected. The .command extension bypasses
+           Gatekeeper, and USB-borne files don't carry the
+           quarantine attribute.
 
-  Linux:   You may need to right-click Install-Orion.desktop and
-           choose "Allow Launching" the first time, OR just run
-           "bash install.sh" from a terminal in this folder.
+  Linux:   GNOME may need a right-click on Wake-Orion.desktop ->
+           "Allow Launching" the first time. Or just open a
+           terminal in this folder and run: bash install.sh
 ------------------------------------------------------------------
 
 Source code (AGPL): https://github.com/1Changetheworld/orion

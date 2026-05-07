@@ -2,43 +2,30 @@
 
 # ORION
 
-### The World's First Portable AI Brain
+### Any AI Model. Same Persona. Same Brain. Same Memories.
 
-**Your AI. Your Hardware. Your Brain.**
+**Your agent forgets between models. Orion doesn't.**
 
-$0 per request. Zero API keys. Zero framework dependencies.
+A portable intelligence layer that works with any AI model, on any device, with persistent memory that belongs to you. $0 per request. Zero API keys. Zero framework dependencies.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 ![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20Raspberry%20Pi-lightgrey)
 
----
-
-*A portable intelligence layer that works with any AI model, on any device, with persistent memory that belongs to you.*
-
 **2026-04-23 — Fresh-user install verified on Raspberry Pi 5.** Cross-model memory proven on ARM hardware with throwaway accounts — see [the case study](docs/pi-install-case-study.md).
 
 </div>
 
----
+<!-- DEMO: 15-30s GIF of cross-model handoff goes here. Capture script: docs/demo-capture.md -->
 
-## Table of Contents
+<div align="center">
 
-- [Try it in 2 minutes](#try-it-in-2-minutes)
-- [What is Orion?](#what-is-orion)
-- [How It Works](#how-it-works)
-- [Fuel System](#fuel-system)
-- [Interfaces](#interfaces)
-- [Operational Modes](#operational-modes)
-- [Installation](#installation)
-- [Verify your install](#verify-your-install)
-- [Prove cross-model memory works](#prove-cross-model-memory-works-the-real-test)
-- [Competitive Landscape](#competitive-landscape)
-- [Documentation](#documentation)
-- [What Orion Is Not](#what-orion-is-not)
-- [Roadmap](#roadmap)
-- [License](#license)
+![Orion install walkthrough — Pi 5 · 20 minutes · Cross-model memory proven](docs/images/install-walkthrough.png)
+
+*Fresh install on a Raspberry Pi 5. Proto-Orion speaks before any model attaches. Same brain across Claude, Codex, and Gemini. Real recording, 2026-04-23.*
+
+</div>
 
 ---
 
@@ -54,6 +41,26 @@ bash install.sh    # Linux / macOS — asks 4 questions, 2 min
 ```
 
 When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask: *"what's my name?"* — it'll know, because Orion just seeded its brain with you.
+
+**Prove it crosses the glass:** set a fact in one CLI (`remember my favorite color is teal`), then open a *different* AI CLI and ask `what's my favorite color?`. Same brain, different fuel. That's the whole product in one test.
+
+---
+
+## Table of Contents
+
+- [What is Orion?](#what-is-orion)
+- [How It Works](#how-it-works)
+- [Fuel System](#fuel-system)
+- [Interfaces](#interfaces)
+- [Operational Modes](#operational-modes)
+- [Installation](#installation)
+- [Verify your install](#verify-your-install)
+- [Prove cross-model memory works](#prove-cross-model-memory-works-the-real-test)
+- [Competitive Landscape](#competitive-landscape)
+- [Documentation](#documentation)
+- [What Orion Is Not](#what-orion-is-not)
+- [Roadmap](#roadmap)
+- [License](#license)
 
 ---
 
@@ -324,6 +331,10 @@ These companies have raised a combined $20M+ in venture funding. Orion was built
 ## License
 
 AGPL-3.0 — If you host Orion as a service, you must open-source your changes. The code is open. Your accumulated brain data (memory, knowledge, skills) is always private and always yours.
+
+## Contributing
+
+PRs welcome, with one rule: every commit must carry a DCO `Signed-off-by` trailer. See [`CONTRIBUTING.md`](CONTRIBUTING.md) — it takes one line: `git commit -s -m "..."`. The DCO preserves clean copyright for the project without transferring authorship away from you.
 
 ---
 
