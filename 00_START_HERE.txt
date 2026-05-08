@@ -2,9 +2,9 @@ ORION -- your portable AI memory.
 
 To wake Orion on this computer, double-click the file for your OS:
 
-  Windows  ->  Wake Orion.bat
-  macOS    ->  Wake Orion.command
-  Linux    ->  Wake-Orion.desktop  (or run: bash install.sh)
+  Windows  ->  Wake Orion (Windows).bat
+  macOS    ->  Wake Orion (Mac).command
+  Linux    ->  Wake Orion (Linux).desktop   (or run: bash install.sh)
 
 If the drive already has an Orion brain (you've used him before),
 this just wires THIS machine to wake him here. ~30 seconds, no
@@ -31,8 +31,8 @@ First-time security notes per OS:
            Gatekeeper, and USB-borne files don't carry the
            quarantine attribute.
 
-  Linux:   GNOME may need a right-click on Wake-Orion.desktop ->
-           "Allow Launching" the first time. Or just open a
+  Linux:   GNOME may need a right-click on Wake Orion (Linux).desktop
+           -> "Allow Launching" the first time. Or just open a
            terminal in this folder and run: bash install.sh
 ------------------------------------------------------------------
 
