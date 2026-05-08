@@ -7,8 +7,22 @@ Usage:
     python orion_ui.py          # Full setup wizard
     python orion_ui.py --glow   # Just the fuel indicator
 """
-import tkinter as tk
-from tkinter import ttk, font as tkfont
+# Tkinter is only used by the optional GUI wizard class (FuelSelector,
+# below). Wake-mode wiring (inject_context, _read_chosen_name, etc.)
+# is pure text and doesn't need it. Make the import optional so the
+# engine can wire a host on Python builds without tk (caught 2026-05-08
+# on macOS: brew Python without tcl-tk gave "No module named '_tkinter'"
+# on every wake, blocking OUTPOST). The GUI wizard simply won't be
+# available on those hosts; the conversational wizard still runs.
+try:
+    import tkinter as tk
+    from tkinter import ttk, font as tkfont
+    _TK_AVAILABLE = True
+except ImportError:
+    tk = None
+    ttk = None
+    tkfont = None
+    _TK_AVAILABLE = False
 import shutil
 import subprocess
 from pathlib import Path  # required at module level — _link_or_write and
@@ -720,6 +734,12 @@ def read_orion_session():
 
 class SetupWizard:
     def __init__(self):
+        if not _TK_AVAILABLE:
+            raise RuntimeError(
+                "GUI wizard unavailable: tkinter not installed in this Python. "
+                "Install tcl-tk (e.g., 'brew install python-tk' on macOS) or "
+                "use the conversational wizard via 'python orion_setup_chat.py'."
+            )
         self.root = tk.Tk()
         self.root.title("ORION -- Setup Wizard")
         self.root.geometry("720x650")
