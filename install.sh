@@ -188,6 +188,7 @@ fi
 "$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
 # --quiet matches the signal-to-noise the user expects from official
 # installers. Failures still surface because pip prints errors anyway.
+info "Installing pip deps from requirements.txt (silent, ~30 seconds, please wait)..."
 "$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" --quiet
 ok "Python deps installed in venv ($VENV_DIR)"
 

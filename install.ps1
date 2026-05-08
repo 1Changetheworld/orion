@@ -49,9 +49,26 @@ function Ask  {
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
+# Detect wake-vs-create mode UPFRONT so the banner reflects what's
+# really happening + we can skip prompts that only belong to first-time
+# create. Wake = "Orion already exists, just wire this host to him".
+$BrainGraphLocal = Join-Path $ScriptDir '.orion\brain\graph_memory.json'
+$BrainGraphUSB   = Join-Path (Split-Path $ScriptDir -Parent) '.orion\brain\graph_memory.json'
+$IsWake = (Test-Path $BrainGraphLocal) -or (Test-Path $BrainGraphUSB)
+
 Say ""
-Info "=== Orion install (Windows) ==="
-Info "Repo: $ScriptDir"
+if ($IsWake) {
+    Info "================================================================"
+    Info "  Waking Orion on this Windows machine... please stand by."
+    Info "  ~30 seconds, no questions asked."
+    Info "================================================================"
+} else {
+    Info "================================================================"
+    Info "  Orion first-time setup"
+    Info "  This installs dependencies, then runs the conversational"
+    Info "  wizard so Orion can introduce himself."
+    Info "================================================================"
+}
 Say ""
 
 # Register the repo as safe even when it's on exFAT/FAT (USB drives
@@ -143,7 +160,7 @@ Info "Upgrading pip in venv..."
 
 $reqFile = Join-Path $ScriptDir 'requirements.txt'
 if (Test-Path $reqFile) {
-    Info "Installing pip deps from requirements.txt..."
+    Info "Installing pip deps from requirements.txt (silent, ~30 seconds, please wait)..."
     # --quiet suppresses the per-package wall of text. Failures still
     # surface because pip prints errors regardless of -q. Matches the
     # signal-to-noise the user expects from official installers.
@@ -158,50 +175,49 @@ if (Test-Path $reqFile) {
 }
 
 # ----------------------------------------------------------------
-# Step 3: Optional Ollama install
+# Step 3: Optional Ollama install (skipped during wake mode - fuel
+# was chosen during create; wake just wires the host).
 # ----------------------------------------------------------------
 
-$ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
-if (-not $ollamaCheck) {
-    # Soft offer - Ollama is one fuel option among many, not a default.
-    # The wizard handles fuel selection; the install script just makes
-    # the option available if the user already wants it.
-    Say ""
-    Say "  (Optional) Ollama runs models locally - useful for offline / private fuel."
-    $resp = Ask "Install Ollama? [y/N, default N]"
-    if ($resp -match '^[Yy]') {
-        $wingetCheck = Get-Command winget -ErrorAction SilentlyContinue
-        if ($wingetCheck) {
-            Info "Installing Ollama via winget..."
-            winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
-            Ok "Ollama installed (open a new shell to use it)"
-        } else {
-            Warn "winget not available. Install Ollama manually from https://ollama.com/download"
+if (-not $IsWake) {
+    $ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
+    if (-not $ollamaCheck) {
+        Say ""
+        Say "  (Optional) Ollama runs models locally - useful for offline / private fuel."
+        $resp = Ask "Install Ollama? [y/N, default N]"
+        if ($resp -match '^[Yy]') {
+            $wingetCheck = Get-Command winget -ErrorAction SilentlyContinue
+            if ($wingetCheck) {
+                Info "Installing Ollama via winget..."
+                winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
+                Ok "Ollama installed (open a new shell to use it)"
+            } else {
+                Warn "winget not available. Install Ollama manually from https://ollama.com/download"
+            }
         }
+    } else {
+        Ok "Ollama already installed"
     }
-} else {
-    Ok "Ollama already installed"
-}
 
-# Model selection - only if Ollama is now callable
-$ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
-if ($ollamaCheck) {
-    Say ""
-    Say "  Orion chat needs a tool-capable model. Pick one:"
-    Say "    1) qwen3:8b        ~5 GB  -- recommended, works on 8GB+ RAM"
-    Say "    2) qwen3:14b       ~9 GB  -- best quality, 16GB+ RAM"
-    Say "    3) llama3.1:8b     ~5 GB  -- Meta, similar size to qwen3:8b"
-    Say "    4) deepseek-r1:7b  ~4.7 GB -- reasoning focus"
-    Say "    5) phi3:mini       ~2.2 GB -- small, but chat mode won't work (no tool calls)"
-    Say "    6) skip            -- pull a model later with: ollama pull <name>"
-    $resp = Ask "Pull which model? [1-6]"
-    switch -Regex ($resp) {
-        '^1$|^$' { ollama pull qwen3:8b }
-        '^2$'    { ollama pull qwen3:14b }
-        '^3$'    { ollama pull llama3.1:8b }
-        '^4$'    { ollama pull deepseek-r1:7b }
-        '^5$'    { ollama pull phi3:mini; Warn "phi3:mini installed but chat mode won't work. Pull qwen3:8b to enable chat." }
-        default  { Say "  Skipped. Pull later with: ollama pull qwen3:8b" }
+    $ollamaCheck = Get-Command ollama -ErrorAction SilentlyContinue
+    if ($ollamaCheck) {
+        Say ""
+        Say "  Orion chat needs a tool-capable model. Pick one:"
+        Say "    1) qwen3:8b        ~5 GB  -- recommended, works on 8GB+ RAM"
+        Say "    2) qwen3:14b       ~9 GB  -- best quality, 16GB+ RAM"
+        Say "    3) llama3.1:8b     ~5 GB  -- Meta, similar size to qwen3:8b"
+        Say "    4) deepseek-r1:7b  ~4.7 GB -- reasoning focus"
+        Say "    5) phi3:mini       ~2.2 GB -- small, but chat mode won't work (no tool calls)"
+        Say "    6) skip            -- pull a model later with: ollama pull <name>"
+        $resp = Ask "Pull which model? [1-6]"
+        switch -Regex ($resp) {
+            '^1$|^$' { ollama pull qwen3:8b }
+            '^2$'    { ollama pull qwen3:14b }
+            '^3$'    { ollama pull llama3.1:8b }
+            '^4$'    { ollama pull deepseek-r1:7b }
+            '^5$'    { ollama pull phi3:mini; Warn "phi3:mini installed but chat mode won't work. Pull qwen3:8b to enable chat." }
+            default  { Say "  Skipped. Pull later with: ollama pull qwen3:8b" }
+        }
     }
 }
 
@@ -280,24 +296,33 @@ if (($userPath -split ';') -notcontains $LauncherLink) {
 # into new devices that's all you have to do." This is that.
 
 $useClassic = $args -contains '--classic'
-$brainGraph = Join-Path $ScriptDir '.orion\brain\graph_memory.json'
-$usbBrainGraph = Join-Path (Split-Path $ScriptDir -Parent) '.orion\brain\graph_memory.json'
-$bootstrap = Join-Path $ScriptDir 'orion_bootstrap.sh'
+$wakeScript = Join-Path $ScriptDir 'orion_wake.py'
+
+# Determine USB root from script location: ship layout = engine in
+# .orion-system/, so USB root is the parent of $ScriptDir. Dev layout =
+# engine alongside Wake files at USB root, so USB root IS $ScriptDir.
+if (Split-Path $ScriptDir -Leaf | Where-Object { $_ -eq '.orion-system' }) {
+    $usbRoot = Split-Path $ScriptDir -Parent
+} else {
+    $usbRoot = $ScriptDir
+}
 
 Say ""
-if ((Test-Path $brainGraph) -or (Test-Path $usbBrainGraph)) {
+if ($IsWake) {
     Info "Existing Orion brain detected on this drive."
-    Info "Waking Orion on this device - no wizard, just wire this host up."
+    Info "Wiring this host to Orion's brain - no wizard, no questions."
     Say ""
-    # orion_bootstrap.sh is bash. On Windows we need git-bash, WSL, or
-    # MSYS2. Most users with git installed already have git-bash.
-    $bash = Get-Command bash -ErrorAction SilentlyContinue
-    if ($bash) {
-        & $bash $bootstrap "--quiet" "--notify" "--usb" $ScriptDir
+    # Direct Python invocation - no bash dependency on Windows. Same
+    # script bootstrap.sh calls on Linux/macOS, so behavior is identical
+    # cross-platform.
+    if (Test-Path $wakeScript) {
+        & $VenvPython $wakeScript $usbRoot $ScriptDir
+        if ($LASTEXITCODE -ne 0) {
+            Warn "Wake completed with warnings (exit $LASTEXITCODE)."
+        }
     } else {
-        Warn "bash not found on PATH - install Git for Windows (git-bash) and re-run."
-        Warn "Falling back to wizard for now."
-        & $VenvPython (Join-Path $ScriptDir 'orion_setup_chat.py')
+        Fail "orion_wake.py not found at $wakeScript - reinstall the engine."
+        exit 1
     }
 } elseif ($useClassic) {
     Info "Running classic setup wizard..."

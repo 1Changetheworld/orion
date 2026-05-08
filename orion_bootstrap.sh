@@ -211,48 +211,8 @@ else
     # exists from the prior wizard run on the original host — we don't
     # re-ask. New hosts inherit the brain's identity automatically.
     # Per project_orion-presence-architecture.md.
-    log "auto-wire mode — running inject_context + setup_mcp_configs without wizard"
-    "$VENV_PYTHON" - "$USB" "$REPO" <<'PYEOF'
-import sys, os, subprocess
-usb = sys.argv[1]
-repo = sys.argv[2]
-sys.path.insert(0, repo)
-
-# 1. Junction ~/.orion -> <usb>/.orion (so brain is reachable via standard path)
-from pathlib import Path
-home_orion = Path.home() / ".orion"
-target = Path(usb) / ".orion"
-if not home_orion.exists() and not home_orion.is_symlink():
-    if sys.platform == "win32":
-        subprocess.run(["cmd", "/c", "mklink", "/J", str(home_orion), str(target)], check=False)
-    else:
-        try:
-            home_orion.symlink_to(target)
-        except FileExistsError:
-            pass
-    print(f"  junctioned ~/.orion -> {target}")
-
-# 2. Persona files + Claude SessionStart hook
-from orion_setup_chat import detect_cli_tools
-from orion_ui import inject_context
-tools = detect_cli_tools()
-detected_fuel = {
-    'claude_cli': {'available': tools.get('claude', {}).get('installed', False)},
-    'codex':      {'available': tools.get('codex', {}).get('installed', False)},
-    'gemini':     {'available': tools.get('gemini', {}).get('installed', False)},
-}
-results = inject_context(detected_fuel)
-for label, _path in results:
-    print(f"  inject_context: {label}")
-
-# 3. MCP registration in all detected CLIs (Claude/Codex/Gemini configs)
-mcp_result = subprocess.run(
-    [sys.executable, f"{repo}/orion_mcp_server.py", "--setup"],
-    capture_output=True, text=True, timeout=30
-)
-for line in (mcp_result.stdout or "").splitlines():
-    print(f"  mcp: {line}")
-PYEOF
+    log "auto-wire mode — calling orion_wake.py (shared with Windows wake path)"
+    "$VENV_PYTHON" "$REPO/orion_wake.py" "$USB" "$REPO"
 fi
 
 notify "Orion is here" "Bootstrapped on $UNAME_S from $USB. Open Claude / Codex / Gemini to talk."
