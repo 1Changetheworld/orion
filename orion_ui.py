@@ -353,15 +353,18 @@ def _link_or_write(home_path: Path, real_path: Path, content: str) -> tuple[str,
     real_path = Path(real_path)
 
     try:
-        # Decide write semantics: never clobber existing user content
-        # that already has Orion in it.
+        # Write fresh content if the on-disk version differs. Idempotent
+        # when matching, refreshes when stale. We own these files, so
+        # "make it match the source" is the right policy. Caught
+        # 2026-05-07: previous heuristic ("if 'Orion' is in the file,
+        # leave it alone") blocked the post-wizard re-personalization
+        # of AGENTS.md after the user picked "Atlas" — the file kept
+        # saying "You are Orion" and Codex went with that.
         if real_path.exists():
             try:
                 existing = real_path.read_text(encoding="utf-8")
-                if "Orion" in existing or "ORION" in existing:
-                    pass  # already has us
-                else:
-                    real_path.write_text(existing + "\n\n" + content, encoding="utf-8")
+                if existing.strip() != content.strip():
+                    real_path.write_text(content, encoding="utf-8")
             except Exception:
                 real_path.write_text(content, encoding="utf-8")
         else:
@@ -427,6 +430,49 @@ def _is_reparse(p) -> bool:
         return False
 
 
+def _read_chosen_name() -> str:
+    """Read the user's chosen name for Orion from SOUL.md on the brain.
+
+    The wizard writes "Your name is ATLAS (the user's chosen name for me;
+    my default name was ORION)" into SOUL.md when the user picks a non-default
+    name during create. Pre-wake, the brain is junctioned at ~/.orion, so
+    the SOUL.md path resolves to the USB.
+
+    Returns the chosen name title-cased (e.g., "Atlas") or "Orion" when no
+    personalization is found.
+    """
+    import re
+    soul = Path(os.path.expanduser("~")) / ".orion" / "identity" / "SOUL.md"
+    if not soul.exists():
+        return "Orion"
+    try:
+        text = soul.read_text(encoding="utf-8")
+    except Exception:
+        return "Orion"
+    m = re.search(r"Your name is ([A-Z][A-Z0-9_-]*)", text)
+    if not m:
+        return "Orion"
+    name = m.group(1)
+    if name == "ORION":
+        return "Orion"
+    # ATLAS -> Atlas. Single-token names only; brand-style title case.
+    return name.capitalize()
+
+
+def _personalize(text: str, chosen_name: str) -> str:
+    """Substitute the user's chosen Orion name into a persona template.
+
+    Only replaces the title-case word 'Orion' — leaves orion_recall (tool
+    name), orion-brain (MCP server id), ORION (allcaps in SOUL.md style)
+    untouched. The default-template name "Orion" is the trigger.
+    """
+    if chosen_name == "Orion":
+        return text
+    # Replace bare-word 'Orion' (not orion_*, not orion-*, not ORION).
+    import re
+    return re.sub(r"\bOrion\b", chosen_name, text)
+
+
 def inject_context(detected_fuel):
     """Create persona files (CLAUDE.md, AGENTS.md, GEMINI.md, ORION-CONTEXT.md)
     such that they LIVE wherever the brain lives.
@@ -458,11 +504,21 @@ def inject_context(detected_fuel):
     else:
         injected.append(("persona dir local (no portable drive selected)", str(persona_dir)))
 
+    # Read the user's chosen Orion name once and personalize the template.
+    # Without this, Codex/Claude/Gemini all introduce themselves as "Orion"
+    # even when the user picked "Atlas" / "Mercury" / etc. during install.
+    # Caught 2026-05-07 on Windows VM: SOUL.md said ATLAS, AGENTS.md said
+    # Orion, Codex went with whichever it read first.
+    chosen_name = _read_chosen_name()
+    persona_text = _personalize(ORION_CONTEXT, chosen_name)
+    if chosen_name != "Orion":
+        injected.append((f"persona personalized to '{chosen_name}'", "(from SOUL.md)"))
+
     # Universal — ORION-CONTEXT.md
     status, path = _link_or_write(
         home / "ORION-CONTEXT.md",
         persona_dir / "ORION-CONTEXT.md",
-        ORION_CONTEXT,
+        persona_text,
     )
     injected.append((f"ORION-CONTEXT.md ({status})", path))
 
@@ -471,7 +527,7 @@ def inject_context(detected_fuel):
         status, path = _link_or_write(
             home / "CLAUDE.md",
             persona_dir / "CLAUDE.md",
-            ORION_CONTEXT,
+            persona_text,
         )
         injected.append((f"CLAUDE.md (Claude) ({status})", path))
         injected.append(_install_claude_session_hook(repo_path))
@@ -480,7 +536,7 @@ def inject_context(detected_fuel):
         status, path = _link_or_write(
             home / "AGENTS.md",
             persona_dir / "AGENTS.md",
-            ORION_CONTEXT,
+            persona_text,
         )
         injected.append((f"AGENTS.md (Codex) ({status})", path))
 
@@ -488,7 +544,7 @@ def inject_context(detected_fuel):
         status, path = _link_or_write(
             home / "GEMINI.md",
             persona_dir / "GEMINI.md",
-            ORION_CONTEXT,
+            persona_text,
         )
         injected.append((f"GEMINI.md (Gemini) ({status})", path))
 

@@ -89,6 +89,19 @@ def wake_host(usb: str, repo: str) -> int:
     else:
         print(f"  WARN: orion_mcp_server.py not found at {mcp_setup}", file=sys.stderr)
 
+    # 4. Refresh per-CLI transcript junctions to point at <usb>/.orion/transcripts/.
+    # The wizard does this on first install but wake skipped it - so junctions
+    # from previous installs (or older USB layouts) went stale. Codex hit
+    # "os error 183" trying to write through a dangling junction. Caught
+    # 2026-05-07 on Windows VM.
+    try:
+        from orion_setup_chat import _redirect_cli_transcripts
+        for cli_name, status in _redirect_cli_transcripts(usb):
+            print(f"  transcripts {cli_name}: {status}")
+    except Exception as e:
+        print(f"  WARN: transcript refresh failed: {e.__class__.__name__}: {e}",
+              file=sys.stderr)
+
     return 0
 
 

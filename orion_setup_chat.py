@@ -408,26 +408,67 @@ def _redirect_cli_transcripts(usb_drive_path: str) -> list:
             results.append((cli_name, f"could not create USB target: {e.__class__.__name__}"))
             continue
 
-        # If local dir is already a junction (re-running setup), just
-        # confirm + move on
-        if local_dir.exists():
+        # If local dir is already a junction (re-running setup), validate
+        # that its target still resolves to the right USB transcript dir.
+        # A junction from a previous setup with the dev-clone layout
+        # (engine at <USB>/orion) points at <USB>/orion/.orion/transcripts/<cli>
+        # which doesn't exist after the .orion-system/ restructure — Codex
+        # tries to write through the dangling junction and fails with
+        # "Cannot create a file when that file already exists. (os error 183)".
+        # Caught 2026-05-07 on Windows VM.
+        if local_dir.exists() or local_dir.is_symlink():
             is_link = False
+            link_target = None
             if sys.platform == "win32":
                 try:
                     out = subprocess.run(
                         ["powershell", "-NoProfile", "-Command",
-                         f"(Get-Item '{local_dir}' -Force).Attributes"],
+                         f"$i = Get-Item '{local_dir}' -Force; "
+                         f"if ($i.Attributes -match 'ReparsePoint') {{ $i.Target }}"],
                         capture_output=True, text=True, timeout=4
                     )
-                    is_link = "ReparsePoint" in (out.stdout or "")
+                    raw = (out.stdout or "").strip()
+                    if raw:
+                        is_link = True
+                        link_target = raw.splitlines()[0].strip()
                 except Exception:
                     pass
             else:
-                is_link = local_dir.is_symlink()
+                if local_dir.is_symlink():
+                    is_link = True
+                    try:
+                        link_target = str(local_dir.readlink())
+                    except Exception:
+                        link_target = None
 
             if is_link:
-                results.append((cli_name, f"already linked"))
-                continue
+                # Validate target points to where we want now.
+                target_ok = False
+                if link_target:
+                    try:
+                        target_ok = (Path(link_target).resolve() == usb_target.resolve()
+                                     and usb_target.exists())
+                    except Exception:
+                        target_ok = False
+                if target_ok:
+                    results.append((cli_name, "already linked"))
+                    continue
+                # Stale junction → remove it and fall through to recreate.
+                try:
+                    if sys.platform == "win32":
+                        # rmdir works for junctions on Windows; symlink deletion
+                        # via unlink() can fail with permission errors on some
+                        # filesystems.
+                        subprocess.run(
+                            ["cmd", "/c", "rmdir", str(local_dir)],
+                            capture_output=True, text=True, timeout=4,
+                        )
+                    else:
+                        local_dir.unlink()
+                    results.append((cli_name, f"removed stale junction (was -> {link_target})"))
+                except Exception as e:
+                    results.append((cli_name, f"could not remove stale junction: {e.__class__.__name__}"))
+                    continue
 
             # Real local dir with content — migrate to USB first
             try:
