@@ -209,44 +209,273 @@ def _build_context(symptom_class: str, payload: dict) -> dict:
     return ctx
 
 
+_SHARED_DISCIPLINE = """DIAGNOSTIC DISCIPLINE (from SRE + AIOps research):
+
+1. FORM HYPOTHESIS BEFORE PROPOSING REMEDY — the SRE chapter on Effective
+   Troubleshooting forbids action-before-hypothesis. The "root_cause_
+   hypothesis" field is required, must be non-empty, must reference
+   specific evidence (vital, log line, dependency probe) you saw.
+
+2. PROVIDE TWO HYPOTHESES MINIMUM in your reasoning, then choose. Single-
+   hypothesis "premature closure" is the #1 LLM failure mode in incident
+   diagnosis (PRISM benchmark, 2026). State both, eliminate one with
+   evidence, name the survivor in root_cause_hypothesis.
+
+3. DISTINGUISH TRIGGER FROM CAUSE. "the deploy at 3pm broke it" is a
+   trigger; the cause is the latent issue the trigger exposed. Five-Whys
+   research warns this conflation explicitly.
+
+4. CORRELATE WITH NEIGHBORS. AIOps platforms (Datadog Watchdog, BigPanda,
+   PagerDuty) exist because humans miss correlation. Always check the
+   claustrum_summary for: other services in distress, recent host
+   activity, hosts that disappeared. A single-service alert is rarely
+   the right scope.
+
+5. WORKAROUND vs PERMANENT_FIX (ITIL). Label your remedy_kind family
+   as "workaround" (restore service fast, may be a hack) or
+   "permanent_fix" (addresses root cause, requires more steps).
+   Workarounds get faster approval; permanent fixes need the user
+   to understand the change.
+
+6. NO DEFENSIVE COSMETICS. "increase retry count", "add timeout",
+   "bump log level" are not remedies — they hide problems. Reject
+   yourself if your only proposal is cosmetic.
+
+7. CITE WHAT YOU CAN ACTUALLY SEE. Every entity you reference
+   (file path, env var, service name, port number) MUST appear in
+   the injected context. The validator rejects proposals citing
+   unknown entities — saves you from hallucinating.
+
+8. CONFIDENCE CALIBRATION. FMEA risk-priority style — risk_level
+   reflects severity × reversibility × detectability. confidence
+   reflects how strong your evidence is, not how plausible your
+   guess sounds. Cap at 0.5 when symptom class is UNRECOGNIZED.
+"""
+
+
+_SYMPTOM_FAULT_TREES = {
+    "SERVICE_LOOP": """
+FAULT TREE for SERVICE_LOOP (service crashing + restarting):
+  TOP: service exits within seconds of every start
+  ├── crash-on-startup → bad config / missing dep / port collision
+  ├── crash-after-N-seconds → resource leak / memory limit / leaked FD
+  └── crash-on-event → poison input on a queue / corrupt incoming message
+
+CLASSIFY which class FIRST. If you cannot tell from the vitals provided,
+say so and request a probe — DO NOT guess.
+
+ANTI-PATTERN: "increase the restart delay" — this is not a remedy. It
+hides the fact that the service is broken.
+""",
+
+    "DEPENDENCY_FAILURE": """
+FAULT TREE for DEPENDENCY_FAILURE (a probe is failing):
+  TOP: service can't reach a dependency it needs
+  ├── network → DNS / TLS / route / firewall
+  ├── auth → credential / token / TCC / OAuth refresh
+  ├── contract → API shape changed / version skew / broken endpoint
+  └── data → corrupt input / unexpected format / empty response
+
+PROBE ORDERING discipline: network → DNS → TLS → auth → API contract →
+data shape. Report each probe before interpreting the next. Do not
+"the dep is down" — name the LAYER.
+""",
+
+    "AUTH_DRIFT": """
+FAULT TREE for AUTH_DRIFT (silent permission/credential change):
+  TOP: previously-working auth now fails
+  ├── credential expired (OAuth refresh, JWT exp, API key rotation)
+  ├── permission revoked (macOS TCC, OS firewall, IAM policy change)
+  ├── clock skew (Kerberos, JWT exp, certificate validity window)
+  └── identity drift (user account renamed, namespace migration)
+
+For macOS specifically: TCC reset is silent — Full Disk Access can be
+unticked without notification. ALWAYS check clock skew BEFORE
+proposing key regeneration; an expired-looking token may just be a
+clock-off host.
+""",
+
+    "DISK_PRESSURE": """
+FAULT TREE for DISK_PRESSURE:
+  TOP: writes failing OR vitals snapshots stale
+  ├── leading indicator (>80% used and growing)
+  ├── terminal (writes already failing)
+  └── inode exhaustion (rare but catastrophic — many small files)
+
+HIERARCHY of remedies (least → most destructive):
+  1. rotate logs (logrotate / journald vacuum)
+  2. compress old transcripts
+  3. tier to external drive (D:\\, AtlasVault)
+  4. delete (only after identifying owner)
+
+NEVER `rm -rf` without naming the growth source first.
+""",
+
+    "NETWORK_PARTITION": """
+FAULT TREE for NETWORK_PARTITION:
+  TOP: hosts can't reach each other consistently
+  ├── one-way partition (A→B works, B→A fails) → routing/NAT
+  ├── intermittent (flapping) → carrier issue, sleep cycle
+  ├── DERP-only (Tailscale relay fallback) → direct path firewalled
+  └── split-brain (both halves think they're authoritative)
+
+ASYMMETRY TEST: can A reach B? B reach A? both reach C?
+NEVER recommend "restart the mesh" without establishing whether
+the partition is one-way (mesh restart won't fix routing).
+""",
+
+    "CHANNEL_LIMBO": """
+FAULT TREE for CHANNEL_LIMBO (alive-but-silent — hardest class):
+  TOP: daemon's heartbeat is healthy but no inbound signal arrives
+  ├── sender broken (heartbeat fake; daemon thinks it's listening but isn't)
+  ├── transport silently dropping (queue full, webhook returning 200 but
+  │   discarding, polling cursor advanced past missed messages)
+  └── receiver consuming-but-not-acting (handler exception swallowed;
+      messages received and immediately discarded)
+
+REQUIRED: hold all three hypotheses in parallel. Do NOT collapse to one
+without a discriminating test. The right test is a probe message with
+a unique sentinel string, traced end-to-end through the system.
+
+ANTI-PATTERN: "restart the channel daemon" — it's already restarting
+and the silence persists. The bug is downstream.
+""",
+
+    "PERSONA_DRIFT": """
+FAULT TREE for PERSONA_DRIFT (model output deviating from configured persona):
+  TOP: replies use wrong name, wrong honorific, or wrong style
+  ├── system prompt changed (SOUL.md edited / IDENTITY hardcoded)
+  ├── context-window truncation (persona prefix dropped on long sessions)
+  ├── fuel swap (Claude → Ollama, weaker instruction-following)
+  └── user pattern shift (user changed their own register; model adapted)
+
+This symptom is BEHAVIORAL, not infrastructural. Restart is rarely
+the remedy. Compare current outputs to a golden-sample baseline
+before deciding the persona itself drifted vs. the user changing
+their style.
+""",
+
+    "CORRUPTION": """
+FAULT TREE for CORRUPTION (data integrity broken):
+  TOP: graph_memory.json fails to parse / DB returns inconsistent results
+  ├── filesystem (fsck-level: bad sectors, journal corruption)
+  ├── application (truncated write, race condition during shutdown)
+  ├── semantic (embeddings drifted from source; index out of date)
+  └── partial (most fine, some entries malformed)
+
+PROBE before remedy: which layer? Application-level corruption is
+recoverable from WAL or atomic-write logs without going to backup.
+Backup-restore is destructive of recent work; prefer in-place repair
+when applicable.
+""",
+
+    "FUEL_OUTAGE": """
+FAULT TREE for FUEL_OUTAGE (LLM call failures):
+  TOP: every fuel returning errors
+  ├── rate limit (429) — retry after backoff
+  ├── region outage (503) — switch region or fuel
+  ├── credential expiry (401) — refresh token / re-auth
+  ├── model deprecation (404 on model_id) — switch model_id
+  └── quota exhaustion — switch fuel adapter
+
+READ THE ACTUAL ERROR CODE. "fuel is down" without code reading is
+unprofessional. orion_fuel.py has a universal adapter; switching is
+cheap. Don't retry-with-backoff on a deprecated model.
+""",
+
+    "UNRECOGNIZED": """
+FAULT TREE for UNRECOGNIZED (no signature matches):
+  TOP: substrate event has a kind we haven't seen, or known patterns
+  in unfamiliar combination
+
+OPEN-MODE REASONING:
+  - State explicitly: "no known fault-tree fits"
+  - Propose TWO competing hypotheses
+  - Design a discriminating test (what would have to be true?)
+  - Cap confidence at 0.5
+  - remedy_kind defaults to "investigate_only" with a clear
+    user_message about what additional information would help.
+
+Do NOT pattern-match to the closest known class — say what's
+unfamiliar.
+""",
+}
+
+
 def _build_diagnostic_prompt(ctx: dict) -> str:
-    """Tailored prompt for the consulted model. Structured. Asks for
-    a JSON-shaped proposal so we can parse it deterministically."""
+    """Per-symptom-class diagnostic prompt informed by SRE + AIOps +
+    Five-Whys + ITIL research (2026-05-09 agent sweep). The shared
+    discipline applies to every class; the fault tree narrows by class.
+
+    Schema-shaped JSON output enables deterministic parsing and lets
+    a validator reject proposals citing unknown entities or omitting
+    required fields.
+    """
+    sym = ctx.get("symptom_class", "UNRECOGNIZED")
+    fault_tree = _SYMPTOM_FAULT_TREES.get(sym, _SYMPTOM_FAULT_TREES["UNRECOGNIZED"])
     return f"""You are Orion's executive layer reasoning about an internal failure.
 
-SYMPTOM CLASS: {ctx['symptom_class']}
-SERVICE: {ctx.get('service')}
-KIND: {ctx.get('kind')}
+{_SHARED_DISCIPLINE}
 
-CURRENT VITALS:
+{fault_tree}
+
+CONTEXT INJECTED FROM THE PLEXUS SUBSTRATE:
+
+  symptom_class: {sym}
+  service: {ctx.get('service')}
+  kind: {ctx.get('kind')}
+
+  current vitals (per-service health snapshot):
 {json.dumps(ctx.get('vitals'), indent=2)}
 
-RECOVERY ATTEMPTS RECENT: {ctx.get('recovery_attempts_recent', 0)}
-(if this is high, cellular reflex is failing — consider deeper causes)
+  recovery attempts in last 30 min: {ctx.get('recovery_attempts_recent', 0)}
+  (high values mean cellular reflex is failing — escalation is appropriate;
+   low values mean the executive may be over-eager)
 
-CLAUSTRUM SUMMARY:
+  cross-system summary from claustrum (the integrative observer):
 {json.dumps(ctx.get('claustrum_summary'), indent=2)}
 
-HISTORICAL DECISIONS FOR THIS SERVICE:
+  historical decisions for this service (most recent first):
 {json.dumps(ctx.get('historical_decisions') or [], indent=2)}
 
-Reason about the most likely root cause, then propose ONE remedy.
-Return ONLY a JSON object with this shape:
+(these are episodic memory of past proposals + outcomes. Past
+SUCCESSES are weakly informative — don't just repeat them. Past
+FAILURES are strongly informative — don't repeat the same proposal
+that already failed for this service.)
+
+OUTPUT — return ONLY a JSON object with this exact shape:
 
 {{
-  "root_cause_hypothesis": "<one sentence>",
-  "summary": "<one sentence the user will see>",
-  "user_message": "<2-4 sentence message asking permission, plain language>",
-  "remedy_kind": "launchctl_reload|reset_token|grant_permission|edit_config|reset_dependency|investigate_only",
+  "hypotheses_considered": [
+    {{"hypothesis": "<sentence>", "evidence_for": "<which vital/log>", "evidence_against": "<...>"}},
+    {{"hypothesis": "<sentence>", "evidence_for": "<...>", "evidence_against": "<...>"}}
+  ],
+  "root_cause_hypothesis": "<the surviving hypothesis>",
+  "remedy_family": "workaround|permanent_fix|investigate_only",
+  "remedy_kind": "launchctl_reload|reset_token|grant_permission|edit_config|reset_dependency|free_disk|investigate_only",
   "remedy_steps": ["<concrete step 1>", "<concrete step 2>", ...],
   "rollback_steps": ["<undo step 1>", ...],
+  "summary": "<one sentence the user will see>",
+  "user_message": "<2-4 sentence permission ask, plain language, name the action plainly>",
   "risk_level": "low|medium|high",
+  "tier": "tier1_auto|tier2_notify_after|tier3_approve_before",
   "confidence": 0.0
 }}
 
-If you genuinely don't know what to do, set remedy_kind to
-"investigate_only" and explain in user_message what additional
-information you'd need."""
+TIER GUIDELINES (from HITL research):
+  tier1_auto:           reversible + read-only-ish (cache flush, log rotate);
+                        max risk_level=low; never for symptom_class=AUTH_DRIFT
+                        or CORRUPTION or PERSONA_DRIFT
+  tier2_notify_after:   reversible side effect (launchctl reload, dep reset);
+                        good for SERVICE_LOOP, FUEL_OUTAGE; max risk=medium
+  tier3_approve_before: irreversible / identity / destructive (key rotation,
+                        config edit to .env.secrets, memory graph mutation,
+                        permission grant); REQUIRED for AUTH_DRIFT, CORRUPTION,
+                        and any UNRECOGNIZED symptom
+
+If your answer would be cosmetic ("add retry"), reject yourself by
+setting remedy_kind to "investigate_only" with a clear user_message
+explaining what evidence you'd need to propose a real fix."""
 
 
 def _consult_model(ctx: dict) -> dict | None:
@@ -288,14 +517,32 @@ def _consult_model(ctx: dict) -> dict | None:
         return None
 
 
+def _action_fingerprint(proposal: dict) -> str:
+    """6-char fingerprint of the action for replay-resistant approval.
+    User must reply 'approve <fingerprint>' (or 'a <fingerprint>') —
+    bare 'approve' no longer authorizes. From HITL research:
+    action-fingerprint binding kills accidental + replay approvals."""
+    import hashlib
+    payload = json.dumps({
+        "kind": proposal.get("remedy_kind"),
+        "steps": proposal.get("remedy_steps"),
+    }, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()[:6]
+
+
 def _request_permission(proposal: dict, ctx: dict) -> str:
-    """Surface the proposal to the user via reach.py. Returns the
+    """Surface the proposal to the user via reach.py with a tiered
+    approval flow + action-fingerprint binding. Returns the
     decision_id used to track approval."""
     decision_id = f"exec-{int(time.time())}-{ctx.get('service','unknown')}"
+    fingerprint = _action_fingerprint(proposal)
+    tier = proposal.get("tier", "tier3_approve_before")
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
     pending_file = PENDING_DIR / f"{decision_id}.json"
     record = {
         "decision_id": decision_id,
+        "fingerprint": fingerprint,
+        "tier": tier,
         "ts": time.time(),
         "symptom_class": ctx["symptom_class"],
         "service": ctx.get("service"),
@@ -308,32 +555,52 @@ def _request_permission(proposal: dict, ctx: dict) -> str:
         _pending[decision_id] = record
         _last_proposal_ts[ctx.get("service", "")] = time.time()
 
-    # Publish a reach event with a clear permission ask
+    # Publish a reach event with the fingerprinted permission ask.
+    # tier1_auto bypasses the user — auto-applies (logged).
+    # tier2_notify_after applies, then notifies with undo path.
+    # tier3_approve_before requires user reply quoting the fingerprint.
     try:
         from orion_substrate import publish
+        if tier == "tier1_auto":
+            user_msg = (
+                "Applied automatically: " + proposal.get("summary", "(no summary)")
+                + f". Reply 'undo {fingerprint}' if this was wrong."
+            )
+        elif tier == "tier2_notify_after":
+            user_msg = (
+                "Applying now: " + proposal.get("summary", "(no summary)")
+                + f". Reply 'undo {fingerprint}' if this was wrong."
+            )
+        else:  # tier3
+            user_msg = (
+                proposal.get("user_message", proposal.get("summary", ""))
+                + f"\\n\\nReply 'approve {fingerprint}' to apply, or 'deny {fingerprint}'. "
+                + "(expires in 6 hours)"
+            )
+
         publish("brain.executive.proposal", {
             "decision_id": decision_id,
+            "fingerprint": fingerprint,
+            "tier": tier,
             "ts": record["ts"],
             "service": ctx.get("service"),
             "summary": proposal.get("summary", "(no summary)"),
-            "user_message": proposal.get(
-                "user_message",
-                f"I want to apply: {proposal.get('summary')}. Reply 'approve {decision_id}' or 'deny {decision_id}'.",
-            ),
+            "user_message": user_msg,
             "remedy_kind": proposal.get("remedy_kind"),
             "risk_level": proposal.get("risk_level", "medium"),
             "confidence": proposal.get("confidence", 0.5),
         })
-        # Also publish a synthesis candidate so reach.py forwards it via
-        # the user's most-active channel as a high-priority message.
+        # Reach forwards via the user's most-active channel as high-priority.
         publish("brain.synthesis.candidate", {
             "kind": "executive_proposal",
             "evidence": {
                 "decision_id": decision_id,
+                "fingerprint": fingerprint,
+                "tier": tier,
                 "summary": proposal.get("summary"),
-                "user_message": proposal.get("user_message"),
+                "user_message": user_msg,
             },
-            "priority": 0.9,
+            "priority": 0.9 if tier == "tier3_approve_before" else 0.5,
             "ts": time.time(),
         })
     except Exception as e:
@@ -468,29 +735,83 @@ def _on_health_action(subject: str, payload: dict) -> None:
 
 
 def _on_user_decision(subject: str, payload: dict) -> None:
-    """User replied with approve/deny. Pattern-match the message."""
+    """User replied with approve/deny + action fingerprint.
+
+    Action-fingerprint binding (HITL research): bare 'approve' no
+    longer authorizes; user must quote the 6-char fingerprint. Defeats
+    accidental approvals and replay attacks.
+
+    Pattern: 'approve <fingerprint>' / 'deny <fingerprint>' /
+             'a <fingerprint>' / 'd <fingerprint>'
+
+    Special: 'undo <fingerprint>' reverses an already-applied tier1/2
+    action by running its rollback_steps.
+    """
+    import re
     text = (payload.get("text") or "").lower().strip()
     if not text:
         return
-    # very simple matching — orion_intents.py will own this longer term
-    approved = None
-    if any(w in text for w in ("approve", "yes do it", "go ahead", "do it",
-                                "apply", "yes please", "permission granted",
-                                "allowed", "execute", "yes")):
-        approved = True
-    elif any(w in text for w in ("deny", "no don't", "cancel", "stop",
-                                  "abort", "denied", "do not", "don't",
-                                  "no")):
-        approved = False
-    if approved is None:
+
+    # Match: (approve|deny|undo|a|d) [whitespace] <6-hex>
+    m = re.search(r"\b(approve|deny|undo|a|d)\b\s+([a-f0-9]{6})\b", text)
+    if not m:
+        return  # bare 'approve' without fingerprint is no longer authorizing
+
+    verb = m.group(1)
+    fingerprint = m.group(2)
+
+    if verb == "undo":
+        _attempt_undo(fingerprint)
         return
-    # Find the most recent pending decision (could refine with explicit
-    # decision_id mention in the user message)
+
+    approved = verb in ("approve", "a")
+
+    # Find the matching pending decision by fingerprint
     with _lock:
-        if not _pending:
-            return
-        decision_id = max(_pending.keys(), key=lambda k: _pending[k]["ts"])
+        decision_id = None
+        for did, rec in _pending.items():
+            if rec.get("fingerprint") == fingerprint:
+                decision_id = did
+                break
+    if not decision_id:
+        logger.info("no pending decision matches fingerprint %s", fingerprint)
+        return
     _apply_remedy(decision_id, approved)
+
+
+def _attempt_undo(fingerprint: str) -> None:
+    """Find a recently-applied decision with this fingerprint and run
+    its rollback_steps. Append-only audit + undo journal pattern from
+    HITL research."""
+    if not DECISION_LEDGER.exists():
+        return
+    try:
+        with DECISION_LEDGER.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return
+    target = None
+    for line in reversed(lines[-500:]):
+        try:
+            d = json.loads(line)
+            if d.get("phase") == "applied" and d.get("proposal", {}).get("fingerprint") == fingerprint:
+                target = d
+                break
+        except Exception:
+            continue
+    if not target:
+        logger.info("no applied decision with fingerprint %s found in last 500 entries", fingerprint)
+        return
+    rollback = (target.get("proposal") or {}).get("rollback_steps") or []
+    logger.info("undo for fingerprint %s — %d rollback steps", fingerprint, len(rollback))
+    # For now: log the undo intent. Real per-remedy reversers come next pass.
+    _log_decision({
+        "ts": time.time(),
+        "phase": "undo_requested",
+        "fingerprint": fingerprint,
+        "original_decision_id": target.get("decision_id"),
+        "rollback_steps_planned": rollback,
+    })
 
 
 def _expire_loop() -> None:
