@@ -503,12 +503,23 @@ class GraphMemory:
 
     def recall(self, query: str = None, tags: list = None,
                node_type: str = None, limit: int = 5,
-               include_superseded: bool = False) -> list:
+               include_superseded: bool = False,
+               exclude_tags: list = None) -> list:
         """Recall memories by tag match + text search, ranked by decayed confidence.
 
         Stale facts still appear but rank lower. Superseded nodes are hidden
         by default (pass include_superseded=True for audit/history).
+
+        exclude_tags: nodes carrying any of these tags are filtered OUT.
+        Default is ['private_internal'] — internal infrastructure facts
+        (ports, services, file paths, daemon names) that the persona rule
+        in SOUL.md says should not surface in user-facing replies. Pass
+        exclude_tags=[] for technical / debugging contexts where the
+        caller explicitly wants infrastructure facts.
         """
+        if exclude_tags is None:
+            exclude_tags = ["private_internal"]
+
         now = time.time()
         candidates = set(self.nodes.keys())
 
@@ -525,6 +536,17 @@ class GraphMemory:
             candidates = {
                 nid for nid in candidates
                 if self.nodes[nid].get("superseded_by") is None
+            }
+
+        # Filter private_internal (and any other excluded tags) — these are
+        # nodes the persona rule says not to surface in user-facing context.
+        if exclude_tags:
+            ex = {t.lower() for t in exclude_tags}
+            candidates = {
+                nid for nid in candidates
+                if not (
+                    {t.lower() for t in (self.nodes[nid].get("tags") or [])} & ex
+                )
             }
 
         if query:
