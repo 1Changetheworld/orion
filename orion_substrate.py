@@ -267,6 +267,13 @@ def memory_contradicted_subject() -> str:
     return "brain.memory.contradicted"
 
 
+def memory_recalled_subject() -> str:
+    """Emitted on every successful recall (Layer 2 plasticity event).
+    Payload: {node_ids: list[int], ts: float}. DMN subscribes to mine
+    co-activation patterns; dispatcher subscribes for capability tagging."""
+    return "brain.memory.recalled"
+
+
 def channel_inbound_subject(channel: str) -> str:
     return f"channel.{channel}.inbound"
 

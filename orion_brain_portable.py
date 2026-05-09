@@ -277,6 +277,13 @@ def decayed_confidence(node: dict, now: float = None,
 
     Confidence decays exponentially from last_confirmed_at (or created
     if last_confirmed_at is missing). Returns a value in [0, 1].
+
+    Plasticity (Plexus Layer 2 HLR): if the node has a learned
+    `h_personal` (in days, set by `_strengthen_node` on successful recall),
+    use it instead of the type-table default. This makes recalled paths
+    physically last longer in the brain — paths you use strengthen,
+    paths you don't use decay on the type schedule. Math from Settles
+    & Meeder ACL 2016 (Duolingo HLR), simplified to per-node.
     """
     if now is None:
         now = time.time()
@@ -284,13 +291,59 @@ def decayed_confidence(node: dict, now: float = None,
     base_conf = node.get("confidence", 1.0)
 
     node_type = node.get("type", "fact")
-    half_life = table.get(node_type, table.get("fact", 30.0))
+    type_half_life = table.get(node_type, table.get("fact", 30.0))
+
+    # Prefer the learned per-node half-life if present; fall back to type.
+    half_life = node.get("h_personal", type_half_life)
+
     if half_life == math.inf:
         return base_conf
 
     anchor = node.get("last_confirmed_at") or node.get("created") or now
     age_days = max(0.0, (now - anchor) / 86400.0)
     return base_conf * (0.5 ** (age_days / half_life))
+
+
+# Plasticity tuning. Production-safe defaults; tune via env if needed.
+PLASTICITY_TIMELY_BOOST = float(os.environ.get("ORION_HLR_TIMELY_BOOST", "2.0"))
+PLASTICITY_LATE_BOOST = float(os.environ.get("ORION_HLR_LATE_BOOST", "1.2"))
+PLASTICITY_MAX_HALF_LIFE_DAYS = float(os.environ.get("ORION_HLR_MAX_DAYS", "1825.0"))
+
+
+def _strengthen_node(node: dict, type_half_life: float, now: float) -> None:
+    """HLR-style multiplicative strengthening on successful recall.
+
+    Spaced-repetition intuition: a recall that happens BEFORE the
+    current half-life proves the memory is sticking — double the
+    half-life. A recall that happens AFTER the half-life means we
+    almost forgot — small bump (1.2×) so future recalls re-strengthen.
+
+    This is the per-node simplification of Settles & Meeder's HLR,
+    avoiding the full feature-vector + learned-theta machinery while
+    capturing the "use strengthens, disuse decays" property the agent
+    research validated. Edge-level plasticity (Physarum coupled mode)
+    is the next layer; this is the per-node foundation.
+
+    Mutates `node` in place. Idempotent under the same `now`.
+    """
+    last = node.get("last_recalled") or node.get("last_confirmed_at") or node.get("created") or now
+    delta_t_days = max(0.0, (now - last) / 86400.0)
+    current_h = node.get("h_personal", type_half_life)
+
+    if current_h == math.inf:
+        # Type-immortal facts (identity, preferences) don't need strengthening.
+        node["last_recalled"] = now
+        node["recall_count"] = int(node.get("recall_count", 0)) + 1
+        return
+
+    if delta_t_days < current_h:
+        new_h = current_h * PLASTICITY_TIMELY_BOOST
+    else:
+        new_h = current_h * PLASTICITY_LATE_BOOST
+
+    node["h_personal"] = min(new_h, PLASTICITY_MAX_HALF_LIFE_DAYS)
+    node["last_recalled"] = now
+    node["recall_count"] = int(node.get("recall_count", 0)) + 1
 
 
 class GraphMemory:
@@ -492,7 +545,9 @@ class GraphMemory:
                     scored.append((text_score * max(eff_conf, 0.05), eff_conf, nid))
             scored.sort(reverse=True)
             if scored:
-                return [self.nodes[nid] for _, _, nid in scored[:limit]]
+                returned_ids = [nid for _, _, nid in scored[:limit]]
+                self._strengthen_recalled(returned_ids, now)
+                return [self.nodes[nid] for nid in returned_ids]
 
             # Recency fallback — when the query has no keyword overlap with
             # any stored node, return the most-recently-written nodes
@@ -509,7 +564,9 @@ class GraphMemory:
                 ),
                 reverse=True,
             )
-            return [self.nodes[nid] for nid in by_recency[:limit]]
+            returned_ids = list(by_recency[:limit])
+            self._strengthen_recalled(returned_ids, now)
+            return [self.nodes[nid] for nid in returned_ids]
 
         # No query: return highest-confidence nodes first
         scored = [
@@ -518,7 +575,35 @@ class GraphMemory:
             for nid in candidates
         ]
         scored.sort(reverse=True)
-        return [self.nodes[nid] for _, nid in scored[:limit]]
+        returned_ids = [nid for _, nid in scored[:limit]]
+        self._strengthen_recalled(returned_ids, now)
+        return [self.nodes[nid] for nid in returned_ids]
+
+    def _strengthen_recalled(self, node_ids: list, now: float) -> None:
+        """Plexus Layer 2 (HLR): apply use-strengthens-paths plasticity to
+        every node that just got returned by recall. Then publish a
+        substrate event so observability / DMN / dispatch can see the
+        traversal pattern. Side effect only — never blocks recall.
+        """
+        if not node_ids:
+            return
+        for nid in node_ids:
+            node = self.nodes.get(nid)
+            if not node:
+                continue
+            type_h = self.half_life_days.get(
+                node.get("type", "fact"),
+                self.half_life_days.get("fact", 30.0),
+            )
+            _strengthen_node(node, type_h, now)
+        try:
+            from orion_substrate import publish, memory_recalled_subject
+            publish(memory_recalled_subject(), {
+                "node_ids": list(node_ids),
+                "ts": now,
+            })
+        except Exception:
+            pass  # Substrate is purely additive; never let it break recall.
 
     def list_contested(self) -> list:
         """Return all nodes currently flagged as contested, with their conflicts."""
