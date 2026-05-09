@@ -130,6 +130,9 @@ def _probe_imessage() -> dict:
 
 
 def _probe_telegram() -> dict:
+    """Richer Telegram detection — find existing bot configs the user
+    set up previously, not just env vars. Founder noted having had two
+    channels working before; the probe should see them."""
     has_pytelegrambotapi = False
     try:
         __import__("telebot")
@@ -137,35 +140,78 @@ def _probe_telegram() -> dict:
     except Exception:
         pass
     has_token = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
+
+    # Existing daemons + configs the founder may have set up
+    found_configs = []
+    candidates = [
+        Path.home() / "server_data" / "agents" / "agent08_telegram_commander.py",
+        Path.home() / ".telegram-bot",
+        Path("/Volumes/AtlasVault/atlas/telegram"),
+        Path("/Volumes/AtlasVault/backups/telegram"),
+    ]
+    for c in candidates:
+        if c.exists():
+            found_configs.append(str(c))
+
+    # Check if any active telegram daemon is publishing on substrate
+    # (we can't synchronously check the substrate here without slow
+    # round-trip; rely on the wired_hint check below + lastcontact log)
+
+    available = has_token or has_pytelegrambotapi or bool(found_configs)
     return {
         "type": "text_bidirectional",
         "surface": "telegram",
-        "available": has_token or has_pytelegrambotapi,
+        "available": available,
         "wired_hint": "agent08_telegram_commander.py / channels/telegram_bot.py",
-        "needs_setup": (not has_token),
-        "setup_hint": "Talk to @BotFather on Telegram, set TELEGRAM_BOT_TOKEN env",
+        "found_configs": found_configs,
+        "needs_setup": (not has_token and not found_configs),
+        "setup_hint": "Talk to @BotFather on Telegram, set TELEGRAM_BOT_TOKEN env. "
+                      "If you've used a bot before, the token is likely in your "
+                      "old config files — Orion can pick it up automatically.",
     }
 
 
 def _probe_gmail() -> dict:
+    """Richer Gmail detection — credentials at standard paths, n8n
+    workflows, plus historical config files the founder set up before."""
     candidates = [
         Path.home() / ".config" / "google" / "credentials.json",
         Path.home() / ".gmail" / "credentials.json",
         Path.home() / ".credentials" / "gmail.json",
+        Path.home() / ".credentials" / "credentials.json",
+        Path.home() / ".gcloud" / "application_default_credentials.json",
     ]
-    has_creds = any(p.exists() for p in candidates)
-    has_n8n_workflow = False
-    n8n_dir = Path.home() / "Desktop" / "Mac server configurations" / "n8n_workflows"
-    if n8n_dir.exists():
-        for p in n8n_dir.glob("*Gmail*"):
-            has_n8n_workflow = True
-            break
+    found_creds = [str(p) for p in candidates if p.exists()]
+
+    # n8n workflows referencing Gmail (the founder's existing setup)
+    n8n_workflows = []
+    for d in (Path.home() / "Desktop" / "Mac server configurations" / "n8n_workflows",
+              Path("/Volumes/AtlasVault/atlas/n8n_workflows")):
+        if d.exists():
+            for p in d.glob("*[Gg]mail*"):
+                n8n_workflows.append(str(p))
+
+    # n8n's encrypted credentials store
+    n8n_creds_db = Path.home() / ".n8n" / "database.sqlite"
+    has_n8n_db = n8n_creds_db.exists()
+
+    available = bool(found_creds or n8n_workflows or has_n8n_db)
     return {
         "type": "email_async",
         "surface": "gmail",
-        "available": has_creds or has_n8n_workflow,
+        "available": available,
         "wired_hint": "channels/gmail.py (planned) or n8n Gmail trigger",
-        "setup_hint": "Run gcloud OAuth flow + grant readonly + send scopes",
+        "found_creds": found_creds,
+        "n8n_workflows": n8n_workflows,
+        "n8n_db_present": has_n8n_db,
+        "setup_hint": (
+            "Existing n8n Gmail workflow detected — Orion can adopt it "
+            "as a substrate publisher with a small wrapper, OR write "
+            "channels/gmail.py for native Python control."
+            if (n8n_workflows or has_n8n_db) else
+            "Run gcloud OAuth flow + grant readonly + send scopes, "
+            "or use n8n's Gmail trigger node for visual setup."
+        ),
     }
 
 
@@ -196,29 +242,120 @@ def _probe_discord() -> dict:
 
 
 def _probe_meshtastic() -> dict:
+    """Detect Meshtastic library + USB devices + historical config.
+    Founder has used Meshtastic before — the probe should find old
+    node IDs / config files even if no device is plugged right now."""
     has_lib = False
     try:
         __import__("meshtastic")
         has_lib = True
     except Exception:
         pass
-    # Look for serial devices that look like Meshtastic boards
-    has_device = False
-    if sys.platform == "darwin":
-        has_device = any(
-            (p.startswith("/dev/cu.SLAB_USBtoUART")
-             or p.startswith("/dev/cu.usbserial")
-             or p.startswith("/dev/cu.wchusbserial"))
-            for p in os.listdir("/dev") if p.startswith("cu.")
-        ) if Path("/dev").exists() else False
-    elif sys.platform.startswith("linux"):
-        has_device = Path("/dev/ttyUSB0").exists() or Path("/dev/ttyACM0").exists()
+
+    # Look for serial devices that match Meshtastic-class hardware
+    found_devices = []
+    dev_dir = Path("/dev")
+    if dev_dir.exists():
+        for entry in os.listdir("/dev"):
+            full = "/dev/" + entry
+            if (entry.startswith("cu.SLAB_USBtoUART") or
+                entry.startswith("cu.usbserial") or
+                entry.startswith("cu.wchusbserial") or
+                entry.startswith("cu.usbmodem") or
+                entry.startswith("ttyUSB") or
+                entry.startswith("ttyACM")):
+                found_devices.append(full)
+
+    # Existing config / past sessions
+    found_configs = []
+    for c in (Path.home() / ".meshtastic.yaml",
+              Path.home() / ".config" / "meshtastic",
+              Path("/Volumes/AtlasVault/atlas/meshtastic"),
+              Path.home() / "Desktop" / "orion-lora-bridge"):
+        if c.exists():
+            found_configs.append(str(c))
+
     return {
         "type": "radio_mesh",
         "surface": "meshtastic",
-        "available": has_lib or has_device,
+        "available": has_lib or bool(found_devices) or bool(found_configs),
+        "found_devices": found_devices,
+        "found_configs": found_configs,
         "wired_hint": "channels/meshtastic_node.py",
-        "setup_hint": "pip install meshtastic pypubsub + USB-attach a Heltec/RAK node",
+        "setup_hint": (
+            "Meshtastic library + previous configs detected. Plug a node "
+            "in via USB and Orion will recognize it automatically."
+            if (has_lib or found_configs) else
+            "pip install meshtastic pypubsub + USB-attach a Heltec/RAK node"
+        ),
+    }
+
+
+def _probe_cursor() -> dict:
+    """Cursor IDE — talks to Orion via MCP-over-stdio. Detect Cursor's
+    config dir + check if orion-brain is registered as an MCP server."""
+    cursor_dir = Path.home() / ".cursor"
+    mcp_config = cursor_dir / "mcp.json"
+    has_cursor = cursor_dir.exists()
+    orion_registered = False
+    if mcp_config.exists():
+        try:
+            cfg = json.loads(mcp_config.read_text(encoding="utf-8"))
+            orion_registered = "orion-brain" in (cfg.get("mcpServers") or {})
+        except Exception:
+            pass
+    return {
+        "type": "ide_assistant",
+        "surface": "cursor",
+        "available": has_cursor,
+        "orion_registered": orion_registered,
+        "wired_hint": "register orion_mcp_server in ~/.cursor/mcp.json (orion_mcp_server.py --setup)",
+        "setup_hint": (
+            "Cursor present and orion-brain MCP already registered."
+            if (has_cursor and orion_registered) else
+            "Run: python orion_mcp_server.py --setup to register Orion as "
+            "an MCP server in Cursor's config."
+        ),
+    }
+
+
+def _probe_browser_extension() -> dict:
+    """Orion browser extension (MV3) — runs in Chrome/Edge/Safari.
+    Detect installed extension by checking the user's browser extension
+    directories. Each browser stores extensions differently."""
+    home = Path.home()
+    candidates = [
+        # Chrome (macOS)
+        home / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Extensions",
+        # Chrome (Linux)
+        home / ".config" / "google-chrome" / "Default" / "Extensions",
+        # Edge
+        home / "Library" / "Application Support" / "Microsoft Edge" / "Default" / "Extensions",
+        # Safari (macOS) — extensions live elsewhere; harder to probe
+        home / "Library" / "Containers",
+    ]
+    has_browser_dir = any(c.exists() for c in candidates)
+    # Rough: if any extension dir contains 'orion' in its files, count as installed
+    extension_installed = False
+    for c in candidates:
+        if c.exists():
+            try:
+                for ext in c.iterdir():
+                    if "orion" in ext.name.lower():
+                        extension_installed = True
+                        break
+            except Exception:
+                continue
+    return {
+        "type": "browser_overlay",
+        "surface": "browser_extension",
+        "available": has_browser_dir,
+        "extension_installed": extension_installed,
+        "wired_hint": "load extensions/browser/ as unpacked extension or install from store",
+        "setup_hint": (
+            "Browser detected. Load Orion's MV3 extension from extensions/browser/ "
+            "(Chrome → Manage Extensions → Load Unpacked) — talks to brain over Native Messaging."
+        ),
     }
 
 
@@ -252,6 +389,8 @@ PROBES = [
     _probe_meshtastic,
     _probe_voice_telnyx,
     _probe_webhook,
+    _probe_cursor,
+    _probe_browser_extension,
 ]
 
 
