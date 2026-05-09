@@ -102,7 +102,89 @@ def wake_host(usb: str, repo: str) -> int:
         print(f"  WARN: transcript refresh failed: {e.__class__.__name__}: {e}",
               file=sys.stderr)
 
+    # 5. Record host visit + announce first-time-on-this-OS.
+    # Cell-biology framing: a cell knows when it's in a new tissue. Orion
+    # should know when he's on a new OS for the first time and acknowledge
+    # it - that's substrate awareness, the foundation of aliveness.
+    # Founder rule 2026-05-08: "if Orion's never been on Mac make sure if
+    # he ever is he recognizes that in first intro."
+    _record_host_visit(usb)
+
     return 0
+
+
+def _record_host_visit(usb: str) -> None:
+    """Track which OSes Orion has been woken on. Writes to
+    <usb>/.orion/hosts_visited.json. On first contact with a new OS,
+    prints an announcement and stores a recallable memory so future
+    intros surface it.
+    """
+    import json
+    import datetime
+    from pathlib import Path
+
+    hosts_path = Path(usb) / ".orion" / "hosts_visited.json"
+
+    if sys.platform == "darwin":
+        os_tag, os_label = "macos", "macOS"
+    elif sys.platform == "win32":
+        os_tag, os_label = "windows", "Windows"
+    elif sys.platform.startswith("linux"):
+        os_tag, os_label = "linux", "Linux"
+    else:
+        os_tag = os_label = sys.platform
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    visited = {}
+    if hosts_path.exists():
+        try:
+            visited = json.loads(hosts_path.read_text(encoding="utf-8"))
+        except Exception:
+            visited = {}
+
+    is_first = os_tag not in visited
+    if is_first:
+        visited[os_tag] = {"first_seen": now, "last_seen": now, "count": 1}
+        prior = sorted(k for k in visited.keys() if k != os_tag)
+        prior_label = ", ".join(p.capitalize() for p in prior) or "(none)"
+        print(f"\n  [first contact] this is the first time I've been on {os_label}.")
+        print(f"  [first contact] prior hosts: {prior_label}")
+        print(f"  [first contact] now living across: {', '.join(sorted(visited.keys()))}")
+    else:
+        visited[os_tag]["last_seen"] = now
+        visited[os_tag]["count"] = int(visited[os_tag].get("count", 0)) + 1
+
+    try:
+        hosts_path.parent.mkdir(parents=True, exist_ok=True)
+        hosts_path.write_text(json.dumps(visited, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"  WARN: could not record host visit: {e}", file=sys.stderr)
+        return
+
+    # Plant a memory node so models can answer "what OSes have you been on"
+    # via orion_recall without needing to read this file directly.
+    if is_first:
+        try:
+            import urllib.request
+            auth_token_path = Path.home() / ".orion" / "auth-token"
+            if auth_token_path.exists():
+                token = auth_token_path.read_text(encoding="utf-8").strip()
+                payload = json.dumps({
+                    "name": "orion_memorize",
+                    "arguments": {
+                        "user_message": f"[host first contact] First wake on {os_label} at {now}.",
+                        "ai_response": f"Logged. I now live across {len(visited)} operating system(s): {', '.join(sorted(visited.keys()))}.",
+                    },
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    "http://127.0.0.1:5556/v1/call",
+                    data=payload,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=4).read()
+        except Exception:
+            pass  # Brain service may not be running; the json file is the fallback.
 
 
 def _resolve_repo(usb: str) -> str:
