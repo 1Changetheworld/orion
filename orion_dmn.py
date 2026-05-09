@@ -87,6 +87,7 @@ class DMNProcess:
         self._channel_recent: deque = deque(maxlen=200)
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._vitals = None  # set by start()
 
     # ---------- lifecycle ----------
 
@@ -106,6 +107,30 @@ class DMNProcess:
             logger.warning("substrate unreachable; DMN starting in degraded mode "
                            "(will keep trying on next event)")
 
+        # Per-service vitals (cellular homeostasis). DMN gets its own
+        # nervous-ending so it can probe itself + recover from stuck states.
+        try:
+            from orion_vitals import Vitals
+            self._vitals = Vitals(service_name="dmn")
+            self._vitals.add_dependency_probe("substrate", lambda: bool(sub.available))
+            self._vitals.add_dependency_probe("synth_dir_writable", lambda: SYNTH_DIR.exists())
+            # Reflex: if no events in 30 min while DMN is supposed to be observing,
+            # something's wrong with substrate routing. Try reconnect.
+            def _stuck(v):
+                return v.uptime_sec() > 60 and v.last_event_age_sec() > 1800
+            def _try_reconnect(v):
+                try:
+                    get_substrate()._connect_blocking()
+                    v.note_event()
+                except Exception as e:
+                    v.note_error(e)
+            self._vitals.register_recovery("silent_30min", _stuck, _try_reconnect)
+            self._vitals.start_pulse()
+            logger.info("DMN vitals primitive attached")
+        except Exception as e:
+            logger.warning("vitals attach failed (non-fatal): %s", e)
+            self._vitals = None
+
         subscribe(memory_recalled_subject(), self._on_recall)
         subscribe(memory_stored_subject(), self._on_store)
         subscribe("channel.*.inbound", self._on_channel)
@@ -122,6 +147,7 @@ class DMNProcess:
     # ---------- substrate handlers ----------
 
     def _on_recall(self, subject: str, payload: dict) -> None:
+        if self._vitals: self._vitals.note_event()
         with self._lock:
             self._last_event_ts = time.time()
             ids = payload.get("node_ids") or []
