@@ -35,8 +35,45 @@ from typing import Any, Callable
 
 logger = logging.getLogger("orion.substrate")
 
-DEFAULT_URL = os.environ.get("ORION_NATS_URL", "nats://127.0.0.1:4222")
 DEFAULT_TIMEOUT_SEC = float(os.environ.get("ORION_NATS_TIMEOUT", "1.5"))
+
+
+def _discover_substrate_url() -> str:
+    """Find a reachable substrate URL.
+
+    Order: explicit env > LAN > Tailscale > localhost. The first one
+    that opens a TCP connection on :4222 wins. Discovery runs only
+    once per process (cached on the singleton).
+
+    Why not mDNS: the substrate has to work even when avahi/Bonjour
+    is unreliable (Pi headless, Windows VM, USB-host without name
+    resolution). Hard-coded IP fallback wins.
+    """
+    explicit = os.environ.get("ORION_NATS_URL")
+    if explicit:
+        return explicit
+
+    candidates = [
+        "10.0.0.190",       # COMMAND on LAN
+        "100.109.99.21",    # COMMAND via Tailscale
+        "127.0.0.1",        # local nats-server (USB / standalone host)
+    ]
+
+    import socket
+    for ip in candidates:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.4)
+                if s.connect_ex((ip, 4222)) == 0:
+                    return f"nats://{ip}:4222"
+        except Exception:
+            continue
+    # Nothing reachable. Return a localhost URL anyway; connect will
+    # fail cleanly and publish becomes a no-op.
+    return "nats://127.0.0.1:4222"
+
+
+DEFAULT_URL = _discover_substrate_url()
 
 
 def _read_auth_token() -> str | None:
