@@ -454,6 +454,41 @@ TOOLS = [
 _brain = None
 _synthesis = None
 _heartbeat_started = False
+_substrate_subscribed = False
+
+
+def _on_memory_stored(subject: str, payload: dict) -> None:
+    """Plexus substrate handler: another process wrote a memory node.
+    Reload our local brain view from disk so cross-process writes
+    propagate without restart. Idempotent; cheap; runs in the substrate
+    background loop, not the MCP request path. See project_orion-
+    plexus-architecture.md and project_orion-cross-process-cache-bug.md.
+    """
+    global _brain
+    if _brain is None:
+        return  # Nothing to invalidate yet; next access will load fresh.
+    try:
+        # Cheapest correct invalidation: drop the in-memory brain so
+        # the next _get_brain() call rebuilds from disk. The disk has
+        # already been updated by the writing process (the publish
+        # is downstream of the file write).
+        _brain = None
+    except Exception:
+        pass
+
+
+def _ensure_substrate_subscriptions() -> None:
+    """Subscribe once per process to the substrate topics this MCP
+    server cares about. No-op if substrate unavailable."""
+    global _substrate_subscribed
+    if _substrate_subscribed:
+        return
+    _substrate_subscribed = True
+    try:
+        from orion_substrate import subscribe, memory_stored_subject
+        subscribe(memory_stored_subject(), _on_memory_stored)
+    except Exception:
+        pass  # Substrate is additive; never block MCP startup.
 
 
 def _get_brain() -> OrionBrain:
@@ -468,6 +503,9 @@ def _get_brain() -> OrionBrain:
             start_heartbeat(interval=1800)  # 30 min cycles
         except Exception:
             pass  # Don't crash MCP if heartbeat fails to start
+    # Subscribe to the Plexus substrate so cross-process memory writes
+    # invalidate our cache automatically.
+    _ensure_substrate_subscriptions()
     return _brain
 
 

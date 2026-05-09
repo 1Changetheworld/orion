@@ -345,6 +345,25 @@ class GraphMemory:
             if conflicts:
                 self._apply_contradiction_policy(node_id, conflicts)
 
+        # Publish to the Plexus substrate (Layer 1). Side-effect only:
+        # subscribers (e.g. other MCP processes) can invalidate their
+        # local caches so cross-process writes propagate within ~1 ms.
+        # If the substrate is unavailable this is a logged no-op and
+        # the existing call path is unaffected. See orion_substrate.py
+        # and project_orion-plexus-architecture.md.
+        try:
+            from orion_substrate import publish, memory_stored_subject
+            publish(memory_stored_subject(), {
+                "node_id": node_id,
+                "type": node_type,
+                "tags": sorted(list(node["tags"])),
+                "confidence": confidence,
+                "ts": now,
+            })
+        except Exception:
+            # Substrate is purely additive; never let it break a write.
+            pass
+
         return node_id
 
     def confirm(self, node_id: int) -> bool:

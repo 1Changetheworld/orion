@@ -110,7 +110,64 @@ def wake_host(usb: str, repo: str) -> int:
     # he ever is he recognizes that in first intro."
     _record_host_visit(usb)
 
+    # 6. Plexus substrate (Layer 1) — advertise this host's capabilities
+    # on the event bus so the dispatcher (when built) can route to us.
+    # No-op if substrate unreachable; existing wake completes regardless.
+    # See project_orion-plexus-architecture.md.
+    _advertise_capabilities(repo)
+
     return 0
+
+
+def _advertise_capabilities(repo: str) -> None:
+    """Publish a capability manifest for this host on the Plexus
+    substrate. Run once at the end of wake. The dispatcher (Layer 3,
+    not yet built) will use these advertisements to route requests
+    to the best-fit node. Octopus pattern: each arm announces what it
+    can do; brain decides where to send work. See Agent 4 research in
+    project_orion-plexus-architecture.md (Layer 3c).
+    """
+    import platform
+    import shutil
+
+    sys.path.insert(0, repo)
+    try:
+        from orion_substrate import (
+            publish, host_capabilities_subject, host_wake_subject,
+        )
+    except Exception:
+        return  # Substrate module not importable; silent skip.
+
+    if sys.platform == "darwin":
+        os_tag = "macos"
+    elif sys.platform == "win32":
+        os_tag = "windows"
+    elif sys.platform.startswith("linux"):
+        os_tag = "linux"
+    else:
+        os_tag = sys.platform
+
+    fuels_available = []
+    for cmd in ("claude", "codex", "gemini", "ollama"):
+        if shutil.which(cmd):
+            fuels_available.append(cmd)
+
+    try:
+        host_tag = platform.node().split(".")[0].lower() or "unknown"
+    except Exception:
+        host_tag = "unknown"
+
+    manifest = {
+        "node_id": host_tag,
+        "os_tag": os_tag,
+        "machine": platform.machine() if hasattr(platform, "machine") else "",
+        "fuels_available": fuels_available,
+        "wake_ts": __import__("time").time(),
+    }
+
+    # One wake event + one capabilities advertisement.
+    publish(host_wake_subject(host_tag), manifest)
+    publish(host_capabilities_subject(host_tag), manifest)
 
 
 def _record_host_visit(usb: str) -> None:

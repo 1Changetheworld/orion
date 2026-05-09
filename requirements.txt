@@ -18,3 +18,10 @@ openai>=1.0
 # works without extra packages, so this is only relevant if you run
 # DeepSeek against a remote vLLM or dedicated server.
 # anthropic>=0.25  # only if you drive Claude via the anthropic SDK directly
+
+# Plexus substrate (Layer 1 of the nervous system). Pure-Python NATS
+# client (~10 KB). Optional — if missing, all publish/subscribe calls
+# become logged no-ops and existing call paths continue to work. Install
+# nats-server separately when ready to activate the substrate.
+# See orion_substrate.py and project_orion-plexus-architecture.md.
+nats-py>=2.6
