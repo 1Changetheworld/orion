@@ -51,6 +51,7 @@ PLEXUS_SERVICES=(
     "dream:orion_dream.py"
     "gossip:orion_gossip.py"
     "will:orion_will.py"
+    "chronos:orion_chronos.py"
 )
 
 # Detect platform
