@@ -1,0 +1,590 @@
+{
+  "next_id": 50,
+  "nodes": {
+    "0": {
+      "content": "nmap network scanner \u2014 dispatched to security device via SSH",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "network",
+        "nmap",
+        "scan"
+      ],
+      "created": 1775691955.1627572
+    },
+    "1": {
+      "content": "nuclei vulnerability scanner \u2014 dispatched to security device",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "vuln",
+        "nuclei"
+      ],
+      "created": 1775691955.16276
+    },
+    "2": {
+      "content": "nikto web scanner \u2014 dispatched to security device",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "nikto",
+        "security",
+        "web"
+      ],
+      "created": 1775691955.162761
+    },
+    "3": {
+      "content": "himalaya email client at /Users/servermac/bin/himalaya",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "email",
+        "send",
+        "himalaya"
+      ],
+      "created": 1775691955.162762
+    },
+    "4": {
+      "content": "orion_dispatch.py handles command execution \u2014 status, mesh, services, scan, email, disk, ip, docker",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "dispatch",
+        "command",
+        "execute"
+      ],
+      "created": 1775691955.162763
+    },
+    "5": {
+      "content": "dolphin-mistral uncensored AI model \u2014 for unrestricted analysis",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "uncensored",
+        "dolphin"
+      ],
+      "created": 1775691955.162764
+    },
+    "6": {
+      "content": "Qdrant vector database on port 6333 \u2014 667+ searchable knowledge points",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "knowledge",
+        "qdrant",
+        "memory",
+        "search"
+      ],
+      "created": 1775691955.162765
+    },
+    "7": {
+      "content": "iMessage interface via orioncommandcenter1@gmail.com \u2014 daemon polls chat.db",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "text",
+        "apple",
+        "imessage"
+      ],
+      "created": 1775691955.162766
+    },
+    "8": {
+      "content": "Phone interface via Telnyx +1 (808) 724-7946 \u2014 SIP calls + SMS",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "telnyx",
+        "phone",
+        "sms",
+        "call"
+      ],
+      "created": 1775691955.1627672
+    },
+    "9": {
+      "content": "Telegram bot @OrionCommand1Bot \u2014 50+ commands",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "bot",
+        "commands",
+        "telegram"
+      ],
+      "created": 1775691955.162768
+    },
+    "10": {
+      "content": "Claude CLI persistent session \u2014 Opus power at $0/request via Pro subscription",
+      "type": "fuel",
+      "confidence": 1.0,
+      "tags": [
+        "claude",
+        "opus",
+        "cli",
+        "power"
+      ],
+      "created": 1775691955.162768
+    },
+    "11": {
+      "content": "AtlasVault external drive \u2014 physical brain, nightly sync, grab-and-go",
+      "type": "infrastructure",
+      "confidence": 1.0,
+      "tags": [
+        "portable",
+        "drive",
+        "backup",
+        "vault"
+      ],
+      "created": 1775691955.1627688
+    },
+    "12": {
+      "content": "OpenClaw on port 18789 \u2014 52 skills including email, GitHub, web browsing",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "skills",
+        "browse",
+        "github",
+        "openclaw"
+      ],
+      "created": 1775691955.162773
+    },
+    "13": {
+      "content": "himalaya email client \u2014 send emails: echo 'body' | himalaya send --to 'addr' --subject 'subj'",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "email",
+        "send",
+        "himalaya"
+      ],
+      "created": 1775693644.745667
+    },
+    "14": {
+      "content": "sherlock \u2014 OSINT username search across 400+ social networks, on ASUS",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "osint",
+        "social",
+        "username",
+        "sherlock"
+      ],
+      "created": 1775693644.7456691
+    },
+    "15": {
+      "content": "maigret \u2014 OSINT identity search across 500+ sites, on ASUS",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "osint",
+        "identity",
+        "maigret"
+      ],
+      "created": 1775693644.7456698
+    },
+    "16": {
+      "content": "METATRON \u2014 AI pentesting assistant using local LLM on Linux, on ASUS",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "ai",
+        "metatron",
+        "pentest"
+      ],
+      "created": 1775693644.7456708
+    },
+    "17": {
+      "content": "nox-framework \u2014 OSINT & CTI framework, 120+ sources, Red Team & Forensics",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "cti",
+        "forensics",
+        "nox",
+        "osint"
+      ],
+      "created": 1775693644.745672
+    },
+    "18": {
+      "content": "nuclei \u2014 vulnerability scanner for web applications",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "web",
+        "vuln",
+        "scan",
+        "nuclei"
+      ],
+      "created": 1775693644.745673
+    },
+    "19": {
+      "content": "nikto \u2014 web server vulnerability scanner",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "nikto",
+        "scan",
+        "web"
+      ],
+      "created": 1775693644.745673
+    },
+    "20": {
+      "content": "sqlmap \u2014 SQL injection testing tool",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "sqlmap",
+        "sql",
+        "database",
+        "injection"
+      ],
+      "created": 1775693644.745674
+    },
+    "21": {
+      "content": "hydra \u2014 credential bruteforce tool for SSH, FTP, HTTP",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "bruteforce",
+        "credentials",
+        "ssh",
+        "hydra"
+      ],
+      "created": 1775693644.745675
+    },
+    "22": {
+      "content": "gobuster \u2014 directory and DNS bruteforce tool",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "bruteforce",
+        "web",
+        "directory",
+        "gobuster"
+      ],
+      "created": 1775693644.745676
+    },
+    "23": {
+      "content": "wpscan \u2014 WordPress vulnerability scanner",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "web",
+        "wpscan",
+        "scan",
+        "wordpress"
+      ],
+      "created": 1775693644.745677
+    },
+    "24": {
+      "content": "sslscan \u2014 SSL/TLS certificate scanner",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "certificate",
+        "tls",
+        "ssl",
+        "sslscan"
+      ],
+      "created": 1775693644.745677
+    },
+    "25": {
+      "content": "qwen3:8b on FORGE RTX 4070 \u2014 strong reasoning, code, knowledge tasks",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "code",
+        "forge",
+        "qwen",
+        "reasoning"
+      ],
+      "created": 1775693644.7456808
+    },
+    "26": {
+      "content": "qwen3:14b on FORGE \u2014 heavy reasoning, larger context",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "forge",
+        "qwen",
+        "reasoning",
+        "heavy"
+      ],
+      "created": 1775693644.745682
+    },
+    "27": {
+      "content": "dolphin-mistral:7b \u2014 uncensored model for unrestricted analysis",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "uncensored",
+        "dolphin"
+      ],
+      "created": 1775693644.745682
+    },
+    "28": {
+      "content": "phi3:mini on COMMAND \u2014 fast, lightweight, good for classification and greetings",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "fast",
+        "greeting",
+        "phi3",
+        "classifier"
+      ],
+      "created": 1775693644.745683
+    },
+    "29": {
+      "content": "Claude Opus via CLI \u2014 strongest reasoning, $0/request via Pro subscription",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "claude",
+        "opus",
+        "cli",
+        "strongest"
+      ],
+      "created": 1775693644.745684
+    },
+    "30": {
+      "content": "hermes-agent \u2014 agent framework, skills system, smart model routing, memory management",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "agent",
+        "skills",
+        "framework",
+        "hermes"
+      ],
+      "created": 1775693644.745685
+    },
+    "31": {
+      "content": "oh-my-claudecode \u2014 multi-agent orchestration, planner/executor/verifier pipeline",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "orchestration",
+        "pipeline",
+        "planner",
+        "verifier"
+      ],
+      "created": 1775693644.745686
+    },
+    "32": {
+      "content": "claude-memory-compiler \u2014 Karpathy knowledge compiler, conversations to articles",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "knowledge",
+        "memory",
+        "karpathy",
+        "compiler"
+      ],
+      "created": 1775693644.745687
+    },
+    "33": {
+      "content": "cersei \u2014 graph memory, microsecond recall, MCP support, sub-agents",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "fast",
+        "memory",
+        "graph",
+        "recall"
+      ],
+      "created": 1775693644.745687
+    },
+    "34": {
+      "content": "timesfm \u2014 Google time series model for market forecasting",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "trading",
+        "timeseries",
+        "forecast",
+        "market"
+      ],
+      "created": 1775693644.745688
+    },
+    "35": {
+      "content": "ComfyUI-OmniVoice-TTS \u2014 zero-shot voice cloning, multilingual TTS",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "speech",
+        "tts",
+        "cloning",
+        "voice"
+      ],
+      "created": 1775693644.7456892
+    },
+    "36": {
+      "content": "openscreen \u2014 open-source screen recording for demos",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "screen",
+        "video",
+        "demo",
+        "recording"
+      ],
+      "created": 1775693644.74569
+    },
+    "37": {
+      "content": "caveman \u2014 65% token reduction for Claude Code",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "claude",
+        "tokens",
+        "efficiency",
+        "optimization"
+      ],
+      "created": 1775693644.7456908
+    },
+    "38": {
+      "content": "iMessage via orioncommandcenter1@gmail.com \u2014 conversational",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "text",
+        "conversational",
+        "imessage"
+      ],
+      "created": 1775693644.7456908
+    },
+    "39": {
+      "content": "Phone +1 (808) 724-7946 via Telnyx \u2014 voice calls + SMS",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "phone",
+        "sms",
+        "call",
+        "voice"
+      ],
+      "created": 1775693644.745692
+    },
+    "40": {
+      "content": "Telegram @OrionCommand1Bot \u2014 50+ slash commands",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "bot",
+        "commands",
+        "telegram"
+      ],
+      "created": 1775693644.745693
+    },
+    "41": {
+      "content": "Dashboard at atlascommand.vip \u2014 pixel agents, real-time monitoring",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "dashboard",
+        "monitoring",
+        "web"
+      ],
+      "created": 1775693644.745693
+    },
+    "42": {
+      "content": "ClipSprout \u2014 $9.99/mo app on FORGE, Next.js + Supabase + Stripe",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "app",
+        "clipsprout",
+        "revenue"
+      ],
+      "created": 1775693644.745694
+    },
+    "43": {
+      "content": "VytalHealth \u2014 $14.99/mo health app on FORGE",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "app",
+        "health",
+        "vytalhealth",
+        "revenue"
+      ],
+      "created": 1775693644.7456949
+    },
+    "44": {
+      "content": "BitDuel \u2014 Telegram mini-app, SOL staking, skill games, built needs deployment",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "crypto",
+        "gaming",
+        "telegram",
+        "bitduel"
+      ],
+      "created": 1775693644.745696
+    },
+    "45": {
+      "content": "Car Intelligence \u2014 VR30DDTT OBD-II + AI tuning pipeline",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "obd",
+        "tuning",
+        "car",
+        "vr30"
+      ],
+      "created": 1775693644.745697
+    },
+    "46": {
+      "content": "Biosignal Intelligence \u2014 body sensors + Raspberry Pi health monitoring",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "health",
+        "sensors",
+        "raspberry",
+        "biosignal"
+      ],
+      "created": 1775693644.745697
+    },
+    "47": {
+      "content": "Project NOMAD \u2014 offline knowledge server, Wikipedia + maps + medical + AI",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "emergency",
+        "offline",
+        "fallback",
+        "nomad"
+      ],
+      "created": 1775693644.745698
+    },
+    "48": {
+      "content": "Trader Agent \u2014 planned, free APIs, market analysis, Telegram alerts",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "agent",
+        "alerts",
+        "trader",
+        "market"
+      ],
+      "created": 1775693644.7456992
+    },
+    "49": {
+      "content": "AI Agency \u2014 selling ready-made agents, $500-2k per agent",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "selling",
+        "revenue",
+        "agency",
+        "agents"
+      ],
+      "created": 1775693644.7456992
+    }
+  }
+}

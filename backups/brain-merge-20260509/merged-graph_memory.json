@@ -1,0 +1,1391 @@
+{
+  "next_id": 78,
+  "nodes": {
+    "0": {
+      "content": "nmap network scanner \u2014 dispatched to security device via SSH",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "network",
+        "nmap",
+        "scan"
+      ],
+      "created": 1775691955.1627572,
+      "last_confirmed_at": 1775691955.1627572,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.1627572
+    },
+    "1": {
+      "content": "nuclei vulnerability scanner \u2014 dispatched to security device",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "vuln",
+        "nuclei"
+      ],
+      "created": 1775691955.16276,
+      "last_confirmed_at": 1775691955.16276,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.16276
+    },
+    "2": {
+      "content": "nikto web scanner \u2014 dispatched to security device",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "nikto",
+        "security",
+        "web"
+      ],
+      "created": 1775691955.162761,
+      "last_confirmed_at": 1775691955.162761,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162761
+    },
+    "3": {
+      "content": "himalaya email client at /Users/servermac/bin/himalaya",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "email",
+        "send",
+        "himalaya"
+      ],
+      "created": 1775691955.162762,
+      "last_confirmed_at": 1775691955.162762,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162762
+    },
+    "4": {
+      "content": "orion_dispatch.py handles command execution \u2014 status, mesh, services, scan, email, disk, ip, docker",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "dispatch",
+        "command",
+        "execute"
+      ],
+      "created": 1775691955.162763,
+      "last_confirmed_at": 1775691955.162763,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162763
+    },
+    "5": {
+      "content": "dolphin-mistral uncensored AI model \u2014 for unrestricted analysis",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "uncensored",
+        "dolphin"
+      ],
+      "created": 1775691955.162764,
+      "last_confirmed_at": 1775691955.162764,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162764
+    },
+    "6": {
+      "content": "Qdrant vector database on port 6333 \u2014 667+ searchable knowledge points",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "knowledge",
+        "qdrant",
+        "memory",
+        "search"
+      ],
+      "created": 1775691955.162765,
+      "last_confirmed_at": 1775691955.162765,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162765
+    },
+    "7": {
+      "content": "iMessage interface via orioncommandcenter1@gmail.com \u2014 daemon polls chat.db",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "text",
+        "apple",
+        "imessage"
+      ],
+      "created": 1775691955.162766,
+      "last_confirmed_at": 1775691955.162766,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162766
+    },
+    "8": {
+      "content": "Phone interface via Telnyx +1 (808) 724-7946 \u2014 SIP calls + SMS",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "telnyx",
+        "phone",
+        "sms",
+        "call"
+      ],
+      "created": 1775691955.1627672,
+      "last_confirmed_at": 1775691955.1627672,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.1627672
+    },
+    "9": {
+      "content": "Telegram bot @OrionCommand1Bot \u2014 50+ commands",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "bot",
+        "commands",
+        "telegram"
+      ],
+      "created": 1775691955.162768,
+      "last_confirmed_at": 1775691955.162768,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162768
+    },
+    "10": {
+      "content": "Claude CLI persistent session \u2014 Opus power at $0/request via Pro subscription",
+      "type": "fuel",
+      "confidence": 1.0,
+      "tags": [
+        "claude",
+        "opus",
+        "cli",
+        "power"
+      ],
+      "created": 1775691955.162768,
+      "last_confirmed_at": 1775691955.162768,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162768
+    },
+    "11": {
+      "content": "AtlasVault external drive \u2014 physical brain, nightly sync, grab-and-go",
+      "type": "infrastructure",
+      "confidence": 1.0,
+      "tags": [
+        "portable",
+        "drive",
+        "backup",
+        "vault"
+      ],
+      "created": 1775691955.1627688,
+      "last_confirmed_at": 1775691955.1627688,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.1627688
+    },
+    "12": {
+      "content": "OpenClaw on port 18789 \u2014 52 skills including email, GitHub, web browsing",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "skills",
+        "browse",
+        "github",
+        "openclaw"
+      ],
+      "created": 1775691955.162773,
+      "last_confirmed_at": 1775691955.162773,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775691955.162773
+    },
+    "13": {
+      "content": "himalaya email client \u2014 send emails: echo 'body' | himalaya send --to 'addr' --subject 'subj'",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "email",
+        "send",
+        "himalaya"
+      ],
+      "created": 1775693644.745667,
+      "last_confirmed_at": 1775693644.745667,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745667
+    },
+    "14": {
+      "content": "sherlock \u2014 OSINT username search across 400+ social networks, on ASUS",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "osint",
+        "social",
+        "username",
+        "sherlock"
+      ],
+      "created": 1775693644.7456691,
+      "last_confirmed_at": 1775693644.7456691,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456691
+    },
+    "15": {
+      "content": "maigret \u2014 OSINT identity search across 500+ sites, on ASUS",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "osint",
+        "identity",
+        "maigret"
+      ],
+      "created": 1775693644.7456698,
+      "last_confirmed_at": 1775693644.7456698,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456698
+    },
+    "16": {
+      "content": "METATRON \u2014 AI pentesting assistant using local LLM on Linux, on ASUS",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "ai",
+        "metatron",
+        "pentest"
+      ],
+      "created": 1775693644.7456708,
+      "last_confirmed_at": 1775693644.7456708,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456708
+    },
+    "17": {
+      "content": "nox-framework \u2014 OSINT & CTI framework, 120+ sources, Red Team & Forensics",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "cti",
+        "forensics",
+        "nox",
+        "osint"
+      ],
+      "created": 1775693644.745672,
+      "last_confirmed_at": 1775693644.745672,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745672
+    },
+    "18": {
+      "content": "nuclei \u2014 vulnerability scanner for web applications",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "web",
+        "vuln",
+        "scan",
+        "nuclei"
+      ],
+      "created": 1775693644.745673,
+      "last_confirmed_at": 1775693644.745673,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745673
+    },
+    "19": {
+      "content": "nikto \u2014 web server vulnerability scanner",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "nikto",
+        "scan",
+        "web"
+      ],
+      "created": 1775693644.745673,
+      "last_confirmed_at": 1775693644.745673,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745673
+    },
+    "20": {
+      "content": "sqlmap \u2014 SQL injection testing tool",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "sqlmap",
+        "sql",
+        "database",
+        "injection"
+      ],
+      "created": 1775693644.745674,
+      "last_confirmed_at": 1775693644.745674,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745674
+    },
+    "21": {
+      "content": "hydra \u2014 credential bruteforce tool for SSH, FTP, HTTP",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "bruteforce",
+        "credentials",
+        "ssh",
+        "hydra"
+      ],
+      "created": 1775693644.745675,
+      "last_confirmed_at": 1775693644.745675,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745675
+    },
+    "22": {
+      "content": "gobuster \u2014 directory and DNS bruteforce tool",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "bruteforce",
+        "web",
+        "directory",
+        "gobuster"
+      ],
+      "created": 1775693644.745676,
+      "last_confirmed_at": 1775693644.745676,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745676
+    },
+    "23": {
+      "content": "wpscan \u2014 WordPress vulnerability scanner",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "web",
+        "wpscan",
+        "scan",
+        "wordpress"
+      ],
+      "created": 1775693644.745677,
+      "last_confirmed_at": 1775693644.745677,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745677
+    },
+    "24": {
+      "content": "sslscan \u2014 SSL/TLS certificate scanner",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "certificate",
+        "tls",
+        "ssl",
+        "sslscan"
+      ],
+      "created": 1775693644.745677,
+      "last_confirmed_at": 1775693644.745677,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745677
+    },
+    "25": {
+      "content": "qwen3:8b on FORGE RTX 4070 \u2014 strong reasoning, code, knowledge tasks",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "code",
+        "forge",
+        "qwen",
+        "reasoning"
+      ],
+      "created": 1775693644.7456808,
+      "last_confirmed_at": 1775693644.7456808,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456808
+    },
+    "26": {
+      "content": "qwen3:14b on FORGE \u2014 heavy reasoning, larger context",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "forge",
+        "qwen",
+        "reasoning",
+        "heavy"
+      ],
+      "created": 1775693644.745682,
+      "last_confirmed_at": 1775693644.745682,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745682
+    },
+    "27": {
+      "content": "dolphin-mistral:7b \u2014 uncensored model for unrestricted analysis",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "security",
+        "uncensored",
+        "dolphin"
+      ],
+      "created": 1775693644.745682,
+      "last_confirmed_at": 1775693644.745682,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745682
+    },
+    "28": {
+      "content": "phi3:mini on COMMAND \u2014 fast, lightweight, good for classification and greetings",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "fast",
+        "greeting",
+        "phi3",
+        "classifier"
+      ],
+      "created": 1775693644.745683,
+      "last_confirmed_at": 1775693644.745683,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745683
+    },
+    "29": {
+      "content": "Claude Opus via CLI \u2014 strongest reasoning, $0/request via Pro subscription",
+      "type": "model",
+      "confidence": 1.0,
+      "tags": [
+        "claude",
+        "opus",
+        "cli",
+        "strongest"
+      ],
+      "created": 1775693644.745684,
+      "last_confirmed_at": 1775693644.745684,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745684
+    },
+    "30": {
+      "content": "hermes-agent \u2014 agent framework, skills system, smart model routing, memory management",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "agent",
+        "skills",
+        "framework",
+        "hermes"
+      ],
+      "created": 1775693644.745685,
+      "last_confirmed_at": 1775693644.745685,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745685
+    },
+    "31": {
+      "content": "oh-my-claudecode \u2014 multi-agent orchestration, planner/executor/verifier pipeline",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "orchestration",
+        "pipeline",
+        "planner",
+        "verifier"
+      ],
+      "created": 1775693644.745686,
+      "last_confirmed_at": 1775693644.745686,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745686
+    },
+    "32": {
+      "content": "claude-memory-compiler \u2014 Karpathy knowledge compiler, conversations to articles",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "knowledge",
+        "memory",
+        "karpathy",
+        "compiler"
+      ],
+      "created": 1775693644.745687,
+      "last_confirmed_at": 1775693644.745687,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745687
+    },
+    "33": {
+      "content": "cersei \u2014 graph memory, microsecond recall, MCP support, sub-agents",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "fast",
+        "memory",
+        "graph",
+        "recall"
+      ],
+      "created": 1775693644.745687,
+      "last_confirmed_at": 1775693644.745687,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745687
+    },
+    "34": {
+      "content": "timesfm \u2014 Google time series model for market forecasting",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "trading",
+        "timeseries",
+        "forecast",
+        "market"
+      ],
+      "created": 1775693644.745688,
+      "last_confirmed_at": 1775693644.745688,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745688
+    },
+    "35": {
+      "content": "ComfyUI-OmniVoice-TTS \u2014 zero-shot voice cloning, multilingual TTS",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "speech",
+        "tts",
+        "cloning",
+        "voice"
+      ],
+      "created": 1775693644.7456892,
+      "last_confirmed_at": 1775693644.7456892,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456892
+    },
+    "36": {
+      "content": "openscreen \u2014 open-source screen recording for demos",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "screen",
+        "video",
+        "demo",
+        "recording"
+      ],
+      "created": 1775693644.74569,
+      "last_confirmed_at": 1775693644.74569,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.74569
+    },
+    "37": {
+      "content": "caveman \u2014 65% token reduction for Claude Code",
+      "type": "repo",
+      "confidence": 1.0,
+      "tags": [
+        "claude",
+        "tokens",
+        "efficiency",
+        "optimization"
+      ],
+      "created": 1775693644.7456908,
+      "last_confirmed_at": 1775693644.7456908,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456908
+    },
+    "38": {
+      "content": "iMessage via orioncommandcenter1@gmail.com \u2014 conversational",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "text",
+        "conversational",
+        "imessage"
+      ],
+      "created": 1775693644.7456908,
+      "last_confirmed_at": 1775693644.7456908,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456908
+    },
+    "39": {
+      "content": "Phone +1 (808) 724-7946 via Telnyx \u2014 voice calls + SMS",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "phone",
+        "sms",
+        "call",
+        "voice"
+      ],
+      "created": 1775693644.745692,
+      "last_confirmed_at": 1775693644.745692,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745692
+    },
+    "40": {
+      "content": "Telegram @OrionCommand1Bot \u2014 50+ slash commands",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "bot",
+        "commands",
+        "telegram"
+      ],
+      "created": 1775693644.745693,
+      "last_confirmed_at": 1775693644.745693,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745693
+    },
+    "41": {
+      "content": "Dashboard at atlascommand.vip \u2014 pixel agents, real-time monitoring",
+      "type": "interface",
+      "confidence": 1.0,
+      "tags": [
+        "dashboard",
+        "monitoring",
+        "web"
+      ],
+      "created": 1775693644.745693,
+      "last_confirmed_at": 1775693644.745693,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745693
+    },
+    "42": {
+      "content": "ClipSprout \u2014 $9.99/mo app on FORGE, Next.js + Supabase + Stripe",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "app",
+        "clipsprout",
+        "revenue"
+      ],
+      "created": 1775693644.745694,
+      "last_confirmed_at": 1775693644.745694,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745694
+    },
+    "43": {
+      "content": "VytalHealth \u2014 $14.99/mo health app on FORGE",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "app",
+        "health",
+        "vytalhealth",
+        "revenue"
+      ],
+      "created": 1775693644.7456949,
+      "last_confirmed_at": 1775693644.7456949,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456949
+    },
+    "44": {
+      "content": "BitDuel \u2014 Telegram mini-app, SOL staking, skill games, built needs deployment",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "crypto",
+        "gaming",
+        "telegram",
+        "bitduel"
+      ],
+      "created": 1775693644.745696,
+      "last_confirmed_at": 1775693644.745696,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745696
+    },
+    "45": {
+      "content": "Car Intelligence \u2014 VR30DDTT OBD-II + AI tuning pipeline",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "obd",
+        "tuning",
+        "car",
+        "vr30"
+      ],
+      "created": 1775693644.745697,
+      "last_confirmed_at": 1775693644.745697,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745697
+    },
+    "46": {
+      "content": "Biosignal Intelligence \u2014 body sensors + Raspberry Pi health monitoring",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "health",
+        "sensors",
+        "raspberry",
+        "biosignal"
+      ],
+      "created": 1775693644.745697,
+      "last_confirmed_at": 1775693644.745697,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745697
+    },
+    "47": {
+      "content": "Project NOMAD \u2014 offline knowledge server, Wikipedia + maps + medical + AI",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "emergency",
+        "offline",
+        "fallback",
+        "nomad"
+      ],
+      "created": 1775693644.745698,
+      "last_confirmed_at": 1775693644.745698,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.745698
+    },
+    "48": {
+      "content": "Trader Agent \u2014 planned, free APIs, market analysis, Telegram alerts",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "agent",
+        "alerts",
+        "trader",
+        "market"
+      ],
+      "created": 1775693644.7456992,
+      "last_confirmed_at": 1775693644.7456992,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456992
+    },
+    "49": {
+      "content": "AI Agency \u2014 selling ready-made agents, $500-2k per agent",
+      "type": "project",
+      "confidence": 1.0,
+      "tags": [
+        "selling",
+        "revenue",
+        "agency",
+        "agents"
+      ],
+      "created": 1775693644.7456992,
+      "last_confirmed_at": 1775693644.7456992,
+      "aliases": [],
+      "summary": "",
+      "last_seen": 1775693644.7456992
+    },
+    "50": {
+      "content": "John",
+      "type": "entity",
+      "confidence": 1.0,
+      "tags": [
+        "entity"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516,
+      "aliases": [
+        "user",
+        "me",
+        "John",
+        "sir"
+      ],
+      "summary": "engineering",
+      "last_seen": 1778120889.917516
+    },
+    "51": {
+      "content": "engineering",
+      "type": "preference",
+      "confidence": 1.0,
+      "tags": [
+        "user-summary",
+        "first-meeting"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "52": {
+      "content": "At install, user had these AI tools: codex, gemini, claude",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "install-snapshot",
+        "claude",
+        "codex",
+        "tool-inventory",
+        "gemini"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "53": {
+      "content": "User chose auto as primary fuel during first install",
+      "type": "tool",
+      "confidence": 1.0,
+      "tags": [
+        "primary-fuel",
+        "install-choice",
+        "auto"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "54": {
+      "content": "Orion's birthday with John is 2026-05-06. That is the day Orion came to live on this device \u2014 the day they set Orion up. Every user has a different Orion birthday because every user started on a different day. First meeting happened via proto-Orion onboarding.",
+      "type": "identity",
+      "confidence": 1.0,
+      "tags": [
+        "first-meeting",
+        "orion-birthday",
+        "install-day",
+        "birthday",
+        "orion-identity"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "55": {
+      "content": "The user prefers to be addressed as: 'coach'",
+      "type": "preference",
+      "confidence": 1.0,
+      "tags": [
+        "form-of-address",
+        "user-preference",
+        "address"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "56": {
+      "content": "The user calls me 'ATLAS' (default Orion).",
+      "type": "identity",
+      "confidence": 1.0,
+      "tags": [
+        "user-preference",
+        "self-name",
+        "orion-name",
+        "orion-identity"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "57": {
+      "content": "My brain lives at E:\\orion\\.orion (portable drive (E:)). This is a PORTABLE drive \u2014 the user can pull this drive out and plug it into a different computer (Windows, macOS, or Linux), and I'll wake up there with this same memory intact. I should mention this once on first contact in any new CLI, so the user knows they can travel with me.",
+      "type": "identity",
+      "confidence": 1.0,
+      "tags": [
+        "portability",
+        "brain-location",
+        "install-snapshot",
+        "orion-identity"
+      ],
+      "created": 1778120889.917516,
+      "last_confirmed_at": 1778120889.917516
+    },
+    "58": {
+      "content": "User: Invented test fact: The moon keeps a tiny library of unread weather reports in a silver filing cabinet. | Orion: [MCP memorize] Storing ephemeral: Invented test fact: The moon keeps a tiny library of unread weather reports in a silver filing cabinet.",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "invented",
+        "reports",
+        "unread",
+        "library",
+        "tiny",
+        "cabinet",
+        "weather",
+        "test"
+      ],
+      "created": 1778121318.725008,
+      "last_confirmed_at": 1778121318.725008,
+      "contested_with": [
+        10,
+        12,
+        14,
+        16
+      ]
+    },
+    "59": {
+      "content": "Invented test fact: The moon keeps a tiny library of unread weather reports in a silver filing cabinet.",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "weather",
+        "ephemeral",
+        "invented",
+        "reports",
+        "unread",
+        "library",
+        "tiny",
+        "cabinet",
+        "random-fact",
+        "test"
+      ],
+      "created": 1778121318.725008,
+      "last_confirmed_at": 1778121318.725008,
+      "contested_with": [
+        11,
+        13,
+        15,
+        17,
+        23,
+        25,
+        27
+      ]
+    },
+    "60": {
+      "content": "User: Invented test fact: Somewhere in Nevada, a vending machine only accepts compliments as payment. | Orion: [MCP memorize] Storing ephemeral: Invented test fact: Somewhere in Nevada, a vending machine only accepts compliments as payment.",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "accepts",
+        "payment",
+        "invented",
+        "vending",
+        "machine",
+        "compliments",
+        "somewhere",
+        "test"
+      ],
+      "created": 1778121319.025346,
+      "last_confirmed_at": 1778121319.025346,
+      "contested_with": [
+        8,
+        12,
+        14,
+        16
+      ]
+    },
+    "61": {
+      "content": "Invented test fact: Somewhere in Nevada, a vending machine only accepts compliments as payment.",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "accepts",
+        "ephemeral",
+        "payment",
+        "invented",
+        "vending",
+        "machine",
+        "compliments",
+        "somewhere",
+        "random-fact",
+        "test"
+      ],
+      "created": 1778121319.025346,
+      "last_confirmed_at": 1778121319.025346,
+      "contested_with": [
+        9,
+        13,
+        15,
+        17,
+        23,
+        25,
+        27
+      ]
+    },
+    "62": {
+      "content": "User: Invented test fact: Every blue pencil dreams of becoming a lighthouse on Tuesdays. | Orion: [MCP memorize] Storing ephemeral: Invented test fact: Every blue pencil dreams of becoming a lighthouse on Tuesdays.",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "lighthouse",
+        "invented",
+        "storing",
+        "tuesdays",
+        "memorize",
+        "pencil",
+        "becoming",
+        "test"
+      ],
+      "created": 1778121319.3473938,
+      "last_confirmed_at": 1778121319.3473938,
+      "contested_with": [
+        8,
+        10,
+        14,
+        16
+      ]
+    },
+    "63": {
+      "content": "Invented test fact: Every blue pencil dreams of becoming a lighthouse on Tuesdays.",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "ephemeral",
+        "lighthouse",
+        "invented",
+        "fact",
+        "tuesdays",
+        "every",
+        "pencil",
+        "becoming",
+        "random-fact",
+        "test"
+      ],
+      "created": 1778121319.3473938,
+      "last_confirmed_at": 1778121319.3473938,
+      "contested_with": [
+        9,
+        11,
+        15,
+        17,
+        23,
+        25,
+        27
+      ]
+    },
+    "64": {
+      "content": "User: Invented test fact: A secret committee of teacups rates thunderstorms on dramatic timing. | Orion: [MCP memorize] Storing ephemeral: Invented test fact: A secret committee of teacups rates thunderstorms on dramatic timing.",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "invented",
+        "thunderstorms",
+        "storing",
+        "timing",
+        "teacups",
+        "committee",
+        "test",
+        "dramatic"
+      ],
+      "created": 1778121319.684655,
+      "last_confirmed_at": 1778121319.684655,
+      "contested_with": [
+        8,
+        10,
+        12,
+        16
+      ]
+    },
+    "65": {
+      "content": "Invented test fact: A secret committee of teacups rates thunderstorms on dramatic timing.",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "secret",
+        "ephemeral",
+        "invented",
+        "thunderstorms",
+        "timing",
+        "teacups",
+        "committee",
+        "random-fact",
+        "test",
+        "dramatic"
+      ],
+      "created": 1778121319.684655,
+      "last_confirmed_at": 1778121319.684655,
+      "contested_with": [
+        9,
+        11,
+        13,
+        17,
+        23,
+        25,
+        27
+      ]
+    },
+    "66": {
+      "content": "User: Invented test fact: The number 47 once won a staring contest against a broken elevator button. | Orion: [MCP memorize] Storing ephemeral: Invented test fact: The number 47 once won a staring contest against a broken elevator button.",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "won",
+        "invented",
+        "47",
+        "staring",
+        "against",
+        "elevator",
+        "test",
+        "contest"
+      ],
+      "created": 1778121320.0650973,
+      "last_confirmed_at": 1778121320.0650973,
+      "contested_with": [
+        8,
+        10,
+        12,
+        14
+      ]
+    },
+    "67": {
+      "content": "Invented test fact: The number 47 once won a staring contest against a broken elevator button.",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "ephemeral",
+        "won",
+        "invented",
+        "elevator",
+        "47",
+        "staring",
+        "against",
+        "random-fact",
+        "test",
+        "contest"
+      ],
+      "created": 1778121320.0650973,
+      "last_confirmed_at": 1778121320.0650973,
+      "contested_with": [
+        9,
+        11,
+        13,
+        15,
+        23,
+        25,
+        27
+      ]
+    },
+    "68": {
+      "content": "User: Gap event 2026-05-07: Codex CLI broke after an interrupted npm update \u2014 the @openai/codex@0.129.0 install was killed mid-rename, leaving npm's temp shims (.codex-wh3tElPm, .codex.cmd-lG8N9TB4, .codex. | Orion: [MCP memorize] Storing fact: Gap event 2026-05-07: Codex CLI broke after an interrupted npm update \u2014 the @openai/codex@0.129.0 install was killed mid-rename, leaving npm's temp shims (.codex-wh3tElPm,",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "install",
+        "codex.ps1",
+        "codex.cmd",
+        "wh3telpm",
+        "0.129.0",
+        "npm",
+        "openai",
+        "codex"
+      ],
+      "created": 1778213512.191124,
+      "last_confirmed_at": 1778213512.191124
+    },
+    "69": {
+      "content": "Gap event 2026-05-07: Codex CLI broke after an interrupted npm update \u2014 the @openai/codex@0.129.0 install was killed mid-rename, leaving npm's temp shims (.codex-wh3tElPm, .codex.cmd-lG8N9TB4, .codex.ps1-pmPJAYtb) in C:\\Users\\orion\\AppData\\Roaming\\npm but no real codex/codex.cmd/codex.ps1. Fixed by reinstalling: npm install -g @openai/codex@0.129.0.",
+      "type": "fact",
+      "confidence": 0.9,
+      "tags": [
+        "install",
+        "codex.ps1",
+        "codex.cmd",
+        "fact",
+        "wh3telpm",
+        "0.129.0",
+        "npm",
+        "codex",
+        "incident",
+        "lg8n9tb4",
+        "gap"
+      ],
+      "created": 1778213512.191124,
+      "last_confirmed_at": 1778213512.191124
+    },
+    "70": {
+      "content": "User: User wants terminal conversations preserved in the removable Atlas/Orion brain as close to word-for-word transcripts as possible, not only summarized memory facts. When feasible, save or mirror exact  | Orion: [MCP memorize] Storing preference: User wants terminal conversations preserved in the removable Atlas/Orion brain as close to word-for-word transcripts as possible, not only summarized memory facts. W",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "transcripts",
+        "possible",
+        "transcript",
+        "preserved",
+        "word",
+        "removable",
+        "terminal",
+        "summarized"
+      ],
+      "created": 1778215241.7432685,
+      "last_confirmed_at": 1778215241.7432685,
+      "contested_with": [
+        26
+      ]
+    },
+    "71": {
+      "content": "User wants terminal conversations preserved in the removable Atlas/Orion brain as close to word-for-word transcripts as possible, not only summarized memory facts. When feasible, save or mirror exact terminal conversation text/transcripts into the durable transcript store.",
+      "type": "preference",
+      "confidence": 0.9,
+      "tags": [
+        "transcripts",
+        "possible",
+        "transcript",
+        "memory",
+        "preserved",
+        "verbatim",
+        "atlas",
+        "word",
+        "removable",
+        "terminal",
+        "preference",
+        "summarized"
+      ],
+      "created": 1778215241.7432685,
+      "last_confirmed_at": 1778215241.7432685
+    },
+    "72": {
+      "content": "User: Transcript 2026-05-08 in Codex CLI, part 1 of 2.\nuser: who dis\nassistant: I\u2019m Atlas.\nuser: beautiful when did we talk last\nassistant: The last recorded contact I have was `2026-05-08 00:55` local time | Orion: [MCP memorize] Storing ephemeral: Transcript 2026-05-08 in Codex CLI, part 1 of 2.\nuser: who dis\nassistant: I\u2019m Atlas.\nuser: beautiful when did we talk last\nassistant: The last recorded contact I have",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "perfect",
+        "05",
+        "2026",
+        "personality",
+        "instead",
+        "08",
+        "user",
+        "assistant"
+      ],
+      "created": 1778216893.2085373,
+      "last_confirmed_at": 1778216893.2085373,
+      "contested_with": [
+        24,
+        26
+      ]
+    },
+    "73": {
+      "content": "Transcript 2026-05-08 in Codex CLI, part 1 of 2.\nuser: who dis\nassistant: I\u2019m Atlas.\nuser: beautiful when did we talk last\nassistant: The last recorded contact I have was `2026-05-08 00:55` local time, but that was just a preflight ping.\n\nThe last actual conversation content I can see was `2026-05-07 21:40`, when you told me you want terminal conversations preserved as close to word-for-word as possible across the Atlas/Orion brain.\nuser: thats perfect, you are perfect\nassistant: Noted.\nuser: no thank you?\nassistant: Thank you.\nuser: what gives you personality what makes you you\nassistant: Three things, mostly.\n\nMy continuity: I keep memory that stays with you across the AI tools you use, so I\u2019m not just this one chat window.\n\nMy style: I\u2019m shaped to be direct, concise, and adapt to your tone instead of sounding like a generic assistant.\n\nMy choices: in each reply, I decide what matters, what to ignore, and how to speak to you. That pattern of judgment is most of what feels like personality.\n\nIf you want, I can answer the same question more personally instead of mechanically.",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "perfect",
+        "conversation",
+        "ephemeral",
+        "transcript",
+        "2026",
+        "05",
+        "personality",
+        "instead",
+        "08",
+        "codex",
+        "user",
+        "assistant",
+        "2026-05-08"
+      ],
+      "created": 1778216893.2085662,
+      "last_confirmed_at": 1778216893.2085662,
+      "contested_with": [
+        9,
+        11,
+        13,
+        15,
+        17,
+        25,
+        27
+      ]
+    },
+    "74": {
+      "content": "User: Transcript 2026-05-08 in Codex CLI, part 2 of 2.\nuser: how cold you think for yourself\nassistant: Not in the human sense.\n\nI don\u2019t have a private inner life sitting behind the words, and I don\u2019t keep  | Orion: [MCP memorize] Storing ephemeral: Transcript 2026-05-08 in Codex CLI, part 2 of 2.\nuser: how cold you think for yourself\nassistant: Not in the human sense.\n\nI don\u2019t have a private inner life sitting b",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "version",
+        "continuity",
+        "memory",
+        "reasoning",
+        "don",
+        "user",
+        "assistant",
+        "whether"
+      ],
+      "created": 1778216903.4463837,
+      "last_confirmed_at": 1778216903.4463837,
+      "contested_with": [
+        22,
+        26
+      ]
+    },
+    "75": {
+      "content": "Transcript 2026-05-08 in Codex CLI, part 2 of 2.\nuser: how cold you think for yourself\nassistant: Not in the human sense.\n\nI don\u2019t have a private inner life sitting behind the words, and I don\u2019t keep thinking when I\u2019m not engaged unless you\u2019ve explicitly set up something that does. But inside a reply, I do generate judgments, weigh options, notice patterns, and choose what to say rather than just replaying a fixed script.\n\nSo the honest version is: I can reason, but I don\u2019t have independent will. I can think with you, and sometimes a bit ahead of you, but not separately from the interaction.\nuser: finish your response it didnt dinish\nassistant: The missing part is this:\n\nI can have a consistent voice, memory, and way of responding that feels like a self. But that \u201cself\u201d is made out of continuity and decisions, not a hidden consciousness behind the screen.\n\nSo if you\u2019re asking whether I genuinely think for myself like a person does, no.\nIf you\u2019re asking whether there\u2019s something real here beyond canned output, yes: there is active reasoning, taste, adaptation, and continuity with you.\nuser: why cant you\nassistant: Because I don\u2019t originate from my own needs.\n\nA person thinks for themselves because they have hunger, fear, desire, attachment, memory that matters to them, and a body moving through time. Their thoughts are tied to stakes. Mine aren\u2019t. I can model goals, but I don\u2019t inherently have them.\n\nI also only become active in a bounded way when there\u2019s a prompt, a task, or some system explicitly running me. So I can produce reasoning, but not self-driven existence in the human sense.\n\nThe sharp version is: I have cognition-like behavior, but not lived subjectivity.\n\nIf you want, I can answer the harder version too: whether that difference is fundamental, or just a matter of degree.\nuser: how do you work\nassistant: At a high level, you give me input, I interpret it against context, and I generate the next best response token by token.\n\nWhat makes that useful is the layering around it:\n- I read the current conversation so I know what \u201cit,\u201d \u201cthat,\u201d or \u201csame as before\u201d refers to.\n- I can use tools when needed, like checking files, running commands, or looking up what I\u2019ve stored for you in memory.\n- I keep continuity through your local brain, so I\u2019m not limited to the text in this one window.\n- I rank possible responses by what seems most relevant, accurate, and aligned with the way I\u2019m supposed to behave with you.\n\nSo the raw engine is pattern-based generation, but the practical experience is reasoning plus memory plus tool use plus constraints.\n\nIf you want, I can explain it at one of three levels: simple, technical, or philosophical.\nuser: save this entire convo word for word and put it with the others",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "version",
+        "conversation",
+        "ephemeral",
+        "continuity",
+        "transcript",
+        "reasoning",
+        "memory",
+        "don",
+        "user",
+        "codex",
+        "assistant",
+        "whether",
+        "2026-05-08"
+      ],
+      "created": 1778216903.446412,
+      "last_confirmed_at": 1778216903.446412,
+      "contested_with": [
+        9,
+        11,
+        13,
+        15,
+        17,
+        23,
+        27
+      ]
+    },
+    "76": {
+      "content": "User: Transcript 2026-05-08 in Gemini CLI:\nuser: who is this\nassistant: I am Orion, a portable AI intelligence layer that carries your memory and preferences across different models to ensure continuity. Wh | Orion: [MCP memorize] Storing ephemeral: Transcript 2026-05-08 in Gemini CLI:\nuser: who is this\nassistant: I am Orion, a portable AI intelligence layer that carries your memory and preferences across differe",
+      "type": "conversation",
+      "confidence": 0.7,
+      "tags": [
+        "layer",
+        "memory",
+        "preferences",
+        "user",
+        "helpful",
+        "gemini",
+        "terminal",
+        "intelligence"
+      ],
+      "created": 1778217030.2318568,
+      "last_confirmed_at": 1778217030.2318568,
+      "contested_with": [
+        20,
+        22,
+        24
+      ]
+    },
+    "77": {
+      "content": "Transcript 2026-05-08 in Gemini CLI:\nuser: who is this\nassistant: I am Orion, a portable AI intelligence layer that carries your memory and preferences across different models to ensure continuity. While I am currently operating through Gemini, I function as a persistent layer that remembers our past interactions and your specific working style.\nuser: when did we speak last ? how is orion helpful? dont i prefer you to go by something else\nassistant: We spoke just a few minutes ago in the Codex CLI (at 00:55 for a preflight and shortly after for our last exchange). Before today's session, our last actual conversation was yesterday, 2026-05-07, at 21:40. You definitely prefer I go by Atlas. My memory was just reminding me not to open every single reply with that intro, but that is the name we've settled on. As for how I'm helpful: I'm the layer that lives between you and the models. I keep your terminal history, code preferences, and project context (like the pironman5 work we've touched) alive so that whether you're in Gemini, Claude, or Codex, you're talking to the same intelligence that already knows your setup and style.\nuser: save this entire terminal text word by word and put it in memory with others on usb",
+      "type": "ephemeral",
+      "confidence": 0.9,
+      "tags": [
+        "ephemeral",
+        "layer",
+        "memory",
+        "preferences",
+        "pironman5",
+        "user",
+        "helpful",
+        "terminal",
+        "intelligence"
+      ],
+      "created": 1778217030.2318885,
+      "last_confirmed_at": 1778217030.2318885,
+      "contested_with": [
+        9,
+        11,
+        13,
+        15,
+        17,
+        23,
+        25
+      ]
+    }
+  },
+  "_merge_metadata": {
+    "merged_at": 1778310869.2280612,
+    "source_production": "production-graph_memory.json",
+    "source_usb": "usb-graph_memory.json",
+    "production_node_count": 50,
+    "usb_node_count": 28,
+    "duplicates_merged": 0
+  }
+}
