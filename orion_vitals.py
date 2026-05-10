@@ -94,12 +94,41 @@ class Vitals:
     Thread-safe. Every counter, every recovery registration, every
     dependency probe, locked. The pulse loop and the recovery loop
     each run as their own daemon thread.
+
+    v1.2 additions (Plexus research-driven):
+    - restart_policy declaration (OTP: permanent / transient / temporary)
+    - restart-intensity budget (MaxR / MaxT) with PAMP escalation on
+      overshoot — services emit a hard danger signal instead of flapping
+    - DCA-style danger signal emit (Aickelin Danger Theory) —
+      emit_pamp / emit_danger / emit_safe replace simple booleans;
+      orion_immune.py aggregates these into a context-adjusted score
+      and decides restart-strategy choice (one_for_one / rest_for_one /
+      one_for_all) — the novel OTP+AIS synthesis from 2026-05-09
+      research.
     """
 
-    def __init__(self, service_name: str):
+    def __init__(self, service_name: str,
+                 restart_policy: str = "permanent",
+                 max_restarts: int = 5,
+                 restart_window_sec: float = 300.0):
         self.name = service_name
         self.start_ts = time.time()
         self._lock = threading.Lock()
+
+        # Restart policy (OTP-style)
+        # permanent: always restart on exit (e.g. claustrum, substrate)
+        # transient: restart only on abnormal exit
+        # temporary: never restart (e.g. one-shot ingest)
+        if restart_policy not in ("permanent", "transient", "temporary"):
+            restart_policy = "permanent"
+        self.restart_policy = restart_policy
+
+        # Restart-intensity budget. If we exceed max_restarts in
+        # restart_window_sec, emit PAMP and stop self-recovering —
+        # the immune layer + executive must take over.
+        self.max_restarts = int(max_restarts)
+        self.restart_window_sec = float(restart_window_sec)
+        self._restart_log: deque = deque(maxlen=100)
 
         # Counters
         self.event_count = 0
@@ -141,9 +170,80 @@ class Vitals:
             self.error_log.append((self.last_error_ts, msg))
 
     def note_recovery(self, recovery_name: str) -> None:
+        now = time.time()
         with self._lock:
             self.recovery_count += 1
-            self.last_recovery_ts = time.time()
+            self.last_recovery_ts = now
+            self._restart_log.append(now)
+            # Prune outside the window
+            cutoff = now - self.restart_window_sec
+            while self._restart_log and self._restart_log[0] < cutoff:
+                self._restart_log.popleft()
+            recent_restarts = len(self._restart_log)
+        # If we're over the budget, escalate via PAMP (hard danger signal)
+        if recent_restarts > self.max_restarts:
+            self.emit_pamp(
+                signal_id="restart_storm",
+                detail=f"{recent_restarts} restarts in {self.restart_window_sec}s — "
+                       f"reflex insufficient, immune/executive should take over",
+                weight=1.0,
+            )
+
+    # ---------- DCA-style danger signaling (Aickelin Danger Theory) ----------
+    # Three signal classes:
+    #   PAMP   — Pathogen-Associated Molecular Pattern; hard error, "this is wrong now"
+    #   danger — drift / anomaly / latency creep; weighted concern signal
+    #   safe   — recovery confirmation, brings the danger context back down
+    # The immune aggregator (orion_immune.py) subscribes to these and
+    # decides restart-strategy choice from the context-adjusted danger
+    # score, not from boolean health checks. This is what lets the
+    # supervision tree learn its own restart policy from what worked.
+
+    def emit_pamp(self, signal_id: str, detail: str = "",
+                  weight: float = 1.0) -> None:
+        """Hard danger signal — definitely something is broken."""
+        try:
+            from orion_substrate import publish
+            publish(f"host.{self.name}.danger.pamp", {
+                "service": self.name,
+                "signal_id": signal_id,
+                "detail": detail[:300],
+                "weight": float(weight),
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+
+    def emit_danger(self, signal_id: str, weight: float,
+                    detail: str = "") -> None:
+        """Soft danger signal — concerning but not yet pathological.
+        Weight is a 0..1 magnitude. The immune aggregator treats these
+        as context that COULD escalate to PAMP if the pattern persists."""
+        try:
+            from orion_substrate import publish
+            publish(f"host.{self.name}.danger.warn", {
+                "service": self.name,
+                "signal_id": signal_id,
+                "weight": float(max(0.0, min(1.0, weight))),
+                "detail": detail[:300],
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+
+    def emit_safe(self, signal_id: str, detail: str = "") -> None:
+        """Resolution / recovery / nominal-operation confirmation.
+        Brings the danger context window's accumulated weight down."""
+        try:
+            from orion_substrate import publish
+            publish(f"host.{self.name}.danger.safe", {
+                "service": self.name,
+                "signal_id": signal_id,
+                "detail": detail[:200],
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
 
     # ---------- registration ----------
 

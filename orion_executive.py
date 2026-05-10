@@ -530,6 +530,45 @@ def _action_fingerprint(proposal: dict) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:6]
 
 
+def _generate_oob_code() -> str:
+    """4-digit out-of-band code for tier3 approvals. Written to
+    ~/.orion/executive/.current_oob (filesystem-only — phone-only
+    attacker can't see this without filesystem access on a host).
+
+    Pattern from HITL research: out-of-band channel separation defeats
+    phone-only attackers. The user must read the code from FORGE's
+    terminal/dashboard and include it in the approval reply.
+    """
+    import secrets
+    code = f"{secrets.randbelow(10000):04d}"
+    try:
+        oob_path = EXECUTIVE_DIR / ".current_oob"
+        EXECUTIVE_DIR.mkdir(parents=True, exist_ok=True)
+        oob_path.write_text(json.dumps({
+            "code": code,
+            "issued_at": time.time(),
+            "expires_at": time.time() + 600,  # 10 min
+        }), encoding="utf-8")
+    except Exception:
+        pass
+    return code
+
+
+def _validate_oob_code(supplied: str) -> bool:
+    """Check supplied 4-digit code against the most-recently-issued one.
+    Returns False if expired, mismatched, or no current code."""
+    try:
+        oob_path = EXECUTIVE_DIR / ".current_oob"
+        if not oob_path.exists():
+            return False
+        d = json.loads(oob_path.read_text(encoding="utf-8"))
+        if time.time() > d.get("expires_at", 0):
+            return False
+        return supplied == d.get("code")
+    except Exception:
+        return False
+
+
 def _request_permission(proposal: dict, ctx: dict) -> str:
     """Surface the proposal to the user via reach.py with a tiered
     approval flow + action-fingerprint binding. Returns the
@@ -558,9 +597,11 @@ def _request_permission(proposal: dict, ctx: dict) -> str:
     # Publish a reach event with the fingerprinted permission ask.
     # tier1_auto bypasses the user — auto-applies (logged).
     # tier2_notify_after applies, then notifies with undo path.
-    # tier3_approve_before requires user reply quoting the fingerprint.
+    # tier3_approve_before requires user reply quoting the fingerprint
+    # AND a 4-digit OOB code printed to FORGE's terminal/dashboard.
     try:
         from orion_substrate import publish
+        oob_code = ""
         if tier == "tier1_auto":
             user_msg = (
                 "Applied automatically: " + proposal.get("summary", "(no summary)")
@@ -571,12 +612,23 @@ def _request_permission(proposal: dict, ctx: dict) -> str:
                 "Applying now: " + proposal.get("summary", "(no summary)")
                 + f". Reply 'undo {fingerprint}' if this was wrong."
             )
-        else:  # tier3
+        else:  # tier3 — out-of-band code required
+            oob_code = _generate_oob_code()
             user_msg = (
                 proposal.get("user_message", proposal.get("summary", ""))
-                + f"\\n\\nReply 'approve {fingerprint}' to apply, or 'deny {fingerprint}'. "
-                + "(expires in 6 hours)"
+                + f"\\n\\nReply 'approve {fingerprint} <code>' where <code> is the 4-digit "
+                + "code printed in FORGE's terminal (or 'deny {fingerprint}')."
+                + " (Code expires in 10 min, decision in 6 hours.)"
             )
+            # Print OOB code to all visible logs so user can see it
+            # from any terminal they have open on COMMAND
+            print(f"\\n[ORION OOB CODE] decision {decision_id} — code = {oob_code}\\n", flush=True)
+            try:
+                Path("/tmp/orion-oob.log").write_text(
+                    f"{time.time()}\\t{decision_id}\\t{oob_code}\\n"
+                )
+            except Exception:
+                pass
 
         publish("brain.executive.proposal", {
             "decision_id": decision_id,
@@ -752,13 +804,15 @@ def _on_user_decision(subject: str, payload: dict) -> None:
     if not text:
         return
 
-    # Match: (approve|deny|undo|a|d) [whitespace] <6-hex>
-    m = re.search(r"\b(approve|deny|undo|a|d)\b\s+([a-f0-9]{6})\b", text)
+    # Match: (approve|deny|undo|a|d) [whitespace] <6-hex> [optional 4-digit OOB code]
+    m = re.search(r"\b(approve|deny|undo|a|d)\b\s+([a-f0-9]{6})\b\s*(\d{4})?",
+                  text)
     if not m:
         return  # bare 'approve' without fingerprint is no longer authorizing
 
     verb = m.group(1)
     fingerprint = m.group(2)
+    oob_code = m.group(3) or ""
 
     if verb == "undo":
         _attempt_undo(fingerprint)
@@ -769,13 +823,42 @@ def _on_user_decision(subject: str, payload: dict) -> None:
     # Find the matching pending decision by fingerprint
     with _lock:
         decision_id = None
+        record = None
         for did, rec in _pending.items():
             if rec.get("fingerprint") == fingerprint:
                 decision_id = did
+                record = rec
                 break
     if not decision_id:
         logger.info("no pending decision matches fingerprint %s", fingerprint)
         return
+
+    # tier3 requires a valid OOB code (printed to FORGE terminal)
+    if approved and record and record.get("tier") == "tier3_approve_before":
+        if not oob_code or not _validate_oob_code(oob_code):
+            logger.warning(
+                "tier3 approval rejected: missing/invalid OOB code "
+                "for decision %s", decision_id,
+            )
+            try:
+                from orion_substrate import publish, channel_outbound_subject
+                parts = subject.split(".")
+                ch = parts[1] if len(parts) >= 3 else "imessage"
+                publish(channel_outbound_subject(ch), {
+                    "channel": ch,
+                    "recipient": payload.get("sender") or "",
+                    "text": (
+                        "I can't apply that without the 4-digit code printed "
+                        "to FORGE. Reply with the code appended: "
+                        f"'approve {fingerprint} <code>'."
+                    ),
+                    "ts": time.time(),
+                    "fuel_used": "executive_oob_reject",
+                })
+            except Exception:
+                pass
+            return
+
     _apply_remedy(decision_id, approved)
 
 
