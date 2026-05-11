@@ -340,6 +340,19 @@ if (Test-Path $preflight) {
 }
 
 # ----------------------------------------------------------------
+# Plexus deploy on Windows is currently not auto-wired:
+# launchctl/systemd-user don't exist; the plexus_deploy.sh path is
+# macOS/Linux only. Windows users can still run individual services
+# manually (python orion_chronos.py &, etc.) or use WSL. Tracked as
+# a known gap — the brain itself is fully wired here.
+# ----------------------------------------------------------------
+Say ""
+Warn "Plexus services (substrate + 14 adaptive layers) are macOS/Linux only today."
+Say "  On Windows, the brain + MCP + channels are wired and working."
+Say "  For the full Plexus, run the install on a Mac/Linux host that has this brain visible."
+Say "  Tracked gap — Windows service-manager wiring is pending."
+
+# ----------------------------------------------------------------
 # Done
 # ----------------------------------------------------------------
 

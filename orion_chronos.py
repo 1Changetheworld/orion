@@ -95,8 +95,40 @@ from pathlib import Path
 
 logger = logging.getLogger("orion.chronos")
 
+def _discover_brain_dir() -> Path:
+    """Find where the brain actually lives. The clock travels with the brain,
+    not with the host. Founder rule 2026-05-10: 'the brain needs one centralized
+    functional offline clock IN THE BRAIN so the concepts of time are never lost.'
+
+    Resolution order:
+      1. $ORION_BRAIN_DIR — explicit override from service env
+      2. Repo-local .orion/ — when developing from a clone
+      3. USB mounts under /Volumes/*/.orion or /media/$USER/*/.orion
+      4. ~/.orion — host-resident fallback when no portable brain is present
+    """
+    env = os.environ.get("ORION_BRAIN_DIR")
+    if env:
+        p = Path(os.path.expanduser(env))
+        if p.exists():
+            return p
+    here = Path(__file__).resolve().parent
+    local = here / ".orion"
+    if (local / "brain").exists():
+        return local
+    for prefix in ["/Volumes", f"/media/{os.environ.get('USER', '')}"]:
+        try:
+            for d in Path(prefix).iterdir():
+                cand = d / ".orion"
+                if (cand / "brain").exists():
+                    return cand
+        except (FileNotFoundError, PermissionError):
+            pass
+    return Path(os.path.expanduser("~/.orion"))
+
+
+BRAIN_DIR = _discover_brain_dir()
 CHRONOS_DIR = Path(os.path.expanduser(
-    os.environ.get("ORION_CHRONOS_DIR", "~/.orion/chronos")
+    os.environ.get("ORION_CHRONOS_DIR", str(BRAIN_DIR / "chronos"))
 ))
 TICK_INTERVAL_SEC = float(os.environ.get("ORION_CHRONOS_TICK_SEC", "60"))
 DRIFT_THRESHOLD_SEC = float(os.environ.get("ORION_CHRONOS_DRIFT_SEC", "5.0"))

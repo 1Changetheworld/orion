@@ -325,6 +325,30 @@ info "Running preflight health check..."
 say ""
 "$VENV_DIR/bin/python" "$SCRIPT_DIR/orion_preflight.py" || true
 
+# ----------------------------------------------------------------
+# Plexus deploy — the adaptive layers (substrate + 14 services).
+# Ships-with-install rule (founder 2026-05-07): every layer Orion
+# has ever shipped lives in one repo and arrives in one install.
+# Opt-out for users who only want the brain + CLI surface.
+# ----------------------------------------------------------------
+if [ -f "$SCRIPT_DIR/plexus_deploy.sh" ] && { command -v launchctl >/dev/null 2>&1 || command -v systemctl >/dev/null 2>&1; }; then
+    say ""
+    info "Plexus services (substrate + 14 adaptive layers)"
+    info "  These run in the background. They are what makes Orion adaptive:"
+    info "  homeostasis, self-healing, deliberation, dreaming, will, time-awareness."
+    ask "Deploy the Plexus now? [Y/n]"
+    case "${_ans:-y}" in
+        n|N|no|No)
+            warn "Plexus skipped. You can deploy later: bash plexus_deploy.sh"
+            ;;
+        *)
+            export ORION_BRAIN_DIR="${ORION_BRAIN_DIR:-$SCRIPT_DIR/.orion}"
+            [ -d "$ORION_BRAIN_DIR/brain" ] || export ORION_BRAIN_DIR="$HOME/.orion"
+            bash "$SCRIPT_DIR/plexus_deploy.sh" || warn "Plexus deploy returned non-zero — check ~/.orion/*.err"
+            ;;
+    esac
+fi
+
 say ""
 ok "Install complete."
 say ""

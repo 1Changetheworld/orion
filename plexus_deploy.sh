@@ -63,6 +63,11 @@ esac
 
 PYTHON="${ORION_PYTHON:-/usr/bin/python3}"
 NATS_URL="${ORION_NATS_URL:-nats://127.0.0.1:4222}"
+BRAIN_DIR="${ORION_BRAIN_DIR:-}"
+# Comma-separated peer routes for NATS cluster mode (cross-host mesh).
+# Example: ORION_MESH_PEERS=nats://forge.tailnet:6222,nats://orionshome.tailnet:6222
+MESH_PEERS="${ORION_MESH_PEERS:-}"
+CLUSTER_NAME="${ORION_CLUSTER_NAME:-orion-mesh}"
 
 # Mode dispatch
 case "${1:-deploy}" in
@@ -132,6 +137,17 @@ echo "=== Plexus deploy on $PLATFORM ==="
 echo "  repo: $REPO_DIR"
 echo "  python: $PYTHON"
 echo "  substrate: $NATS_URL"
+
+# Build cluster route flags from MESH_PEERS (comma-separated nats:// URLs).
+# Empty MESH_PEERS = single-host mode (cluster port still open for future peers).
+ROUTE_FLAGS=""
+if [ -n "$MESH_PEERS" ]; then
+    IFS=',' read -ra _PEERS <<< "$MESH_PEERS"
+    for p in "${_PEERS[@]}"; do
+        ROUTE_FLAGS="$ROUTE_FLAGS --routes $p"
+    done
+    echo "  mesh peers: $MESH_PEERS"
+fi
 echo
 
 # ---------- substrate (binary) ----------
@@ -160,9 +176,12 @@ deploy_substrate_macos() {
     <string>--addr</string><string>0.0.0.0</string>
     <string>--port</string><string>4222</string>
     <string>--http_port</string><string>8222</string>
-    <string>--name</string><string>orion-host</string>
+    <string>--name</string><string>orion-$(hostname -s)</string>
     <string>--store_dir</string><string>${HOME}/.orion/nats-data</string>
     <string>--jetstream</string>
+    <string>--cluster_name</string><string>${CLUSTER_NAME}</string>
+    <string>--cluster</string><string>nats://0.0.0.0:6222</string>
+    ${ROUTE_FLAGS}
   </array>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${HOME}/.orion/nats-logs/nats.out</string>
@@ -221,7 +240,7 @@ Description=Orion NATS substrate
 After=network.target
 
 [Service]
-ExecStart=${nats_bin} --addr 0.0.0.0 --port 4222 --http_port 8222 --jetstream --store_dir ${HOME}/.orion/nats-data
+ExecStart=${nats_bin} --addr 0.0.0.0 --port 4222 --http_port 8222 --jetstream --store_dir ${HOME}/.orion/nats-data --cluster_name ${CLUSTER_NAME} --cluster nats://0.0.0.0:6222 ${ROUTE_FLAGS}
 Restart=always
 
 [Install]
@@ -248,6 +267,8 @@ ExecStart=${PYTHON} ${REPO_DIR}/${script}
 WorkingDirectory=${REPO_DIR}
 Environment=PYTHONPATH=${REPO_DIR}
 Environment=ORION_NATS_URL=${NATS_URL}
+Environment=ORION_BRAIN_DIR=${BRAIN_DIR}
+Environment=ORION_HOST_ID=$(hostname -s)
 Restart=always
 RestartSec=5
 StandardOutput=append:${HOME}/.orion/${name}.out
