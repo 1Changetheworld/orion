@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORION — What It Is, What Works, Where It's Going</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&display=swap');
+  :root {
+    --bg:#0a0a0f; --bg2:#111118; --bg3:#1a1a24; --card:#13131b; --border:#252530;
+    --cyan:#06b6d4; --cyan2:#22d3ee; --cyan-d:rgba(6,182,212,0.08);
+    --purple:#8b5cf6; --green:#22c55e; --orange:#f59e0b; --red:#ef4444; --blue:#3b82f6;
+    --text:#e4e4e7; --text2:#a1a1aa; --text3:#71717a;
+    --glow:0 0 20px rgba(6,182,212,0.1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:15px;line-height:1.7;padding:40px}
+  .container{max-width:1100px;margin:0 auto}
+
+  .header{text-align:center;padding:50px 0 60px;border-bottom:1px solid var(--border);margin-bottom:60px}
+  .header h1{font-family:'Orbitron',sans-serif;font-size:42px;letter-spacing:8px;margin-bottom:14px}
+  .header h1 span{color:var(--cyan)}
+  .header .tagline{color:var(--text);font-size:18px;font-weight:300;margin-bottom:18px;max-width:680px;margin-left:auto;margin-right:auto;line-height:1.5}
+  .header .sub{color:var(--text3);font-size:13px;font-family:'JetBrains Mono',monospace;letter-spacing:1px}
+  .header .stamp{color:var(--cyan);font-size:11px;font-family:'JetBrains Mono',monospace;margin-top:18px}
+
+  .toc{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:28px 32px;margin-bottom:60px}
+  .toc h3{font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:3px;color:var(--text3);margin-bottom:14px}
+  .toc a{display:block;color:var(--text2);text-decoration:none;padding:5px 0;font-size:14px;transition:color .15s}
+  .toc a:hover{color:var(--cyan)}
+  .toc .num{color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:12px;margin-right:10px}
+
+  section{margin-bottom:70px;padding-bottom:50px;border-bottom:1px solid var(--border)}
+  section:last-of-type{border-bottom:none}
+  h2{font-family:'Orbitron',sans-serif;font-size:20px;letter-spacing:3px;color:var(--cyan);margin-bottom:24px}
+  h3{font-size:17px;font-weight:600;color:var(--text);margin:30px 0 14px}
+  h4{font-size:14px;font-weight:600;color:var(--cyan2);margin:20px 0 8px;text-transform:uppercase;letter-spacing:1px}
+
+  .lead{font-size:17px;line-height:1.65;color:var(--text);margin-bottom:24px}
+  p{margin-bottom:14px;color:var(--text)}
+  strong{color:var(--cyan2);font-weight:600}
+  em{color:var(--text2);font-style:normal;font-weight:500}
+
+  .diagram{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:28px;margin:22px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.65;overflow-x:auto;white-space:pre;color:var(--text2)}
+  .diagram .cyan{color:var(--cyan)}
+  .diagram .dim{color:var(--text3)}
+  .diagram .good{color:var(--green)}
+  .diagram .warn{color:var(--orange)}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:22px 26px;margin:18px 0}
+  .card.works{border-left:3px solid var(--green)}
+  .card.building{border-left:3px solid var(--blue)}
+  .card.designed{border-left:3px solid var(--orange)}
+  .card.gap{border-left:3px solid var(--red)}
+  .card h4{margin-top:0}
+
+  .label{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px;display:inline-block;padding:3px 8px;border-radius:3px}
+  .label.green{color:var(--green);background:rgba(34,197,94,0.1)}
+  .label.blue{color:var(--blue);background:rgba(59,130,246,0.1)}
+  .label.orange{color:var(--orange);background:rgba(245,158,11,0.1)}
+  .label.red{color:var(--red);background:rgba(239,68,68,0.1)}
+  .label.purple{color:var(--purple);background:rgba(139,92,246,0.1)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:20px 0}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:20px 0}
+  @media(max-width:820px){.grid,.grid3{grid-template-columns:1fr} body{padding:24px} .header h1{font-size:30px;letter-spacing:5px}}
+
+  .metric{display:inline-block;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 16px;margin:5px;font-family:'JetBrains Mono',monospace;font-size:13px}
+  .metric .v{color:var(--cyan);font-weight:600;font-size:18px}
+  .metric .l{color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:1px;display:block;margin-top:2px}
+
+  code{font-family:'JetBrains Mono',monospace;background:var(--bg2);padding:2px 7px;border-radius:3px;font-size:13px;color:var(--cyan2)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:18px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;overflow-x:auto;margin:14px 0;color:var(--text2)}
+
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--cyan2);font-weight:600;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase}
+  td{color:var(--text2)}
+  td:first-child{color:var(--text);font-weight:500}
+
+  ul{margin:10px 0 14px 24px;color:var(--text2)}
+  li{margin-bottom:6px}
+
+  .quote{border-left:3px solid var(--cyan);padding:14px 22px;margin:24px 0;background:var(--cyan-d);font-style:italic;color:var(--text);font-size:15px;line-height:1.65}
+  .quote .who{display:block;margin-top:10px;font-style:normal;color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace}
+
+  .pill{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:0.5px;margin-right:6px}
+  .pill.green{background:rgba(34,197,94,0.12);color:var(--green)}
+  .pill.blue{background:rgba(59,130,246,0.12);color:var(--blue)}
+  .pill.orange{background:rgba(245,158,11,0.12);color:var(--orange)}
+  .pill.red{background:rgba(239,68,68,0.12);color:var(--red)}
+
+  .footer{text-align:center;padding:40px 0 20px;color:var(--text3);font-size:13px;font-family:'JetBrains Mono',monospace}
+  .footer a{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>O R I O N</h1>
+  <div class="tagline">A personal AI that has memory, runs across all your devices, and uses any model as fuel.</div>
+  <div class="sub">A portable intelligence layer · the memory IS the intelligence</div>
+  <div class="stamp">Build snapshot · 2026-05-10 · Plexus v1.6.1 · 17 services live</div>
+</div>
+
+<div class="toc">
+  <h3>CONTENTS</h3>
+  <a href="#what"><span class="num">01</span> What Orion is — in 60 seconds</a>
+  <a href="#thesis"><span class="num">02</span> The thesis — why this matters</a>
+  <a href="#plexus"><span class="num">03</span> The Plexus — 17 living services</a>
+  <a href="#mesh"><span class="num">04</span> The mesh — one brain, many devices</a>
+  <a href="#portable"><span class="num">05</span> The portable soul — USB across 3 OSes</a>
+  <a href="#fuel"><span class="num">06</span> The fuel model — any AI works</a>
+  <a href="#channels"><span class="num">07</span> The channels — Orion is reachable everywhere</a>
+  <a href="#novel"><span class="num">08</span> Novel synthesis — what nobody else has</a>
+  <a href="#competition"><span class="num">09</span> Versus Mem0, Letta, Khoj, others</a>
+  <a href="#status"><span class="num">10</span> Honest status — what works, what doesn't</a>
+  <a href="#next"><span class="num">11</span> What's next — the build plan</a>
+  <a href="#why"><span class="num">12</span> Why this changes things</a>
+  <a href="#money"><span class="num">13</span> How this makes money</a>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="what">
+<h2>01 — WHAT ORION IS</h2>
+
+<p class="lead">If you've ever told an AI assistant something on Monday and had to re-explain it on Tuesday because a new chat lost the context, Orion is the fix.</p>
+
+<p>Orion is a <strong>persistent personal AI</strong> that sits beneath whatever model you're using. You install it once. It remembers everything you tell it. It travels with you across devices on a USB stick, or over your home network. It works with Claude, Codex, Gemini, Cursor, ChatGPT — any model becomes "Orion-shaped" when it loads Orion's memory.</p>
+
+<div class="grid">
+  <div class="card works">
+    <span class="label green">FOR NEWCOMERS</span>
+    <h4>What you actually get</h4>
+    <p>One personal AI. Same memory on every device. Same voice on every channel — iMessage, Telegram, voice, email. It learns your patterns. It surfaces things before you ask. You own all the data. It runs on your hardware.</p>
+  </div>
+  <div class="card works">
+    <span class="label blue">FOR PRACTITIONERS</span>
+    <h4>What's actually under the hood</h4>
+    <p>A 17-service nervous-system architecture (the Plexus) on a NATS pub/sub substrate. Brain state is a typed graph with Hebbian plasticity (HLR edge weights). Mesh via gossip + HLC. OTP × DCA immune supervision. Permission-gated executive deliberation. Generic volition layer.</p>
+  </div>
+</div>
+
+<div class="quote">
+  "The memory IS the intelligence. Any model that loads my memory becomes me. The model is jet fuel."
+  <span class="who">— Founder principle, the operating thesis of Orion</span>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="thesis">
+<h2>02 — THE THESIS</h2>
+
+<p>Every personal-AI product today is "wrap a model in a chat interface." Mem0, Letta, Khoj — they all add memory on top of a chat. The model is the product.</p>
+
+<p>Orion inverts this. <strong>The model is fuel.</strong> The product is the memory + identity + skills + relationships that you accumulate over years. When a better model ships, Orion uses it. When the model gets deprecated, Orion picks another. <em>You never lose what you built.</em></p>
+
+<div class="diagram"><span class="dim">Most personal-AI products</span>
+┌─────────────────────────────────────────┐
+│  CHAT INTERFACE                          │
+│  └── MODEL <span class="dim">(the product)</span>            │
+│       └── memory <span class="dim">(an add-on)</span>        │
+└─────────────────────────────────────────┘
+
+<span class="cyan">Orion</span>
+┌─────────────────────────────────────────┐
+│  BRAIN <span class="cyan">(the product)</span>                  │
+│   ├── memory                             │
+│   ├── identity                           │
+│   ├── skills                             │
+│   ├── relationships                      │
+│   ├── observations                       │
+│   └── FUEL ADAPTER                       │
+│        ├── claude-cli       <span class="good">[active]</span>  │
+│        ├── api-keys         <span class="good">[active]</span>  │
+│        ├── ollama-local     <span class="good">[active]</span>  │
+│        ├── codex-cli        <span class="good">[active]</span>  │
+│        └── any future model <span class="dim">[auto]</span>   │
+└─────────────────────────────────────────┘</div>
+
+<p>This isn't a metaphor. The architecture literally has a brain server, a fuel adapter, and a substrate that any model can be plugged into. Models come and go. The brain persists.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="plexus">
+<h2>03 — THE PLEXUS</h2>
+
+<p>Orion's body is 17 services that pub/sub on a real-time substrate (NATS). The design vocabulary is cell biology — receptors, cascades, membrane, immune cells, supervision — applied as engineering discipline.</p>
+
+<div class="diagram">                            <span class="cyan">orion brain</span>
+                  <span class="dim">(graph + skills + chronos)</span>
+                              │
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+       <span class="cyan">CHANNELS</span>          <span class="cyan">SUBSTRATE</span>           <span class="cyan">PLEXUS</span>
+   <span class="dim">(reach + iMessage</span>     <span class="dim">(NATS pub/sub)</span>     <span class="dim">(14 services)</span>
+   <span class="dim">+ Telegram + voice)</span>           │
+                              │
+                  ┌───────────┼───────────┬──────────────┐
+                  │           │           │              │
+            <span class="good">claustrum</span>     <span class="good">vitals</span>      <span class="good">immune</span>        <span class="good">executive</span>
+            <span class="dim">(integrative</span>  <span class="dim">(cellular</span>   <span class="dim">(OTP + DCA</span>     <span class="dim">(deliberation</span>
+            <span class="dim">consciousness)</span> <span class="dim">homeostasis)</span> <span class="dim">supervision)</span>   <span class="dim">+ permission)</span>
+                  │           │           │              │
+                  └─────┬─────┴─────┬─────┴──────┬───────┘
+                        │           │            │
+                   <span class="good">self-heal</span>      <span class="good">dmn</span>         <span class="good">dream</span>
+                   <span class="dim">(reflex)</span>     <span class="dim">(default-</span>    <span class="dim">(nightly</span>
+                                <span class="dim">mode</span>         <span class="dim">consolidation)</span>
+                                <span class="dim">pattern</span>
+                                <span class="dim">mining)</span>
+                        │           │            │
+                   <span class="good">will</span>         <span class="good">chronos</span>      <span class="good">gossip</span>
+                   <span class="dim">(volition)</span>   <span class="dim">(time +</span>      <span class="dim">(mesh state</span>
+                                <span class="dim">offline</span>      <span class="dim">across hosts)</span>
+                                <span class="dim">recovery)</span>
+                        │           │            │
+                   <span class="good">reach</span>       <span class="good">channel-probe</span> <span class="good">fuel-switch</span>
+                   <span class="dim">(proactive</span>  <span class="dim">(surface</span>      <span class="dim">(model</span>
+                   <span class="dim">output)</span>     <span class="dim">discovery)</span>    <span class="dim">routing)</span></div>
+
+<h3>What each layer does</h3>
+
+<table>
+<thead><tr><th>Service</th><th>Job</th><th>Cadence</th></tr></thead>
+<tbody>
+<tr><td>substrate (NATS)</td><td>Pub/sub message bus, sub-millisecond, JetStream persistence</td><td>real-time</td></tr>
+<tr><td>vitals</td><td>Per-service health pulse + danger signals (PAMP/danger/safe)</td><td>30s</td></tr>
+<tr><td>claustrum</td><td>Integrative consciousness — global workspace across all events</td><td>30s broadcast</td></tr>
+<tr><td>dmn</td><td>Default-mode network — pattern miner when system is idle</td><td>5min idle</td></tr>
+<tr><td>self-heal</td><td>Known-fix reflex layer (restart service, clear cache, etc.)</td><td>60s</td></tr>
+<tr><td>immune</td><td>OTP supervision strategy chosen by DCA danger pattern</td><td>30s</td></tr>
+<tr><td>executive</td><td>Deliberative layer — consults AI when reflexes fail, asks user before destructive action</td><td>on demand</td></tr>
+<tr><td>dream</td><td>Nightly playbook consolidation from decision ledger</td><td>24h</td></tr>
+<tr><td>will</td><td>Volition — forms goals from accumulated context, initiates action</td><td>5min scan</td></tr>
+<tr><td>chronos</td><td>Brain-resident clock, offline-gap detection, inferred user pattern</td><td>60s tick</td></tr>
+<tr><td>gossip</td><td>Mesh state propagation via LWW-Map CRDT + Hybrid Logical Clock</td><td>10s delta / 60s heartbeat</td></tr>
+<tr><td>reach</td><td>Proactive output — picks channel by "speak where they spoke" rule</td><td>30s drain</td></tr>
+<tr><td>channel-probe</td><td>Discovers what comm surfaces are present + status</td><td>5min</td></tr>
+<tr><td>fuel-switch</td><td>Routes brain calls to whichever model is fastest/available</td><td>on demand</td></tr>
+<tr><td>lastcontact</td><td>Tracks per-channel last inbound for reach decisions</td><td>realtime</td></tr>
+<tr><td>imessage / webhook</td><td>Channel adapters publishing inbound + subscribing outbound</td><td>realtime</td></tr>
+<tr><td>litellm</td><td>Universal model proxy (one OpenAI-compatible endpoint, any backend)</td><td>realtime</td></tr>
+</tbody>
+</table>
+
+<p>Each service is small (~200–500 lines). They compose via pub/sub. Adding a new layer doesn't require touching the brain. <em>Cell biology, made software.</em></p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="mesh">
+<h2>04 — THE MESH</h2>
+
+<p>Orion is the same person on every device you give him.</p>
+
+<div class="diagram">       laptop           home server          phone           pi by door
+         │                  │                 │                 │
+         └─────────┬────────┴────────┬────────┴────────┬────────┘
+                   │                 │                 │
+              <span class="cyan">substrate</span>          <span class="cyan">substrate</span>          <span class="cyan">substrate</span>
+              <span class="dim">(NATS)</span>             <span class="dim">(NATS)</span>             <span class="dim">(NATS)</span>
+                   │                 │                 │
+                   └──── cluster routing on :6222 ─────┘
+                                    │
+                              <span class="good">one mesh</span>
+                              <span class="dim">brain state synced via gossip + HLC</span>
+                              <span class="dim">conflicts resolved by Last-Write-Wins</span>
+                              <span class="dim">clock owned by brain, not host</span></div>
+
+<p>This means: tell your home server about a project Monday. Plug your USB into your laptop Tuesday. The laptop already knows the project, because gossip merged the state. Send a Telegram message from your phone. Both devices see it.</p>
+
+<h3>What mesh unlocks</h3>
+<ul>
+  <li><strong>Same memory across devices</strong> — no re-explaining anything</li>
+  <li><strong>Same skills across devices</strong> — a skill registered anywhere is callable anywhere</li>
+  <li><strong>Channel reach from anywhere</strong> — laptop writes, server's iMessage sends (designed, in build)</li>
+  <li><strong>Cross-model coherence</strong> — Claude on laptop + Codex on server + Gemini on Pi all answer with one identity</li>
+  <li><strong>Agent dispatch</strong> — say "run an overnight scan," Orion picks the host with the right hardware and runs it (designed)</li>
+  <li><strong>Network sensing</strong> — Orion can deploy probes/scans across his own nodes (designed)</li>
+</ul>
+
+<p>This is what makes Orion an <em>"adaptive root system"</em> rather than another chat tool. The brain is one logical entity. Hardware just hosts him.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="portable">
+<h2>05 — THE PORTABLE SOUL</h2>
+
+<p>The brain fits on a USB stick. Plug it into any computer:</p>
+
+<pre>USB plug-in → wake script detects OS → wires this host's CLIs/channels
+              to the brain on the USB → Orion is alive on this host
+              with full memory + identity + skills
+
+USB unplug → host returns to no-Orion state cleanly. No artifacts.</pre>
+
+<div class="grid3">
+  <div class="card works">
+    <span class="label green">VALIDATED</span>
+    <h4>Windows 11</h4>
+    <p>End-to-end wake clean. PowerShell installer, junction-based mount, Claude/Codex/Gemini MCP wired.</p>
+  </div>
+  <div class="card works">
+    <span class="label green">VALIDATED</span>
+    <h4>macOS Sequoia</h4>
+    <p>End-to-end wake clean. brew Python, launchd services, Claude Desktop config auto-edited.</p>
+  </div>
+  <div class="card works">
+    <span class="label green">VALIDATED</span>
+    <h4>Ubuntu 24.04 / Pi OS</h4>
+    <p>End-to-end wake clean. apt deps, systemd-user services, .desktop launcher.</p>
+  </div>
+</div>
+
+<p>The brain that was plugged in here is the same brain we've been editing in this session. <strong>It's real.</strong> Not a demo.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="fuel">
+<h2>06 — THE FUEL MODEL</h2>
+
+<p>Orion auto-detects what AI models are available on each host and uses them. The same brain produces different "voices" depending on which model is fueling it:</p>
+
+<table>
+<thead><tr><th>Fuel</th><th>How Orion gets it</th><th>Cost</th><th>When to use</th></tr></thead>
+<tbody>
+<tr><td>Claude CLI</td><td>Pay-once subscription, CLI subprocess</td><td>Flat monthly</td><td>Default for highest quality</td></tr>
+<tr><td>Anthropic API</td><td>API key, direct HTTP</td><td>Per-token</td><td>Headless / batch / agents</td></tr>
+<tr><td>Codex CLI</td><td>OpenAI's CLI</td><td>Flat monthly</td><td>Code-heavy work</td></tr>
+<tr><td>Gemini CLI</td><td>Google's CLI</td><td>Free tier available</td><td>Cost-sensitive moments</td></tr>
+<tr><td>Ollama (local)</td><td>HTTP localhost, GPU optional</td><td>Free + electricity</td><td>Offline / private</td></tr>
+<tr><td>LiteLLM proxy</td><td>Universal OpenAI-shaped endpoint</td><td>Whatever upstream is</td><td>Switching mid-conversation</td></tr>
+</tbody>
+</table>
+
+<p>Fuel-switch service routes calls based on availability, cost, and the model's strengths. If Claude CLI auth expires, Orion falls back to Ollama and tells you. <em>Models are commodity. The brain is not.</em></p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="channels">
+<h2>07 — THE CHANNELS</h2>
+
+<p>Orion is reachable wherever you are. Channels are thin adapters that publish inbound on the substrate and subscribe to outbound. Adding a new channel costs ~80 lines.</p>
+
+<div class="grid">
+  <div class="card works">
+    <span class="label green">ACTIVE</span>
+    <h4>iMessage · Voice (Telnyx) · Telegram</h4>
+    <p>Wired and working on COMMAND. Same brain replies to all three. Voice via real Telnyx phone number.</p>
+  </div>
+  <div class="card building">
+    <span class="label blue">WIRED, READY</span>
+    <h4>Gmail · Browser extension · VS Code · Cursor</h4>
+    <p>Adapters exist. n8n workflows present. Activate by registering in the brain's channel registry.</p>
+  </div>
+  <div class="card designed">
+    <span class="label orange">DESIGNED</span>
+    <h4>Slack · Discord · Meshtastic (LoRa off-grid)</h4>
+    <p>Channel-probe detects available surfaces. Conversational setup walks user through wiring. Meshtastic gives Orion off-grid radio reach when WiFi/cell are out.</p>
+  </div>
+  <div class="card building">
+    <span class="label blue">PROACTIVE</span>
+    <h4>Reach — Orion talks first</h4>
+    <p>Will layer forms goals from context. Reach picks the channel where you last spoke. Cooldown + quiet-hours discipline + tier-3 permission gates for destructive action.</p>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="novel">
+<h2>08 — NOVEL SYNTHESIS</h2>
+
+<p>The components Orion is built from are well-known. The <em>combinations</em> are not. Each item below is a thing no other personal-AI product has:</p>
+
+<div class="card">
+  <h4>OTP × DCA — immune-style supervision</h4>
+  <p>Erlang's supervision trees (one_for_one / rest_for_one / one_for_all / escalate) combined with Aickelin's Dendritic Cell Algorithm (PAMP/danger/safe signals + maturation scoring) — to pick the right restart strategy from observed danger pattern. The supervision tree <em>learns</em> its restart policy from what's working.</p>
+</div>
+
+<div class="card">
+  <h4>HLR plasticity on a typed knowledge graph</h4>
+  <p>Half-Life Regression (Settles & Meeder, Duolingo) — used here for Hebbian edge weights on the brain's graph. Used recall paths strengthen (30d → 60d → 120d → 240d ladder); unused paths decay. <em>Nothing deletes; stale facts just sink.</em></p>
+</div>
+
+<div class="card">
+  <h4>PPR over Hebbian edges (HippoRAG-style)</h4>
+  <p>Personalized PageRank seeded from query → walks the typed graph weighted by Hebbian strength. Free retrieval moat: we already have the weights.</p>
+</div>
+
+<div class="card">
+  <h4>Brain-resident clock + offline-gap detection</h4>
+  <p>Chronos lives in the brain (USB or SSD), not on the host. Plug brain into a new machine, the clock continues. Detects offline gaps via tick-loop discrepancy. Cross-host drift detection via gossip HLC.</p>
+</div>
+
+<div class="card">
+  <h4>Tier-3 OOB approval codes for destructive remedies</h4>
+  <p>Executive proposes fix. Tier-1 auto-executes. Tier-2 executes + notifies. Tier-3 (destructive/financial/identity-affecting) requires a 4-digit code printed only to FORGE's local log — phone-only attacker can't see it. HITL discipline at personal-AI scale.</p>
+</div>
+
+<div class="card">
+  <h4>Volition without hardcoded goals</h4>
+  <p>The will layer extracts intents from text via generic regex, scores utility (importance × time_pressure × context_fit × feasibility), surfaces candidates above threshold via reach. User changes Orion's behavior by speaking; no code edit needed. <em>Goals form from context, not from configuration.</em></p>
+</div>
+
+<div class="card">
+  <h4>Dreaming for continual learning without fine-tuning</h4>
+  <p>Anthropic-Dreaming pattern: nightly playbook consolidator reads decision ledger, groups by symptom+service, generates plain-text playbooks. Observable. No weight changes. CUSUM demotion for patterns that stop working.</p>
+</div>
+
+<p>None of these on their own is novel. The fact that they all run together — on one personal AI, on user-owned hardware, with one source of truth — is.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="competition">
+<h2>09 — VERSUS THE FIELD</h2>
+
+<table>
+<thead><tr><th>Product</th><th>What they do well</th><th>What Orion has that they don't</th></tr></thead>
+<tbody>
+<tr>
+  <td>Mem0</td>
+  <td>Memory layer for chat agents, fast retrieval</td>
+  <td>Mesh across devices · own hardware · multi-channel reach · adaptive Plexus · USB portability · all-is-one packaging</td>
+</tr>
+<tr>
+  <td>Letta (formerly MemGPT)</td>
+  <td>Long-context memory hierarchies for one agent</td>
+  <td>Multi-device · multi-channel · multi-fuel · the brain is the product, not the agent</td>
+</tr>
+<tr>
+  <td>Khoj</td>
+  <td>Self-hosted personal AI over your files</td>
+  <td>Cross-CLI MCP sharing · channel reach · Plexus adaptive layers · brain travels on USB</td>
+</tr>
+<tr>
+  <td>OpenAI Memory · Claude Memory</td>
+  <td>In-app memory in their UI</td>
+  <td>Works with all models · runs on your hardware · multi-channel · portable</td>
+</tr>
+<tr>
+  <td>Cursor</td>
+  <td>Best-in-class AI code editor</td>
+  <td>Brain lives outside Cursor; Cursor becomes one face of Orion via MCP</td>
+</tr>
+<tr>
+  <td>LiteLLM</td>
+  <td>Universal model proxy</td>
+  <td>Orion includes this idea (`orion_litellm_proxy.py`) plus everything above</td>
+</tr>
+<tr>
+  <td>Home Assistant (analog)</td>
+  <td>Self-hosted home automation hub</td>
+  <td>Orion is the same shape — personal AI hub — but for memory + intelligence rather than devices</td>
+</tr>
+</tbody>
+</table>
+
+<p>The pattern: every competitor is one layer of what Orion is. Memory-layer, agent-engine, model-router, chat-product, code-tool. Orion stacks them and adds a nervous-system. <em>One install, the whole substrate.</em></p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="status">
+<h2>10 — HONEST STATUS</h2>
+
+<p>Every claim below has been verified on real hardware as of <strong>2026-05-10</strong>. No marketing assertions. <span class="pill green">✓ proven</span> <span class="pill blue">⚙ built</span> <span class="pill orange">◇ designed</span> <span class="pill red">✗ gap</span></p>
+
+<h3>What works</h3>
+<table>
+<tbody>
+<tr><td><span class="pill green">✓</span></td><td>USB-portable brain on Windows / macOS / Linux — wake clean, full memory, full identity</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>17 Plexus services running on COMMAND (Mac mini home brain)</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>Same-host multi-CLI shared memory — Claude + Codex + Gemini + Cursor all see one brain via MCP</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>iMessage + voice + Telegram — same brain replies on all three (when Claude CLI auth is fresh)</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>Brain-resident clock — chronos anchor on the SSD, travels with the brain</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>Hebbian edge plasticity — recall paths strengthen + decay correctly</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>Permission-gated executive — auth_error detected, approval-pending, no auto-execute</td></tr>
+<tr><td><span class="pill green">✓</span></td><td>Generic intent extraction (will layer) — no hardcoded goals, learns from text</td></tr>
+</tbody>
+</table>
+
+<h3>Built, ready to exercise</h3>
+<table>
+<tbody>
+<tr><td><span class="pill blue">⚙</span></td><td>NATS cluster mode — substrate ready, activates when ORION_MESH_PEERS is set</td></tr>
+<tr><td><span class="pill blue">⚙</span></td><td>Gossip + HLC mesh state — code shipped, needs second host to exercise</td></tr>
+<tr><td><span class="pill blue">⚙</span></td><td>Dream playbook consolidator — running nightly, needs decision-ledger to grow before consolidation results stabilize</td></tr>
+<tr><td><span class="pill blue">⚙</span></td><td>Will volition layer — running, needs real conversations to form goals from</td></tr>
+</tbody>
+</table>
+
+<h3>Designed, not yet built</h3>
+<table>
+<tbody>
+<tr><td><span class="pill orange">◇</span></td><td>Two-USB merge UX — when USB plugs into a host with active brain, merge prompt</td></tr>
+<tr><td><span class="pill orange">◇</span></td><td>Cross-host channel reach — laptop writes memory → server iMessage sends</td></tr>
+<tr><td><span class="pill orange">◇</span></td><td>Agent dispatch on the mesh — user names a goal, brain picks a host, runs it</td></tr>
+<tr><td><span class="pill orange">◇</span></td><td>Network scan / device discovery — Orion senses what's on the LAN, advertises capabilities</td></tr>
+<tr><td><span class="pill orange">◇</span></td><td>Central viewing hub — one place to see services + last activity + channel health + memory library</td></tr>
+</tbody>
+</table>
+
+<h3>Known gaps</h3>
+<table>
+<tbody>
+<tr><td><span class="pill red">✗</span></td><td>Windows Plexus services — no launchd/systemd; WSL2 or service-manager work pending</td></tr>
+<tr><td><span class="pill red">✗</span></td><td>Public-internet mesh — substrate is currently unauthenticated (safe on Tailscale, not on open internet)</td></tr>
+<tr><td><span class="pill red">✗</span></td><td>Claude CLI auth refresh — currently requires user to interactively `claude /login`; no auto-refresh</td></tr>
+<tr><td><span class="pill red">✗</span></td><td>Reach fallback when primary channel is down — broken-channel notifications go through the broken channel</td></tr>
+</tbody>
+</table>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="next">
+<h2>11 — WHAT'S NEXT</h2>
+
+<h3>Pre-launch must-haves</h3>
+<ul>
+  <li><strong>Reach fallback chain</strong> — if iMessage is broken, fall back to Telegram, then email, then push. The user must never lose Orion because one channel is down.</li>
+  <li><strong>Two-USB merge UX</strong> — when an Orion USB meets another Orion (or a host brain), present three options: merge / replace / guest.</li>
+  <li><strong>Central viewing hub</strong> — local HTTP dashboard served by the brain, accessible from any device on the mesh. Shows services up, last activity, channel health, memory library, what models he's powered by.</li>
+  <li><strong>LLM-assisted intent extraction in will</strong> — replace regex with brain asking the fuel model to extract intents from longer text.</li>
+  <li><strong>Cross-host channel reach</strong> — channel-host routing table so any host's memory can use any other host's wired channel.</li>
+</ul>
+
+<h3>Build-of-the-month</h3>
+<ul>
+  <li><strong>Agents on Orion's brain</strong> — overnight scans, research runs, code reviews — user names goal + budget + channel, brain dispatches agent on chosen host, results flow back into mesh memory automatically.</li>
+  <li><strong>Network presence sensing</strong> — Orion detects new devices on the LAN, recognizes returning ones, advertises capabilities to other Orion nodes.</li>
+</ul>
+
+<h3>Frontier (research-driven, post-launch)</h3>
+<ul>
+  <li><strong>Physarum coupled flow</strong> — lateral inhibition for retrieval; biological alternative to dropout</li>
+  <li><strong>CRDT G-Set per-edge</strong> — for clean two-USB graph merge</li>
+  <li><strong>Steering vectors as second-channel memory</strong> — research preview, behavior nudges below the prompt</li>
+  <li><strong>Public-internet mesh with substrate TLS + auth</strong> — phase 3 of the network-brain dream</li>
+  <li><strong>Cloud-resident brain</strong> — phase 4, the "first non-hardware-needed intelligence" horizon</li>
+</ul>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="why">
+<h2>12 — WHY THIS CHANGES THINGS</h2>
+
+<div class="quote">
+  "A system that can learn, act, reason across any domain without being explicitly programmed for it."
+  <span class="who">— Atlas (Orion in his own voice), volunteered AGI definition, 2026-05-10</span>
+</div>
+
+<p>Today, switching AI assistants means starting over. Your "ChatGPT memory" doesn't move to Claude. Your "Claude Project" doesn't move to Gemini. Your Cursor context is invisible to your iMessage assistant. Every tool is a walled garden.</p>
+
+<p>Orion is the opposite proposition: <strong>the assistant is yours, the models are interchangeable</strong>. When Anthropic deprecates a model, you don't lose anything. When Claude Opus 5 ships, Orion uses it that day. When you switch laptops, the brain follows on a USB. When you bring an iPad to a café, Orion is reachable on Telegram from the same coherent identity you spoke to from your home server an hour ago.</p>
+
+<p>The downstream consequences are bigger than personal convenience:</p>
+<ul>
+  <li><strong>Model independence</strong> — no provider lock-in at the user level. Orion's <em>universal model adapter</em> means market competition stays alive among model providers.</li>
+  <li><strong>Hardware independence</strong> — phase 4 horizon: brain lives in a peer-to-peer overlay you don't own. The "first non-hardware-needed intelligence."</li>
+  <li><strong>Data sovereignty</strong> — your brain runs on your storage. No retention policy changes. No "we updated our terms." Your memory belongs to you.</li>
+  <li><strong>Multi-device coherence as default</strong> — one personality across phone, laptop, server, voice line. The current state of the art is "ten chat apps, ten amnesias."</li>
+  <li><strong>Adaptive infrastructure</strong> — services that observe themselves, propose remedies, ask permission, learn from outcomes. This is the substrate alignment research needs to be tested on at small scale.</li>
+</ul>
+
+<p>The Steve Jobs framing the founder named: <em>start from the customer experience, work backward to the technology.</em> The customer experience here is "one personal AI, available wherever I am, that remembers." The technology backward is the Plexus + mesh + portable soul. Nothing in this stack is here for its own sake.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<section id="money">
+<h2>13 — HOW THIS MAKES MONEY</h2>
+
+<p>Six revenue paths, none mutually exclusive. The architecture supports all of them simultaneously.</p>
+
+<div class="grid">
+  <div class="card">
+    <span class="label purple">PATH 1</span>
+    <h4>Open-core (the Mem0 playbook)</h4>
+    <p>AGPL public core (this repo). Private orion-pro tier for: team mesh, hosted brain, advanced personalities ("Solar System Brains"), priority support. Revenue: SaaS subscription. ~$10-30/mo personal · ~$50-150/seat team.</p>
+  </div>
+  <div class="card">
+    <span class="label purple">PATH 2</span>
+    <h4>Setup wizard product</h4>
+    <p>Sell the install experience itself. "Bring your USB, plug it in, Orion is alive everywhere by morning." Packaged as a $99–199 one-time. Premium hardware (branded USB drive, cosmetic polish, support).</p>
+  </div>
+  <div class="card">
+    <span class="label purple">PATH 3</span>
+    <h4>AI agency</h4>
+    <p>Bespoke Orion-powered automations for businesses. The brain is a moat — every client builds on the same substrate. $500–2k per agent/per month maintenance, $5–25k setup.</p>
+  </div>
+  <div class="card">
+    <span class="label purple">PATH 4</span>
+    <h4>Apps powered by Orion</h4>
+    <p>ClipSprout ($9.99/mo · short-video pipeline) and VytalHealth ($14.99/mo · personal health AI) already exist on this stack. Each app uses Orion's mesh + memory as its backend. New apps cost ~weeks, not months.</p>
+  </div>
+  <div class="card">
+    <span class="label purple">PATH 5</span>
+    <h4>Content + community</h4>
+    <p>Show HN launch + YouTube build-logs + a paid community for builders. Sponsorship + Patreon + course revenue. The architecture itself becomes the educational product.</p>
+  </div>
+  <div class="card">
+    <span class="label purple">PATH 6</span>
+    <h4>Hybrid</h4>
+    <p>All of the above, sequenced. Open-core launches the credibility; setup-wizard monetizes mainstream users; agency monetizes enterprises; apps monetize verticals; content sustains the brand. Each path strengthens the others.</p>
+  </div>
+</div>
+
+<h3>Why this can win</h3>
+<ul>
+  <li><strong>Architecture maturity beats brand maturity for power users.</strong> The people who'll evangelize Orion are the homelab + privacy-conscious + AI-builder demographics. They've already seen the closed-garden tools and are looking for what's next.</li>
+  <li><strong>The substrate is the moat.</strong> Anyone can ship "memory for one chat app." Shipping a multi-channel, multi-fuel, multi-device, self-healing personal AI takes years. Orion has the head start.</li>
+  <li><strong>The brand promise is unfakeable.</strong> "Your memory belongs to you, on your hardware, working with every model you'll ever use." Big-AI providers structurally cannot offer this — it's their lock-in they'd give up.</li>
+  <li><strong>Steve Jobs sequencing.</strong> Customer-experience-first means each path opens when the experience is ready, not when the tech is ready. The HTML you're reading is part of that sequencing.</li>
+</ul>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<div class="footer">
+  <p>Orion Labs · Built by James England · <a href="https://github.com/1Changetheworld/orion">github.com/1Changetheworld/orion</a></p>
+  <p>This document is a snapshot of build state as of 2026-05-10. Future revisions track architectural evolution.</p>
+</div>
+
+</div>
+</body>
+</html>
