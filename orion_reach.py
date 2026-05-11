@@ -163,6 +163,7 @@ _stop = threading.Event()
 _recent_inbound_channel: str | None = None
 _recent_inbound_ts: float = 0.0
 _channels_manifest: dict | None = None
+_channel_failures: dict[str, list[float]] = {}  # surface → [ts of recent fails]
 
 
 def _format_message_for_channel(item: dict, channel: str) -> str:
@@ -194,28 +195,92 @@ def _format_message_for_channel(item: dict, channel: str) -> str:
     return f"Notice: {kind}"
 
 
+def _active_surfaces() -> list[str]:
+    """Return surface names currently marked 'active' in the probe manifest,
+    sorted by preference (sticky priority order for the fallback chain)."""
+    if not _channels_manifest:
+        return []
+    PREF = ["imessage", "telegram", "telnyx_sms", "telnyx_call", "gmail",
+            "slack", "discord", "meshtastic", "generic_http", "push"]
+    actives = {s.get("surface"): s for s in _channels_manifest.get("surfaces", [])
+               if s.get("status") == "active"}
+    ordered = [c for c in PREF if c in actives]
+    extras = [c for c in actives if c not in PREF]
+    return ordered + extras
+
+
+def _failed_recently(channel: str, window_sec: float = 300) -> bool:
+    """True if this channel has reported a delivery failure in the recent window."""
+    failures = _channel_failures.get(channel)
+    if not failures:
+        return False
+    return any(time.time() - ts < window_sec for ts in failures[-3:])
+
+
 def _choose_channel(item: dict) -> str | None:
-    """Pick the best channel to push to, given current ecosystem state."""
+    """Pick the best channel — with fallback when primary is failing.
+
+    Founder rule 2026-05-11: "the brain should be adaptive enough to find
+    a way to reach out to me via other communication points to inform me
+    of this issue." When the channel the user last spoke from has had
+    recent delivery failures, fall through to the next active channel.
+
+    Order of consideration:
+      1. Last-inbound channel (continuation), IF active AND not failing
+      2. Active channels in preference order (imessage / telegram / sms /
+         call / gmail / slack / discord / mesh / http / push)
+      3. None — message stays queued, brain.reach.no_channel published so
+         executive/dream can reason about the gap
+    """
     global _recent_inbound_channel, _channels_manifest
-    item_prio = item.get("priority", "medium")
 
-    # Prefer continuation: where did the user last speak FROM?
-    if _recent_inbound_channel:
-        # Recent enough (last 30 min)
-        if (time.time() - _recent_inbound_ts) < 1800:
-            return _recent_inbound_channel
+    actives = set(_active_surfaces())
 
-    # Otherwise look at channel manifests for active surfaces
-    if _channels_manifest:
-        for s in _channels_manifest.get("surfaces", []):
-            if s.get("status") == "active":
-                return s.get("surface")
-        for s in _channels_manifest.get("surfaces", []):
-            if s.get("status") == "wired":
-                return s.get("surface")
+    # 1. Prefer continuation IF active AND not failing
+    if _recent_inbound_channel and (time.time() - _recent_inbound_ts) < 1800:
+        cont = _recent_inbound_channel
+        if cont in actives and not _failed_recently(cont):
+            return cont
+        # Continuation channel is down or flapping — log it and fall through
+        logger.info("reach: continuation channel %s unavailable (active=%s failing=%s); falling back",
+                    cont, cont in actives, _failed_recently(cont))
 
-    # Fallback: iMessage if any of its identifiers exist
-    return "imessage"
+    # 2. Fall back through active surfaces in preference order, skipping
+    #    any that are currently failing
+    for surface in _active_surfaces():
+        if not _failed_recently(surface):
+            return surface
+
+    # 3. No active channel — surface the gap so executive can act
+    logger.warning("reach: NO active channel available — message queued, will retry")
+    try:
+        from orion_substrate import publish
+        publish("brain.reach.no_channel", {
+            "ts": time.time(),
+            "item_kind": item.get("kind"),
+            "item_priority": item.get("priority"),
+            "actives_seen": list(actives),
+            "host": os.environ.get("ORION_HOST_ID", "unknown"),
+        })
+    except Exception:
+        pass
+    return None
+
+
+def _on_delivery_status(subject: str, payload: dict) -> None:
+    """Track per-channel delivery success/failure for the fallback chain.
+    Channel adapters should publish channel.<name>.delivery_status with
+    {ok: bool, error: str, ts: float} after attempting a send."""
+    parts = subject.split(".")
+    if len(parts) < 3:
+        return
+    channel = parts[1]
+    ok = payload.get("ok", False)
+    if not ok:
+        _channel_failures.setdefault(channel, []).append(payload.get("ts", time.time()))
+        # Keep only last 10 failures per channel
+        _channel_failures[channel] = _channel_failures[channel][-10:]
+        logger.info("reach: channel %s delivery failed: %s", channel, payload.get("error", "(?)"))
 
 
 def _on_synthesis_candidate(subject: str, payload: dict) -> None:
@@ -338,6 +403,7 @@ def main() -> int:
     subscribe("brain.fuel.switched", _on_fuel_switched)
     subscribe("channel.*.inbound", _on_inbound)
     subscribe("host.*.channels", _on_channels_manifest)
+    subscribe("channel.*.delivery_status", _on_delivery_status)
     logger.info("reach alive — watching synthesis + health + fuel; "
                 "drains every %ds", REACH_TICK_SEC)
 

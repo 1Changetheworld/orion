@@ -153,6 +153,92 @@ class GeminiCLIFuel(FuelAdapter):
 
 
 # ═══════════════════════════════════════════════════════════════
+# ADAPTER: Anthropic API (direct HTTP — survives CLI auth expiry)
+# ═══════════════════════════════════════════════════════════════
+#
+# Why this exists: when claude-cli's keychain credentials expire
+# (observed 2026-05-10/11), the CLI fuel returns None and the brain
+# goes silent on iMessage. Founder rule: "the brain should be
+# adaptive enough to reach out to me via other communication points."
+# This adapter gives the router a fallback that doesn't share fate
+# with the CLI's auth layer. If ANTHROPIC_API_KEY is in the
+# environment OR in .env.secrets, this fuel works.
+
+class AnthropicAPIFuel(FuelAdapter):
+    name = "anthropic-api"
+    tier = 1  # Same quality as claude-cli — same model, different transport
+
+    def __init__(self):
+        self._key = None
+        self._model = os.environ.get("ORION_ANTHROPIC_MODEL", "claude-opus-4-7")
+
+    def _load_key(self):
+        if self._key:
+            return self._key
+        # 1. Env var
+        env_key = os.environ.get("ANTHROPIC_API_KEY")
+        if env_key:
+            self._key = env_key
+            return env_key
+        # 2. .env.secrets file alongside the brain — never in code
+        for candidate in [
+            os.environ.get("ORION_BRAIN_DIR", "") + "/.env.secrets",
+            os.path.expanduser("~/.orion/.env.secrets"),
+            "/Volumes/AtlasVault/.orion/.env.secrets",
+        ]:
+            if candidate and os.path.isfile(candidate):
+                try:
+                    for line in open(candidate, encoding="utf-8"):
+                        if line.startswith("ANTHROPIC_API_KEY="):
+                            self._key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            return self._key
+                except Exception:
+                    continue
+        return None
+
+    def detect(self):
+        return self._load_key() is not None
+
+    def query(self, prompt, max_turns=15):
+        key = self._load_key()
+        if not key:
+            return None
+        payload = json.dumps({
+            "model": self._model,
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": key,
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read())
+                blocks = data.get("content", [])
+                for b in blocks:
+                    if b.get("type") == "text":
+                        return b.get("text", "")
+                return None
+        except Exception as e:
+            try:
+                from orion_substrate import publish
+                publish("brain.fuel.error", {
+                    "ts": time.time(),
+                    "engine": self.name,
+                    "error": str(e)[:200],
+                })
+            except Exception:
+                pass
+            return None
+
+
+# ═══════════════════════════════════════════════════════════════
 # ADAPTER: Ollama (local models — free, works offline)
 # ═══════════════════════════════════════════════════════════════
 
@@ -324,6 +410,7 @@ class FuelSystem:
     def __init__(self):
         self.adapters = [
             ClaudeCLIFuel(),
+            AnthropicAPIFuel(),    # same model as CLI, different auth — survives keychain expiry
             CodexCLIFuel(),
             GeminiCLIFuel(),
             OllamaFuel(),

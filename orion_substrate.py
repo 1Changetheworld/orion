@@ -145,12 +145,27 @@ class Substrate:
 
             loop = self._ensure_loop()
 
+            async def _silent_error_cb(e):
+                # NATS will keep printing connect errors to stderr by default
+                # during reconnect storms. The wake script is user-facing and
+                # must not show Python tracebacks. Swallow to debug log only.
+                logger.debug("nats: %s", e)
+
+            async def _silent_disconnected_cb():
+                logger.debug("nats: disconnected")
+
+            async def _silent_reconnected_cb():
+                logger.debug("nats: reconnected to %s", self.url)
+
             async def _do_connect():
                 opts = {
                     "servers": [self.url],
                     "connect_timeout": DEFAULT_TIMEOUT_SEC,
                     "max_reconnect_attempts": -1,  # forever, but with backoff
                     "reconnect_time_wait": 1.0,
+                    "error_cb": _silent_error_cb,
+                    "disconnected_cb": _silent_disconnected_cb,
+                    "reconnected_cb": _silent_reconnected_cb,
                 }
                 token = _read_auth_token()
                 if token:
