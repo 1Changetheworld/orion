@@ -164,6 +164,24 @@ deploy_substrate_macos() {
         echo "  WARN: nats-server not installed. Install with: brew install nats-server"
         return 1
     fi
+    # NATS+JetStream behavior:
+    # - No peers: single-node JetStream, no cluster flags (NATS rejects
+    #   JetStream+cluster with zero routes — needs routes or leafnode).
+    # - Peers set: cluster mode on, routes configured via ROUTE_FLAGS.
+    local CLUSTER_XML=""
+    if [ -n "$MESH_PEERS" ]; then
+        CLUSTER_XML="    <string>--cluster_name</string><string>${CLUSTER_NAME}</string>
+    <string>--cluster</string><string>nats://0.0.0.0:6222</string>"
+        # Build per-peer <string> entries for the plist
+        IFS=',' read -ra _PEER_LIST <<< "$MESH_PEERS"
+        local ROUTE_XML=""
+        for p in "${_PEER_LIST[@]}"; do
+            ROUTE_XML="${ROUTE_XML}    <string>--routes</string><string>${p}</string>
+"
+        done
+        CLUSTER_XML="${CLUSTER_XML}
+${ROUTE_XML%$'\n'}"
+    fi
     cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -179,9 +197,7 @@ deploy_substrate_macos() {
     <string>--name</string><string>orion-$(hostname -s)</string>
     <string>--store_dir</string><string>${HOME}/.orion/nats-data</string>
     <string>--jetstream</string>
-    <string>--cluster_name</string><string>${CLUSTER_NAME}</string>
-    <string>--cluster</string><string>nats://0.0.0.0:6222</string>
-    ${ROUTE_FLAGS}
+${CLUSTER_XML}
   </array>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${HOME}/.orion/nats-logs/nats.out</string>
@@ -232,6 +248,16 @@ deploy_substrate_linux() {
         echo "  WARN: nats-server not installed. Install per https://nats.io/download/"
         return 1
     fi
+    # Build cluster flags only when peers are configured (NATS rejects
+    # JetStream+cluster with zero routes).
+    local CLUSTER_FLAGS=""
+    if [ -n "$MESH_PEERS" ]; then
+        CLUSTER_FLAGS="--cluster_name ${CLUSTER_NAME} --cluster nats://0.0.0.0:6222"
+        IFS=',' read -ra _PEER_LIST <<< "$MESH_PEERS"
+        for p in "${_PEER_LIST[@]}"; do
+            CLUSTER_FLAGS="${CLUSTER_FLAGS} --routes ${p}"
+        done
+    fi
     mkdir -p ~/.config/systemd/user
     local unit=~/.config/systemd/user/orion-substrate.service
     cat > "$unit" <<UNIT
@@ -240,7 +266,7 @@ Description=Orion NATS substrate
 After=network.target
 
 [Service]
-ExecStart=${nats_bin} --addr 0.0.0.0 --port 4222 --http_port 8222 --jetstream --store_dir ${HOME}/.orion/nats-data --cluster_name ${CLUSTER_NAME} --cluster nats://0.0.0.0:6222 ${ROUTE_FLAGS}
+ExecStart=${nats_bin} --addr 0.0.0.0 --port 4222 --http_port 8222 --jetstream --store_dir ${HOME}/.orion/nats-data ${CLUSTER_FLAGS}
 Restart=always
 
 [Install]
