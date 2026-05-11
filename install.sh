@@ -333,20 +333,11 @@ say ""
 # ----------------------------------------------------------------
 if [ -f "$SCRIPT_DIR/plexus_deploy.sh" ] && { command -v launchctl >/dev/null 2>&1 || command -v systemctl >/dev/null 2>&1; }; then
     say ""
-    info "Plexus services (substrate + 14 adaptive layers)"
-    info "  These run in the background. They are what makes Orion adaptive:"
-    info "  homeostasis, self-healing, deliberation, dreaming, will, time-awareness."
-    ask "Deploy the Plexus now? [Y/n]"
-    case "${_ans:-y}" in
-        n|N|no|No)
-            warn "Plexus skipped. You can deploy later: bash plexus_deploy.sh"
-            ;;
-        *)
-            export ORION_BRAIN_DIR="${ORION_BRAIN_DIR:-$SCRIPT_DIR/.orion}"
-            [ -d "$ORION_BRAIN_DIR/brain" ] || export ORION_BRAIN_DIR="$HOME/.orion"
-            bash "$SCRIPT_DIR/plexus_deploy.sh" || warn "Plexus deploy returned non-zero — check ~/.orion/*.err"
-            ;;
-    esac
+    info "Deploying Plexus (substrate + 14 adaptive layers)..."
+    info "  These ARE Orion. Not optional. No prompt — the brain ships whole."
+    export ORION_BRAIN_DIR="${ORION_BRAIN_DIR:-$SCRIPT_DIR/.orion}"
+    [ -d "$ORION_BRAIN_DIR/brain" ] || export ORION_BRAIN_DIR="$HOME/.orion"
+    bash "$SCRIPT_DIR/plexus_deploy.sh" || warn "Plexus deploy returned non-zero — check ~/.orion/*.err"
 fi
 
 say ""
