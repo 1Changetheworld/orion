@@ -166,6 +166,90 @@ _channels_manifest: dict | None = None
 _channel_failures: dict[str, list[float]] = {}  # surface → [ts of recent fails]
 
 
+# ───────────────────────────────────────────────────────────────
+# Failure narrator — when something breaks, tell the user clearly.
+# Founder rule 2026-05-11: "this is where orion is to come in as
+# the intelligence and reach out to me letting me know a
+# communication vector was compromised and if he couldnt fix it
+# what he tried - if he fixes it i would still like to know."
+# ───────────────────────────────────────────────────────────────
+
+def _format_failure_narration(p: dict) -> str:
+    component = p.get("component", "an unknown component")
+    cause = p.get("cause", "unknown")
+    attempts = p.get("attempts") or []
+    recommendation = p.get("recommendation")
+    auto_resolved = p.get("auto_resolved", False)
+    severity = p.get("severity", "info")  # info / warning / critical
+
+    if auto_resolved:
+        head = f"Recovered: {component}"
+        body_intro = "Was failing, I fixed it."
+    elif severity == "critical":
+        head = f"Critical: {component} is down"
+        body_intro = "I could not auto-recover. I need you to act."
+    else:
+        head = f"Heads up: {component} is degraded"
+        body_intro = "I'm still trying to recover."
+
+    lines = [head, "", body_intro]
+    if cause and cause != "unknown":
+        lines.append(f"Cause: {cause}")
+    if attempts:
+        lines.append("What I tried:")
+        for a in attempts:
+            mark = "[+]" if a.get("ok") else "[-]"
+            descr = a.get("action") or a.get("descr") or "(no description)"
+            note = f" — {a['note']}" if a.get("note") else ""
+            lines.append(f"  {mark} {descr}{note}")
+    if recommendation and not auto_resolved:
+        lines.append(f"What you can do: {recommendation}")
+    return "\n".join(lines)
+
+
+def narrate_failure(component: str, cause: str, attempts: list[dict] | None = None,
+                    recommendation: str | None = None, auto_resolved: bool = False,
+                    severity: str = "warning") -> None:
+    """Public API: any Plexus service calls this to surface a failure to
+    the user via reach with full context. Bypasses no-channel silence
+    by going through the same fallback chain — if iMessage is down,
+    Telegram or telnyx-call gets the message.
+
+    Example call from self-heal after trying to recover a service:
+
+        from orion_reach import narrate_failure
+        narrate_failure(
+            component="iMessage fuel (claude-cli auth)",
+            cause="macOS Keychain entry for Claude CLI returned no credentials",
+            attempts=[
+                {"action": "retry CLI call after 30s", "ok": False},
+                {"action": "switch to anthropic-api fuel", "ok": False,
+                 "note": "no ANTHROPIC_API_KEY in .env.secrets"},
+                {"action": "fall back to ollama (local)", "ok": True,
+                 "note": "but personality is different — running on qwen3:8b"},
+            ],
+            recommendation="run `claude /login` on COMMAND OR add ANTHROPIC_API_KEY "
+                           "to /Volumes/AtlasVault/.orion/.env.secrets",
+            auto_resolved=False,
+            severity="critical",
+        )
+    """
+    item = {
+        "kind": "failure_narration",
+        "priority": "high" if severity == "critical" else "medium",
+        "ts": time.time(),
+        "payload": {
+            "component": component,
+            "cause": cause,
+            "attempts": attempts or [],
+            "recommendation": recommendation,
+            "auto_resolved": auto_resolved,
+            "severity": severity,
+        },
+    }
+    _q.add(item)
+
+
 def _format_message_for_channel(item: dict, channel: str) -> str:
     """Turn a substrate event into a human-readable message."""
     kind = item.get("kind") or item.get("type") or "notice"
@@ -192,6 +276,8 @@ def _format_message_for_channel(item: dict, channel: str) -> str:
         return f"Heads up: my {svc} service is throwing errors (rate {payload.get('vitals',{}).get('error_rate_per_min',0)}/min)."
     if kind == "fuel_switched":
         return f"Fuel switched to {payload.get('fuel')} as you asked."
+    if kind == "failure_narration":
+        return _format_failure_narration(payload)
     return f"Notice: {kind}"
 
 
