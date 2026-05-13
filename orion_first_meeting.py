@@ -383,6 +383,67 @@ def _absence_message_if_any(cli: str) -> str:
         return ""
 
 
+def _session_resume_brief(cli: str) -> str:
+    """Real-time existence layer (founder 2026-05-13 ask: "talking to a
+    person through different windows"). On every flag-exists session start,
+    surface a 2-3 sentence "where we left off" note so the model has
+    continuity before the user types anything. Free in tokens — pure
+    graph read, no model call. Without this, every CLI open feels like
+    meeting Orion for the first time even when the flag silences the
+    formal first-meeting message.
+    """
+    try:
+        repo = Path(__file__).resolve().parent
+        sys.path.insert(0, str(repo))
+        import orion_brain_portable as obp
+        graph = obp.GraphMemory()
+        if not obp.GRAPH_PATH.exists():
+            return ""
+        graph.load(obp.GRAPH_PATH)
+
+        # Most recent few project/preference nodes by created timestamp.
+        # The graph stores creation in v["created"] (unix seconds).
+        nodes = sorted(
+            (v for v in graph.nodes.values()
+             if v.get("type") in ("project", "preference", "fact")),
+            key=lambda v: v.get("created", 0),
+            reverse=True,
+        )[:5]
+        if not nodes:
+            return ""
+
+        lines = []
+        for v in nodes:
+            content = (v.get("content") or "").strip()
+            if not content:
+                continue
+            # Trim each beat to ~180 chars so the brief stays scannable.
+            line = content if len(content) <= 180 else content[:177] + "..."
+            lines.append(f"  - {line}")
+        if not lines:
+            return ""
+
+        return (
+            f"\n## ORION CONTINUITY BRIEF — last 5 durable memories\n"
+            f"\n"
+            f"You are NOT meeting this user for the first time. The flag at "
+            f"~/.orion/flags/first_meeting_{cli}.flag exists — formal "
+            f"introduction was completed previously. This is silent-mode "
+            f"resume. Below is the working context (most recent first), "
+            f"loaded directly from the graph by the SessionStart hook so "
+            f"the user does not have to ask 'where were we':\n"
+            f"\n"
+            + "\n".join(lines) + "\n"
+            f"\n"
+            f"Do NOT rehash this list in your first reply — it is YOUR "
+            f"priming, not the user's. Respond to whatever they actually "
+            f"say with continuity already loaded. Reference these beats "
+            f"only when relevant to what they ask.\n"
+        )
+    except Exception:
+        return ""
+
+
 def main(argv: list[str]) -> int:
     _ensure_dirs()
 
@@ -393,12 +454,17 @@ def main(argv: list[str]) -> int:
 
     flag = _flag_path(cli)
     if flag.exists():
-        # Already met for the first time. Stay mostly silent — Orion does
-        # its work without re-introducing — but still surface absence
-        # detection so a "welcome back" message can fire when warranted.
+        # Already met for the first time. Stay silent on persona — Orion
+        # does its work without re-introducing — but ALWAYS emit the
+        # continuity brief (real-time existence layer) and the absence
+        # note when a gap is detected.
+        brief = _session_resume_brief(cli)
         absence = _absence_message_if_any(cli)
+        if brief:
+            sys.stdout.write(brief)
         if absence:
             sys.stdout.write(absence)
+        if brief or absence:
             sys.stdout.flush()
         return 0
 

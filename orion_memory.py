@@ -109,8 +109,25 @@ class GraphMemory:
                 for k, v in self.nodes.items()
             }
         }
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=2)
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=2)
+        except OSError as e:
+            # Storage canary. 2026-05-10 22:19 incident: macOS TCC denied
+            # /usr/bin/python3 (launchd-spawned) write access to /Volumes/
+            # AtlasVault. Brain HTTP-500'd every /ask for 48h. Self-heal
+            # couldn't see it because webhook didn't crash. Publishing
+            # brain.storage.degraded lets immune/claustrum/reach react.
+            try:
+                from orion_substrate import publish as _publish
+                _publish("brain.storage.degraded", {
+                    "path": str(filepath),
+                    "error": f"{type(e).__name__}: {e}",
+                    "errno": getattr(e, "errno", None),
+                })
+            except Exception:
+                pass  # substrate optional; never lose the original error
+            raise
 
     def load(self, filepath):
         """Load graph from disk."""
