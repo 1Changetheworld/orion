@@ -448,7 +448,30 @@ class FuelSystem:
         """
         Query the best available fuel. Auto-fallback on failure.
         Returns (response, engine_name) or (None, "none").
+
+        Read ~/.orion/fuel_preference.json at top of routing. If a specific
+        fuel is named there (not "auto"), try it first. On its failure,
+        fall through the priority cascade. Escape hatch:
+        ORION_FUEL_PREF_LOCKED=1 disables the preference read.
         """
+        if not os.environ.get("ORION_FUEL_PREF_LOCKED"):
+            try:
+                pref_path = os.path.expanduser("~/.orion/fuel_preference.json")
+                if os.path.exists(pref_path):
+                    with open(pref_path, encoding="utf-8") as _pf:
+                        pref = json.load(_pf).get("fuel", "auto")
+                    if pref and pref != "auto":
+                        for adapter in self.available:
+                            if adapter.name == pref:
+                                try:
+                                    result = adapter.query(prompt, max_turns)
+                                    if result:
+                                        return result, adapter.name
+                                except Exception:
+                                    pass  # fall through to cascade
+                                break
+            except Exception:
+                pass  # preference is advisory; never block on read failure
         for adapter in self.available:
             try:
                 result = adapter.query(prompt, max_turns)
