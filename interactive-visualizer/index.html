@@ -6,260 +6,274 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
-    --bg: #0a0a14;
-    --panel: rgba(20, 22, 38, 0.85);
-    --text: #d4e0ff;
-    --dim: #7a85aa;
+    --bg: #050510;
+    --panel: rgba(14, 16, 28, 0.88);
+    --text: #d8e2ff;
+    --dim: #6a7299;
     --accent: #6aa3ff;
-    --identity: #ffb05a;
-    --preference: #6aff8c;
-    --project: #6aa3ff;
-    --fact: #aab5dd;
-    --reach: #ff6a9e;
-    --line: rgba(120, 140, 200, 0.18);
-    --line-hover: rgba(180, 200, 255, 0.65);
+    --device: #ffb05a;
+    --channel: #ff6ad2;
+    --service: #6affc8;
+    --memory-identity: #ffd86a;
+    --memory-preference: #8aff8c;
+    --memory-project: #6aa3ff;
+    --memory-fact: #aab5dd;
+    --memory-task: #ff7a8e;
+    --memory-reference: #c8a0ff;
+    --memory-tool: #5af1ff;
+    --memory-ephemeral: #7a7aaa;
+    --edge-mesh: #ffb05a;
+    --edge-hosted: #ff6ad2;
+    --edge-service: #6affc8;
+    --edge-tag: #4060a0;
+    --edge-alive: #6aff8c;
+    --edge-degraded: #ff9244;
+    --edge-down: #ff4a5a;
   }
   * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
-    overflow: hidden;
-  }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+
   #graph { position: fixed; top: 0; right: 0; bottom: 0; left: 0; width: 100vw; height: 100vh; }
+
+  .pane {
+    position: fixed; z-index: 10;
+    background: var(--panel); backdrop-filter: blur(10px);
+    border: 1px solid rgba(120,140,200,0.18);
+    border-radius: 12px; padding: 14px 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  #title { top: 16px; left: 16px; width: 260px; }
+  #title h1 { margin: 0 0 4px; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.1em; color: var(--accent); }
+  #title .sub { color: var(--dim); font-size: 11px; }
+  #title .stats { margin-top: 10px; font-variant-numeric: tabular-nums; }
+  #title .stats .row { display: flex; justify-content: space-between; padding: 1px 0; }
+  #title .stats .dot { display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+
+  #legend { bottom: 16px; left: 16px; width: 260px; padding: 10px 14px; }
+  #legend .row { display: flex; align-items: center; padding: 2px 0; font-size: 11px; }
+  #legend .shape { display: inline-block; width: 14px; height: 14px; margin-right: 8px; }
+  #legend .device-shape { border-radius: 50%; background: var(--device);
+    box-shadow: 0 0 10px var(--device); }
+  #legend .channel-shape { background: var(--channel); transform: rotate(45deg); }
+  #legend .service-shape { background: var(--service); }
+  #legend .memory-shape { border-radius: 50%; background: var(--memory-fact); }
+
+  #detail { top: 16px; right: 16px; width: 320px; max-height: calc(100vh - 32px);
+    overflow-y: auto; display: none; }
+  #detail h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+  #detail .meta { color: var(--dim); font-size: 11px; margin-bottom: 8px; }
+  #detail .body { white-space: pre-wrap; line-height: 1.5; font-size: 12px; }
+  #detail .tags { margin-top: 10px; }
+  #detail .tag { display: inline-block; background: rgba(120,140,200,0.15);
+    padding: 2px 7px; border-radius: 4px; font-size: 10px; margin: 2px 4px 2px 0; }
+  #detail button.close {
+    position: absolute; top: 10px; right: 10px;
+    background: none; border: none; color: var(--dim);
+    font-size: 16px; cursor: pointer;
+  }
+
   #boot-status {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    font: 13px/1.6 ui-monospace, monospace;
-    color: var(--dim); z-index: 100;
+    font: 13px/1.6 ui-monospace, monospace; color: var(--dim); z-index: 100;
     background: rgba(20,22,38,0.95); padding: 16px 20px;
     border: 1px solid rgba(120,140,200,0.3); border-radius: 12px;
     max-width: 80vw; min-width: 280px;
     white-space: pre-wrap; word-break: break-word;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   }
-  #boot-status.error {
-    color: #ff7a7a; border-color: rgba(255,120,120,0.5);
-    background: rgba(40,18,22,0.95);
-  }
-  #boot-status.ok {
-    position: fixed; top: auto; bottom: 40px; left: 16px;
-    transform: none; padding: 8px 12px; font-size: 12px;
-    color: var(--dim); background: rgba(20,22,38,0.85);
-    max-width: 400px;
-  }
-  #panel {
-    position: fixed; top: 16px; left: 16px;
-    width: 280px;
-    background: var(--panel);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(120, 140, 200, 0.2);
-    border-radius: 12px;
-    padding: 14px 16px;
-    z-index: 10;
-  }
-  #panel h1 {
-    margin: 0 0 6px;
-    font-size: 14px;
-    letter-spacing: 0.05em;
-    color: var(--accent);
-    font-weight: 600;
-  }
-  #panel .sub { color: var(--dim); font-size: 11px; margin-bottom: 12px; }
-  #stats { font-variant-numeric: tabular-nums; line-height: 1.6; }
-  #stats .row { display: flex; justify-content: space-between; }
-  #stats .row .label { color: var(--dim); }
-  .dot {
-    display: inline-block; width: 9px; height: 9px;
-    border-radius: 50%; margin-right: 6px; vertical-align: -1px;
-  }
-  #legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(120,140,200,0.15); }
-  #detail {
-    position: fixed; top: 16px; right: 16px;
-    width: 320px; max-height: calc(100% - 32px);
-    background: var(--panel);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(120, 140, 200, 0.2);
-    border-radius: 12px;
-    padding: 14px 16px;
-    z-index: 10;
-    overflow-y: auto;
-    display: none;
-  }
-  #detail h2 {
-    margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--accent);
-  }
-  #detail .meta { color: var(--dim); font-size: 11px; margin-bottom: 8px; }
-  #detail .body { white-space: pre-wrap; line-height: 1.5; }
-  #detail .tags { margin-top: 10px; }
-  #detail .tag {
-    display: inline-block;
-    background: rgba(120, 140, 200, 0.15);
-    color: var(--text);
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 11px;
-    margin: 2px 4px 2px 0;
-  }
-  #footer {
-    position: fixed; bottom: 12px; left: 16px;
-    color: var(--dim); font-size: 11px;
-  }
-  .node circle { stroke: rgba(255,255,255,0.4); stroke-width: 1px; transition: r 0.15s; }
-  .node:hover circle { stroke: white; stroke-width: 1.5px; r: 11; }
-  .node text {
-    pointer-events: none;
-    fill: var(--text); font-size: 10px;
-    text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg);
-  }
+  #boot-status.error { color: #ff7a7a; border-color: rgba(255,120,120,0.5);
+    background: rgba(40,18,22,0.95); }
+  #boot-status.gone { display: none; }
+
+  #footer { position: fixed; bottom: 12px; right: 16px;
+    color: var(--dim); font-size: 11px; pointer-events: none; }
+
+  #controls { top: 16px; right: 16px; width: 200px; padding: 10px 14px; z-index: 9; }
+  #controls .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  #controls label { color: var(--dim); font-size: 11px; cursor: pointer; user-select: none; }
+  #controls input[type=checkbox] { accent-color: var(--accent); }
+  #detail.open ~ #controls { display: none; }
 </style>
 </head>
 <body>
-  <svg id="graph"></svg>
-  <div id="boot-status">[boot] loading…</div>
-  <noscript><div id="boot-status" class="error">JavaScript is disabled — the visualizer requires it.</div></noscript>
-
-  <div id="panel">
-    <h1>ORION · Interactive Visualizer</h1>
-    <div class="sub" id="hostlabel">loading…</div>
-    <div id="stats"></div>
-    <div id="legend"></div>
+  <div id="graph"></div>
+  <div id="boot-status">[boot] loading 3D engine…</div>
+  <div id="detail" class="pane">
+    <button class="close" onclick="document.getElementById('detail').style.display='none'">×</button>
+    <div id="detail-content"></div>
   </div>
 
-  <div id="detail"></div>
-
-  <div id="footer">
-    drag · scroll to zoom · click a node for detail · live read from the entity
-  </div>
-
-<script src="/d3.v7.min.js"></script>
+<script src="/3d-force-graph.min.js"></script>
 <script>
-const TYPE_COLOR = {
-  identity: '#ffb05a',
-  preference: '#6aff8c',
-  project: '#6aa3ff',
-  fact: '#aab5dd',
-  task: '#ff6a9e',
-  reference: '#c8a0ff',
-  ephemeral: '#7a85aa',
-};
-
-async function loadGraph() {
-  const r = await fetch('/api/graph');
-  return r.json();
-}
-async function loadPulse() {
-  const r = await fetch('/api/pulse');
-  return r.json();
-}
-
-function renderStats(data, pulse) {
-  document.getElementById('hostlabel').textContent =
-    `host: ${pulse.host || 'unknown'} · ${data.stats.total_nodes} nodes · ${data.stats.total_links} edges`;
-  const stats = document.getElementById('stats');
-  const byType = data.stats.by_type || {};
-  stats.innerHTML = Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([t,n]) =>
-    `<div class="row"><span class="label"><span class="dot" style="background:${TYPE_COLOR[t]||'#aab5dd'}"></span>${t}</span><span>${n}</span></div>`
-  ).join('');
-
-  const legend = document.getElementById('legend');
-  const services = Object.keys(pulse.vitals || {});
-  if (services.length) {
-    legend.innerHTML = `<div class="row"><span class="label">plexus services</span><span>${services.length}</span></div>`;
-  }
-}
-
-function renderGraph(data) {
-  const svg = d3.select('#graph');
-  svg.selectAll('*').remove();
-  const W = window.innerWidth, H = window.innerHeight;
-  svg.attr('viewBox', `0 0 ${W} ${H}`);
-
-  const g = svg.append('g');
-  svg.call(d3.zoom().scaleExtent([0.2, 5]).on('zoom', e => g.attr('transform', e.transform)));
-
-  const sim = d3.forceSimulation(data.nodes)
-    .force('link', d3.forceLink(data.links).id(d => d.id).distance(60).strength(0.4))
-    .force('charge', d3.forceManyBody().strength(-180))
-    .force('center', d3.forceCenter(W/2, H/2))
-    .force('collide', d3.forceCollide(14));
-
-  const link = g.append('g').attr('stroke', 'var(--line)').attr('stroke-width', 1)
-    .selectAll('line').data(data.links).join('line');
-
-  const node = g.append('g').selectAll('g.node').data(data.nodes).join('g')
-    .attr('class', 'node')
-    .call(d3.drag()
-      .on('start', (e,d)=>{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
-      .on('drag', (e,d)=>{ d.fx=e.x; d.fy=e.y; })
-      .on('end', (e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
-    .on('click', (e,d)=>showDetail(d));
-
-  node.append('circle').attr('r', 8)
-    .attr('fill', d => TYPE_COLOR[d.type] || '#aab5dd');
-  node.append('text').attr('dy', -12).attr('text-anchor', 'middle')
-    .text(d => (d.preview || '').split(/\s+/).slice(0, 3).join(' '));
-
-  sim.on('tick', () => {
-    link.attr('x1', d=>d.source.x).attr('y1', d=>d.source.y)
-        .attr('x2', d=>d.target.x).attr('y2', d=>d.target.y);
-    node.attr('transform', d=>`translate(${d.x},${d.y})`);
-  });
-}
-
-function showDetail(d) {
-  const panel = document.getElementById('detail');
-  panel.style.display = 'block';
-  panel.innerHTML = `
-    <h2 style="color:${TYPE_COLOR[d.type]||'#6aa3ff'}">#${d.id} · ${d.type}</h2>
-    <div class="meta">confidence: ${(d.confidence ?? 1).toFixed(2)} · created: ${d.created ? new Date(d.created*1000).toISOString().slice(0,10) : 'unknown'}</div>
-    <div class="body">${escapeHtml(d.preview || '')}</div>
-    <div class="tags">${(d.tags||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-}
-
 function setBoot(msg, mode='') {
   const el = document.getElementById('boot-status');
   if (!el) return;
   el.textContent = msg;
   el.className = mode;
+  if (mode === 'gone') el.style.display = 'none';
 }
 window.addEventListener('error', e => {
-  const where = e.filename ? ` (${e.filename}:${e.lineno}:${e.colno})` : '';
-  setBoot('[script-error]\n' + (e.message || e) + where +
-          (e.error && e.error.stack ? '\n\n' + e.error.stack.slice(0, 600) : ''), 'error');
+  setBoot('[script-error]\n' + (e.message || e) +
+    (e.filename ? ` (${e.filename}:${e.lineno})` : '') +
+    (e.error && e.error.stack ? '\n\n' + e.error.stack.slice(0, 600) : ''), 'error');
 });
 window.addEventListener('unhandledrejection', e => {
   const r = e.reason;
   setBoot('[promise-error]\n' + (r && r.message || r) +
-          (r && r.stack ? '\n\n' + r.stack.slice(0, 600) : ''), 'error');
+    (r && r.stack ? '\n\n' + r.stack.slice(0, 600) : ''), 'error');
 });
+
+// ─────────────── color + size by kind ───────────────
+const KIND_COLOR = {
+  device:  '#ffb05a',
+  channel: '#ff6ad2',
+  service: '#6affc8',
+  memory:  '#aab5dd',
+};
+const MEMORY_TYPE_COLOR = {
+  identity:   '#ffd86a',
+  preference: '#8aff8c',
+  project:    '#6aa3ff',
+  fact:       '#aab5dd',
+  task:       '#ff7a8e',
+  reference:  '#c8a0ff',
+  tool:       '#5af1ff',
+  ephemeral:  '#7a7aaa',
+};
+const EDGE_COLOR = {
+  mesh:    '#ffb05a',
+  hosted:  '#ff6ad2',
+  service: '#6affc8',
+  tag:     '#4060a0',
+  reach:   '#ffffff',
+};
+function nodeColor(n) {
+  if (n.kind === 'memory') return MEMORY_TYPE_COLOR[n.type] || KIND_COLOR.memory;
+  return KIND_COLOR[n.kind] || '#888';
+}
+function edgeColor(l) {
+  if (l.status === 'down') return '#ff4a5a';
+  if (l.status === 'degraded') return '#ff9244';
+  return EDGE_COLOR[l.kind] || '#4060a0';
+}
+function nodeSize(n) { return n.size || 5; }
+
+// ─────────────── visibility filters ───────────────
+const FILTERS = { device: true, channel: true, service: true, memory: true };
+let RAW = { nodes: [], links: [] };
+function applyFilters() {
+  const visibleIds = new Set(RAW.nodes.filter(n => FILTERS[n.kind]).map(n => n.id));
+  const filtered = {
+    nodes: RAW.nodes.filter(n => visibleIds.has(n.id)),
+    links: RAW.links.filter(l =>
+      visibleIds.has(typeof l.source === 'object' ? l.source.id : l.source) &&
+      visibleIds.has(typeof l.target === 'object' ? l.target.id : l.target)),
+  };
+  return filtered;
+}
+
+// ─────────────── stats panel ───────────────
+function renderStats(data, pulse) {
+  document.getElementById('host-line').textContent =
+    `${pulse.host || 'localhost'} · ${data.stats.total_nodes} nodes · ${data.stats.total_links} edges`;
+  const byKind = data.stats.by_kind || {};
+  const order = ['device', 'channel', 'service', 'memory'];
+  document.getElementById('stats').innerHTML = order
+    .filter(k => byKind[k])
+    .map(k => `<div class="row"><span class="label"><span class="dot" style="background:${KIND_COLOR[k]}"></span>${k}</span><span>${byKind[k]}</span></div>`)
+    .join('');
+}
+
+// ─────────────── detail panel ───────────────
+function showDetail(n) {
+  const panel = document.getElementById('detail');
+  const c = document.getElementById('detail-content');
+  const color = nodeColor(n);
+  const kindLabel = n.kind + (n.type && n.type !== n.kind ? ' · ' + n.type : '');
+  c.innerHTML = `
+    <h2 style="color:${color}">${escapeHtml(n.label || n.id)}</h2>
+    <div class="meta">${kindLabel}${n.status ? ' · ' + n.status : ''}${
+      n.created ? ' · ' + new Date(n.created*1000).toISOString().slice(0,10) : ''}</div>
+    <div class="body">${escapeHtml(n.preview || '')}</div>
+    ${n.tags && n.tags.length ?
+      `<div class="tags">${n.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}`;
+  panel.style.display = 'block';
+}
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+}
+
+// ─────────────── data fetch ───────────────
+async function loadGraph() { return (await fetch('/api/graph')).json(); }
+async function loadPulse() { return (await fetch('/api/pulse')).json(); }
+
+// ─────────────── main ───────────────
+let Graph = null;
 
 (async () => {
   try {
-    setBoot('[boot] checking d3…');
-    if (typeof d3 === 'undefined') {
-      setBoot('[error] d3 did not load — check /d3.v7.min.js loads (200) in network tab', true);
+    setBoot('[boot] checking 3D engine…');
+    if (typeof ForceGraph3D === 'undefined') {
+      setBoot('[error] 3d-force-graph did not load.\nCheck /3d-force-graph.min.js loads in the network tab.', 'error');
       return;
     }
-    setBoot('[boot] fetching graph…');
+    setBoot('[boot] fetching topology…');
     const [data, pulse] = await Promise.all([loadGraph(), loadPulse()]);
-    setBoot(`[boot] rendering ${data.nodes.length} nodes / ${data.links.length} links…`);
-    renderStats(data, pulse);
-    renderGraph(data);
-    setBoot(`live · ${data.nodes.length} nodes · ${data.links.length} links · auto-refresh 30s`, 'ok');
+    RAW = { nodes: data.nodes, links: data.links };
+    setBoot(`[boot] rendering ${data.nodes.length} nodes / ${data.links.length} edges…`);
+
+    Graph = ForceGraph3D()(document.getElementById('graph'))
+      .backgroundColor('#050510')
+      .nodeId('id')
+      .nodeLabel(n => `<div style="background:rgba(20,22,38,0.95);padding:6px 10px;border-radius:6px;border:1px solid rgba(120,140,200,0.3);font-size:11px;max-width:300px;">${escapeHtml(n.label || n.id)}<div style="color:#7a85aa;font-size:10px;margin-top:2px;">${n.kind}${n.preview ? ' · ' + escapeHtml(n.preview.slice(0,60)) : ''}</div></div>`)
+      .nodeVal(nodeSize)
+      .nodeColor(nodeColor)
+      .nodeOpacity(0.95)
+      .nodeRelSize(4)
+      .linkColor(edgeColor)
+      .linkOpacity(l => l.kind === 'tag' ? 0.18 : 0.6)
+      .linkWidth(l => l.kind === 'mesh' ? 2 : l.kind === 'tag' ? 0.5 : 1)
+      .linkDirectionalParticles(l => (l.kind === 'mesh' || l.kind === 'reach') ? 2 : 0)
+      .linkDirectionalParticleSpeed(0.008)
+      .linkDirectionalParticleColor(l => edgeColor(l))
+      .onNodeClick(showDetail)
+      .onNodeHover(n => document.body.style.cursor = n ? 'pointer' : 'default')
+      .graphData(applyFilters());
+
+    // Camera intro: zoom out, gentle rotate
+    Graph.cameraPosition({ x: 0, y: 0, z: 380 });
+
+    setBoot('', 'gone');
+
+    // Auto-rotate
+    let rotateOn = true;
+    let angle = 0;
+    const distance = 380;
+    setInterval(() => {
+      if (!rotateOn || !Graph) return;
+      angle += Math.PI / 600;
+      Graph.cameraPosition({
+        x: distance * Math.sin(angle),
+        y: 30 * Math.sin(angle * 0.3),
+        z: distance * Math.cos(angle),
+      });
+    }, 30);
+
+    // Refresh
     setInterval(async () => {
       try {
         const [d2, p2] = await Promise.all([loadGraph(), loadPulse()]);
-        renderStats(d2, p2);
-        renderGraph(d2);
-      } catch (e) { setBoot('[refresh-error] ' + (e.message||e), true); }
+        RAW = { nodes: d2.nodes, links: d2.links };
+        Graph.graphData(applyFilters());
+      } catch (e) { console.error('refresh', e); }
     }, 30000);
+
   } catch (e) {
     setBoot('[boot-error]\n' + (e.message || e) +
-            (e.stack ? '\n\n' + e.stack.slice(0, 600) : ''), 'error');
+      (e.stack ? '\n\n' + e.stack.slice(0, 600) : ''), 'error');
     console.error(e);
   }
 })();
