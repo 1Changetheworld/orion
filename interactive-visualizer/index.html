@@ -27,7 +27,27 @@
     font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
     overflow: hidden;
   }
-  #graph { position: fixed; inset: 0; }
+  #graph { position: fixed; top: 0; right: 0; bottom: 0; left: 0; width: 100vw; height: 100vh; }
+  #boot-status {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font: 13px/1.6 ui-monospace, monospace;
+    color: var(--dim); z-index: 100;
+    background: rgba(20,22,38,0.95); padding: 16px 20px;
+    border: 1px solid rgba(120,140,200,0.3); border-radius: 12px;
+    max-width: 80vw; min-width: 280px;
+    white-space: pre-wrap; word-break: break-word;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #boot-status.error {
+    color: #ff7a7a; border-color: rgba(255,120,120,0.5);
+    background: rgba(40,18,22,0.95);
+  }
+  #boot-status.ok {
+    position: fixed; top: auto; bottom: 40px; left: 16px;
+    transform: none; padding: 8px 12px; font-size: 12px;
+    color: var(--dim); background: rgba(20,22,38,0.85);
+    max-width: 400px;
+  }
   #panel {
     position: fixed; top: 16px; left: 16px;
     width: 280px;
@@ -96,6 +116,8 @@
 </head>
 <body>
   <svg id="graph"></svg>
+  <div id="boot-status">[boot] loading…</div>
+  <noscript><div id="boot-status" class="error">JavaScript is disabled — the visualizer requires it.</div></noscript>
 
   <div id="panel">
     <h1>ORION · Interactive Visualizer</h1>
@@ -198,16 +220,48 @@ function escapeHtml(s) {
   return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 }
 
+function setBoot(msg, mode='') {
+  const el = document.getElementById('boot-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = mode;
+}
+window.addEventListener('error', e => {
+  const where = e.filename ? ` (${e.filename}:${e.lineno}:${e.colno})` : '';
+  setBoot('[script-error]\n' + (e.message || e) + where +
+          (e.error && e.error.stack ? '\n\n' + e.error.stack.slice(0, 600) : ''), 'error');
+});
+window.addEventListener('unhandledrejection', e => {
+  const r = e.reason;
+  setBoot('[promise-error]\n' + (r && r.message || r) +
+          (r && r.stack ? '\n\n' + r.stack.slice(0, 600) : ''), 'error');
+});
+
 (async () => {
-  const [data, pulse] = await Promise.all([loadGraph(), loadPulse()]);
-  renderStats(data, pulse);
-  renderGraph(data);
-  // Soft auto-refresh every 30s
-  setInterval(async () => {
-    const [d2, p2] = await Promise.all([loadGraph(), loadPulse()]);
-    renderStats(d2, p2);
-    renderGraph(d2);
-  }, 30000);
+  try {
+    setBoot('[boot] checking d3…');
+    if (typeof d3 === 'undefined') {
+      setBoot('[error] d3 did not load — check /d3.v7.min.js loads (200) in network tab', true);
+      return;
+    }
+    setBoot('[boot] fetching graph…');
+    const [data, pulse] = await Promise.all([loadGraph(), loadPulse()]);
+    setBoot(`[boot] rendering ${data.nodes.length} nodes / ${data.links.length} links…`);
+    renderStats(data, pulse);
+    renderGraph(data);
+    setBoot(`live · ${data.nodes.length} nodes · ${data.links.length} links · auto-refresh 30s`, 'ok');
+    setInterval(async () => {
+      try {
+        const [d2, p2] = await Promise.all([loadGraph(), loadPulse()]);
+        renderStats(d2, p2);
+        renderGraph(d2);
+      } catch (e) { setBoot('[refresh-error] ' + (e.message||e), true); }
+    }, 30000);
+  } catch (e) {
+    setBoot('[boot-error]\n' + (e.message || e) +
+            (e.stack ? '\n\n' + e.stack.slice(0, 600) : ''), 'error');
+    console.error(e);
+  }
 })();
 </script>
 </body>

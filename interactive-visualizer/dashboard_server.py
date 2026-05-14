@@ -125,7 +125,8 @@ def _load_graph() -> dict:
 
 def _load_pulse() -> dict:
     """Snapshot claustrum + vitals + recent substrate signal."""
-    pulse = {"claustrum": None, "vitals": {}, "host": os.uname().nodename}
+    import platform
+    pulse = {"claustrum": None, "vitals": {}, "host": platform.node()}
 
     try:
         if CLAUSTRUM_PATH.exists():
