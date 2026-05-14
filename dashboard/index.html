@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orion — neural network</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0a0a14;
+    --panel: rgba(20, 22, 38, 0.85);
+    --text: #d4e0ff;
+    --dim: #7a85aa;
+    --accent: #6aa3ff;
+    --identity: #ffb05a;
+    --preference: #6aff8c;
+    --project: #6aa3ff;
+    --fact: #aab5dd;
+    --reach: #ff6a9e;
+    --line: rgba(120, 140, 200, 0.18);
+    --line-hover: rgba(180, 200, 255, 0.65);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+  #graph { position: fixed; inset: 0; }
+  #panel {
+    position: fixed; top: 16px; left: 16px;
+    width: 280px;
+    background: var(--panel);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(120, 140, 200, 0.2);
+    border-radius: 12px;
+    padding: 14px 16px;
+    z-index: 10;
+  }
+  #panel h1 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  #panel .sub { color: var(--dim); font-size: 11px; margin-bottom: 12px; }
+  #stats { font-variant-numeric: tabular-nums; line-height: 1.6; }
+  #stats .row { display: flex; justify-content: space-between; }
+  #stats .row .label { color: var(--dim); }
+  .dot {
+    display: inline-block; width: 9px; height: 9px;
+    border-radius: 50%; margin-right: 6px; vertical-align: -1px;
+  }
+  #legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(120,140,200,0.15); }
+  #detail {
+    position: fixed; top: 16px; right: 16px;
+    width: 320px; max-height: calc(100% - 32px);
+    background: var(--panel);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(120, 140, 200, 0.2);
+    border-radius: 12px;
+    padding: 14px 16px;
+    z-index: 10;
+    overflow-y: auto;
+    display: none;
+  }
+  #detail h2 {
+    margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--accent);
+  }
+  #detail .meta { color: var(--dim); font-size: 11px; margin-bottom: 8px; }
+  #detail .body { white-space: pre-wrap; line-height: 1.5; }
+  #detail .tags { margin-top: 10px; }
+  #detail .tag {
+    display: inline-block;
+    background: rgba(120, 140, 200, 0.15);
+    color: var(--text);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    margin: 2px 4px 2px 0;
+  }
+  #footer {
+    position: fixed; bottom: 12px; left: 16px;
+    color: var(--dim); font-size: 11px;
+  }
+  .node circle { stroke: rgba(255,255,255,0.4); stroke-width: 1px; transition: r 0.15s; }
+  .node:hover circle { stroke: white; stroke-width: 1.5px; r: 11; }
+  .node text {
+    pointer-events: none;
+    fill: var(--text); font-size: 10px;
+    text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg);
+  }
+</style>
+</head>
+<body>
+  <svg id="graph"></svg>
+
+  <div id="panel">
+    <h1>ORION — neural network</h1>
+    <div class="sub" id="hostlabel">loading…</div>
+    <div id="stats"></div>
+    <div id="legend"></div>
+  </div>
+
+  <div id="detail"></div>
+
+  <div id="footer">
+    drag · scroll to zoom · click a node for detail · live read from the entity
+  </div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const TYPE_COLOR = {
+  identity: '#ffb05a',
+  preference: '#6aff8c',
+  project: '#6aa3ff',
+  fact: '#aab5dd',
+  task: '#ff6a9e',
+  reference: '#c8a0ff',
+  ephemeral: '#7a85aa',
+};
+
+async function loadGraph() {
+  const r = await fetch('/api/graph');
+  return r.json();
+}
+async function loadPulse() {
+  const r = await fetch('/api/pulse');
+  return r.json();
+}
+
+function renderStats(data, pulse) {
+  document.getElementById('hostlabel').textContent =
+    `host: ${pulse.host || 'unknown'} · ${data.stats.total_nodes} nodes · ${data.stats.total_links} edges`;
+  const stats = document.getElementById('stats');
+  const byType = data.stats.by_type || {};
+  stats.innerHTML = Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([t,n]) =>
+    `<div class="row"><span class="label"><span class="dot" style="background:${TYPE_COLOR[t]||'#aab5dd'}"></span>${t}</span><span>${n}</span></div>`
+  ).join('');
+
+  const legend = document.getElementById('legend');
+  const services = Object.keys(pulse.vitals || {});
+  if (services.length) {
+    legend.innerHTML = `<div class="row"><span class="label">plexus services</span><span>${services.length}</span></div>`;
+  }
+}
+
+function renderGraph(data) {
+  const svg = d3.select('#graph');
+  svg.selectAll('*').remove();
+  const W = window.innerWidth, H = window.innerHeight;
+  svg.attr('viewBox', `0 0 ${W} ${H}`);
+
+  const g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.2, 5]).on('zoom', e => g.attr('transform', e.transform)));
+
+  const sim = d3.forceSimulation(data.nodes)
+    .force('link', d3.forceLink(data.links).id(d => d.id).distance(60).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-180))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collide', d3.forceCollide(14));
+
+  const link = g.append('g').attr('stroke', 'var(--line)').attr('stroke-width', 1)
+    .selectAll('line').data(data.links).join('line');
+
+  const node = g.append('g').selectAll('g.node').data(data.nodes).join('g')
+    .attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (e,d)=>{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag', (e,d)=>{ d.fx=e.x; d.fy=e.y; })
+      .on('end', (e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
+    .on('click', (e,d)=>showDetail(d));
+
+  node.append('circle').attr('r', 8)
+    .attr('fill', d => TYPE_COLOR[d.type] || '#aab5dd');
+  node.append('text').attr('dy', -12).attr('text-anchor', 'middle')
+    .text(d => (d.preview || '').split(/\s+/).slice(0, 3).join(' '));
+
+  sim.on('tick', () => {
+    link.attr('x1', d=>d.source.x).attr('y1', d=>d.source.y)
+        .attr('x2', d=>d.target.x).attr('y2', d=>d.target.y);
+    node.attr('transform', d=>`translate(${d.x},${d.y})`);
+  });
+}
+
+function showDetail(d) {
+  const panel = document.getElementById('detail');
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <h2 style="color:${TYPE_COLOR[d.type]||'#6aa3ff'}">#${d.id} · ${d.type}</h2>
+    <div class="meta">confidence: ${(d.confidence ?? 1).toFixed(2)} · created: ${d.created ? new Date(d.created*1000).toISOString().slice(0,10) : 'unknown'}</div>
+    <div class="body">${escapeHtml(d.preview || '')}</div>
+    <div class="tags">${(d.tags||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+}
+
+(async () => {
+  const [data, pulse] = await Promise.all([loadGraph(), loadPulse()]);
+  renderStats(data, pulse);
+  renderGraph(data);
+  // Soft auto-refresh every 30s
+  setInterval(async () => {
+    const [d2, p2] = await Promise.all([loadGraph(), loadPulse()]);
+    renderStats(d2, p2);
+    renderGraph(d2);
+  }, 30000);
+})();
+</script>
+</body>
+</html>
