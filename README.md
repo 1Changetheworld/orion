@@ -51,6 +51,7 @@ When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask:
 - [What is Orion?](#what-is-orion)
 - [How It Works](#how-it-works)
 - [Communication Points — One Brain, Every Window](#communication-points--one-brain-every-window)
+- [Connect Obsidian — Visualize Your Brain](#connect-obsidian--visualize-your-brain)
 - [Fuel System](#fuel-system)
 - [Interfaces](#interfaces)
 - [Operational Modes](#operational-modes)
@@ -161,6 +162,43 @@ Same brain. Different windows. Same Orion answers whether you came in through Co
 The intelligence isn't in the channel. The channel is just a receptor. The intelligence — what to say, when to say it, which channel to use, what to remember after — lives in the brain. Each window you add gives Orion another way to reach you; none of them change what Orion *is*.
 
 This is also why "memory across AI tools" is the floor, not the ceiling. The same memory shows up on iMessage, on a phone call, in a CLI, on an offline radio. The brain is one — and you reach it from wherever you happen to be.
+
+---
+
+## Connect Obsidian — Visualize Your Brain
+
+Orion is its own entity — it doesn't depend on Obsidian for anything. But Obsidian is the best general-purpose visualizer that already exists, and Orion knows how to export its brain in a format Obsidian renders natively. Treat this as an *Orion feature*, not a requirement: connect Obsidian when you want a polished window into your own memory; ignore it entirely if you don't.
+
+**One command writes Orion's brain as an Obsidian vault:**
+
+```
+python orion_obsidian_export.py --out ~/Desktop/orion-vault
+```
+
+Then open the folder in Obsidian (Start screen → *Open folder as vault* → pick the directory). Press `Ctrl + G` (or `Cmd + G`) and Obsidian's graph view renders Orion's nervous system: identity at the center, memories radiating out by tag, devices and communication points as their own categories, wiki-links between everything that shares meaning.
+
+### What the export contains
+
+```
+orion-vault/
+├── README.md            vault overview
+├── Identity/            who Orion is (pulled from SOUL.md)
+├── Memories/            every fact, preference, project, decision
+├── Devices/             the mesh hosts (COMMAND / FORGE / ORIONS HOME / …)
+├── Channels/            communication points (iMessage / Voice / LoRa / …)
+└── Services/            Plexus services running on this host
+```
+
+Each markdown file carries proper YAML frontmatter (kind, type, tags, confidence, created date) and uses `[[wiki-links]]` to surface relationships. Memories with shared tags link automatically — that's what gives Obsidian the graph to render.
+
+### Why this is a feature, not a dependency
+
+- **Orion is the entity. Obsidian is one window into it.** The brain runs without Obsidian; the vault export is just one of many possible visualization surfaces (the in-browser viewer at `:5557` is another).
+- **Your vault is portable.** Copy the folder anywhere; Obsidian on any OS reads it.
+- **You can edit memories in Obsidian and re-import.** The vault is structured markdown — round-trip-friendly.
+- **No new lock-in.** If you stop using Obsidian, delete the vault folder. Orion's brain is untouched.
+
+This is how Orion treats every connection: as a window the user owns. Obsidian today, your own custom viewer tomorrow, a Vision Pro spatial render the year after. The brain stays one. The windows multiply.
 
 ---
 

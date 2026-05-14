@@ -265,12 +265,54 @@ def export_vault(out_dir: Path) -> dict:
     return stats
 
 
+def _watch(out: Path, interval: float = 5.0) -> int:
+    """Re-export whenever graph_memory.json or SOUL.md mtime changes.
+
+    Cheap parallel-with-functions wiring: poll source files, re-render
+    on change. Future: subscribe to brain.memory.stored on the substrate
+    and re-render event-driven. For now polling keeps the path simple.
+    """
+    import time
+    last_seen = {}
+    print(f"[orion-obsidian-watch] watching {GRAPH_PATH} and {SOUL_PATH} every {interval}s")
+    print(f"[orion-obsidian-watch] re-exporting to {out.resolve()} on change")
+    print("[orion-obsidian-watch] Ctrl-C to stop.")
+    while True:
+        changed = False
+        for p in (GRAPH_PATH, SOUL_PATH):
+            try:
+                m = p.stat().st_mtime if p.exists() else 0
+            except OSError:
+                m = 0
+            if last_seen.get(p) != m:
+                last_seen[p] = m
+                changed = True
+        if changed:
+            try:
+                stats = export_vault(out)
+                ts = time.strftime("%H:%M:%S")
+                print(f"[{ts}] re-exported: "
+                      f"{stats['memories']} memories, "
+                      f"{stats['wiki_links']} links")
+            except Exception as e:
+                print(f"[orion-obsidian-watch] export error: {e}")
+        try:
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            print("\n[orion-obsidian-watch] stopped")
+            return 0
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Export Orion's brain as an Obsidian vault.")
     ap.add_argument("--out", default="./orion-vault",
                     help="output vault directory (default: ./orion-vault)")
     ap.add_argument("--open", action="store_true",
                     help="open the vault in Obsidian after export (uses obsidian:// URI)")
+    ap.add_argument("--watch", action="store_true",
+                    help="watch graph_memory + SOUL and re-export on change")
+    ap.add_argument("--interval", type=float, default=5.0,
+                    help="watch poll interval seconds (default: 5)")
     args = ap.parse_args(argv[1:])
 
     out = Path(args.out)
@@ -287,6 +329,9 @@ def main(argv: list[str]) -> int:
         uri = "obsidian://open?path=" + str(out.resolve()).replace(" ", "%20")
         print(f"\nopening: {uri}")
         webbrowser.open(uri)
+
+    if args.watch:
+        return _watch(out, args.interval)
     return 0
 
 
