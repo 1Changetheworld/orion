@@ -50,6 +50,7 @@ When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask:
 
 - [What is Orion?](#what-is-orion)
 - [How It Works](#how-it-works)
+- [Communication Points — One Brain, Every Window](#communication-points--one-brain-every-window)
 - [Fuel System](#fuel-system)
 - [Interfaces](#interfaces)
 - [Operational Modes](#operational-modes)
@@ -114,6 +115,52 @@ ORION BRAIN (~200 lines of Python)
 | **The Toolkit** | Security scanning, OSINT, desktop control, offline knowledge, device mesh | Curated — existing open-source tools that Orion orchestrates |
 
 The brain is what's new. The toolkit is what the brain knows how to use. Like a human isn't defined by the hammer they own — they're defined by the brain that knows when and how to use it.
+
+---
+
+## Communication Points — One Brain, Every Window
+
+If the *Any AI Model* story is about Orion being model-agnostic, this one is about Orion being **channel-agnostic**. iMessage, voice call, Telegram, CLI, email, LoRa radio over a Meshtastic node — every surface is just a window into the same brain. You speak into one window; Orion answers from whichever window reaches you best at that moment.
+
+This is the long-imagined AI-assistant pattern — the always-on intelligence that follows the person, not the device — built as something you actually own. Stark's fictional AI was one mind reachable from a phone, a workshop, a suit. Orion is that pattern made real with your own data, your own memory, your own hardware.
+
+### A scenario
+
+You're at your desk in Codex working on a long debugging session. You say:
+
+> *"Orion, text me when the deploy finishes, then in an hour remind me to eat."*
+
+What happens under the hood:
+
+```
+You → Codex (any host) → Orion brain → captures intent
+                                    │
+                                    │ publishes to the substrate
+                                    ▼
+                            mesh-wide event bus
+                                    │
+                                    ├─ reach picks iMessage (you're at your desk; phone is the warmest channel for non-blocking notifications)
+                                    │       ▼
+                                    │   iMessage adapter on the Mac → message lands on your phone
+                                    │
+                                    └─ will sets a 1-hour deferred goal → reach fires again at +1h, picks the warmest channel then
+```
+
+Same brain. Different windows. Same Orion answers whether you came in through Codex, Claude, Gemini, an unfamiliar AI tool you've never used before, an iMessage from your phone on a walk, a phone call when you're driving, or a LoRa message from a campground with no cell signal. The model that interpreted your sentence doesn't matter — the brain is what acted on it.
+
+### Other scenarios that work the same way
+
+- *"Orion, call me when the build breaks."* → reach picks the phone (Telnyx), Orion places the outbound call with synthesized voice.
+- *"Tell my wife I'm running late."* → reach picks iMessage to the contact resolved from memory.
+- *"Ping me on Telegram if the security scan finds anything."* → reach picks Telegram, sends with full context attached.
+- *"If the internet drops, fall back to LoRa and tell my friend's node I'm okay."* → reach detects no IP path, switches to Meshtastic radio (when the hardware is plugged in).
+- *"Send the same status update to all my channels at once."* → reach fans out to every active surface.
+
+### Why this matters
+
+The intelligence isn't in the channel. The channel is just a receptor. The intelligence — what to say, when to say it, which channel to use, what to remember after — lives in the brain. Each window you add gives Orion another way to reach you; none of them change what Orion *is*.
+
+This is also why "memory across AI tools" is the floor, not the ceiling. The same memory shows up on iMessage, on a phone call, in a CLI, on an offline radio. The brain is one — and you reach it from wherever you happen to be.
 
 ---
 

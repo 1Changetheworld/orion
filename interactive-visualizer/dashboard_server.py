@@ -41,7 +41,7 @@ GRAPH_PATH = ORION_HOME / "brain" / "graph_memory.json"
 CLAUSTRUM_PATH = ORION_HOME / "consciousness" / "state.json"
 VITALS_DIR = ORION_HOME / "vitals"
 
-PORT = 5556
+PORT = 5557
 
 
 def _load_graph() -> dict:
