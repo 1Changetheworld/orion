@@ -180,7 +180,7 @@ STAGED PIPELINE:
 3. VERIFY: Confirm it worked
 4. If it failed, try a different approach
 
-Respond concisely as Orion. Address the user as sir."""
+Respond concisely as Orion. Address the user as they prefer (call orion_recall with "preferred form of address" if unsure; default to no honorific)."""
 
     response, engine = get_fuel(prompt, interface)
     return response, engine
@@ -212,7 +212,7 @@ def think(message, interface="cli", user_id="orion"):
     # ── GREETINGS: Fast local ──
     if task == "greeting":
         prompt = f"{IDENTITY}\n\nUser says: {message}\n\nRespond briefly as Orion."
-        response = fuel_local(prompt) or "Sir, how may I assist you?"
+        response = fuel_local(prompt) or "How may I help?"
         memory.memorize(message, response, interface)
         return {
             "response": response,
@@ -248,15 +248,15 @@ def think(message, interface="cli", user_id="orion"):
 
 USER QUESTION ({interface}): {message}
 
-Respond concisely as Orion. Address the user as sir."""
+Respond concisely as Orion. Address the user as they prefer (call orion_recall with "preferred form of address" if unsure; default to no honorific)."""
         response, engine = get_fuel(prompt, interface)
 
     # Safety net
     if not response or response.strip() == "":
-        response = "Processing issue, sir. Please try again."
+        response = "Processing issue. Please try again."
         engine = "error"
     if response.startswith("Error:") or response.startswith("Traceback"):
-        response = "I encountered an issue, sir. Could you rephrase?"
+        response = "I encountered an issue. Could you rephrase?"
         engine = "error"
 
     # Save to memory

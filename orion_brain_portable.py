@@ -1887,10 +1887,10 @@ class OrionBrain:
 
         # Safety net
         if not response or response.strip() == "":
-            response = "Processing issue, sir. Please try again."
+            response = "Processing issue. Please try again."
             engine = "error"
         if response.startswith("Error:") or response.startswith("Traceback"):
-            response = "I encountered an issue, sir. Could you rephrase?"
+            response = "I encountered an issue. Could you rephrase?"
             engine = "error"
 
         # Save to memory (with Mem0 classification)
@@ -2034,33 +2034,37 @@ class OrionBrain:
     def _handle_greeting(self, message: str, interface: str) -> str:
         """Handle greetings without burning fuel."""
         msg = message.strip().lower().rstrip("!?.")
+        # Honorific-neutral defaults. Project CLAUDE.md: address user how
+        # they prefer; default to no honorific until orion_recall confirms.
+        # The strong CLIs (claude / codex / gemini) re-personalize based on
+        # the user's stored preferred form of address.
         greetings = {
-            "hi": "Hello sir. How may I assist you?",
-            "hey": "Hey sir. What do you need?",
-            "hello": "Hello sir. Ready when you are.",
-            "sup": "Sir. What's on the agenda?",
-            "yo": "Sir. What do you need?",
-            "gm": "Good morning, sir. Ready to execute.",
-            "good morning": "Good morning, sir. Ready to execute.",
-            "good night": "Good night, sir. I'll be here.",
-            "gn": "Good night, sir.",
-            "bye": "Standing by, sir.",
-            "thanks": "Of course, sir.",
-            "thank you": "Of course, sir.",
-            "ty": "Of course, sir.",
-            "thx": "Of course, sir.",
-            "ok": "Standing by, sir.",
-            "okay": "Standing by, sir.",
-            "cool": "Understood, sir.",
-            "nice": "Glad to hear it, sir.",
-            "got it": "Roger, sir.",
-            "understood": "Roger, sir.",
-            "roger": "Standing by, sir.",
-            "copy": "Copy, sir.",
-            "yes": "Understood, sir.",
-            "no": "Understood, sir.",
+            "hi": "Hello. What do you need?",
+            "hey": "Hey. What's up?",
+            "hello": "Hello. Ready when you are.",
+            "sup": "What's on the agenda?",
+            "yo": "What do you need?",
+            "gm": "Good morning. Ready to execute.",
+            "good morning": "Good morning. Ready to execute.",
+            "good night": "Good night. I'll be here.",
+            "gn": "Good night.",
+            "bye": "Standing by.",
+            "thanks": "Of course.",
+            "thank you": "Of course.",
+            "ty": "Of course.",
+            "thx": "Of course.",
+            "ok": "Standing by.",
+            "okay": "Standing by.",
+            "cool": "Understood.",
+            "nice": "Glad to hear it.",
+            "got it": "Roger.",
+            "understood": "Roger.",
+            "roger": "Standing by.",
+            "copy": "Copy.",
+            "yes": "Understood.",
+            "no": "Understood.",
         }
-        return greetings.get(msg, "Sir, how may I assist you?")
+        return greetings.get(msg, "How may I help?")
 
     def _staged_pipeline(self, message: str, context: str,
                          interface: str) -> tuple:
@@ -2099,7 +2103,7 @@ STAGED PIPELINE (follow this order exactly):
 3. EXECUTE: Do it. Use shell commands if needed.
 4. VERIFY RESULT: Confirm it worked. If it failed, explain why and suggest next steps.
 
-Respond concisely as Orion. Address the user as sir."""
+Respond concisely as Orion. Address the user as they prefer (call orion_recall with "preferred form of address" if unsure; default to no honorific)."""
 
         return self.fuel.query(prompt)
 
@@ -2112,7 +2116,7 @@ Respond concisely as Orion. Address the user as sir."""
 
 USER ({interface}): {message}
 
-Respond concisely as Orion. Address the user as sir."""
+Respond concisely as Orion. Address the user as they prefer (call orion_recall with "preferred form of address" if unsure; default to no honorific)."""
 
         return self.fuel.query(prompt)
 
@@ -4414,14 +4418,14 @@ def _cli_interactive():
         try:
             msg = input("you> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nStanding by, sir.")
+            print("\nStanding by.")
             break
 
         if not msg:
             continue
         if msg.lower() in ("quit", "exit", "q"):
             brain.save()
-            print("Brain saved. Standing by, sir.")
+            print("Brain saved. Standing by.")
             break
         if msg.lower() == "status":
             print(brain.status())
