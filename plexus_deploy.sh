@@ -170,7 +170,10 @@ deploy_substrate_macos() {
     # - Peers set: cluster mode on, routes configured via ROUTE_FLAGS.
     local CLUSTER_XML=""
     if [ -n "$MESH_PEERS" ]; then
-        CLUSTER_XML="    <string>--cluster_name</string><string>${CLUSTER_NAME}</string>
+        # NATS requires --server_name for JetStream cluster (2026-05-14 fix).
+        local SERVER_NAME="$(hostname -s)"
+        CLUSTER_XML="    <string>--server_name</string><string>${SERVER_NAME}</string>
+    <string>--cluster_name</string><string>${CLUSTER_NAME}</string>
     <string>--cluster</string><string>nats://0.0.0.0:6222</string>"
         # Build per-peer <string> entries for the plist
         IFS=',' read -ra _PEER_LIST <<< "$MESH_PEERS"
@@ -252,7 +255,11 @@ deploy_substrate_linux() {
     # JetStream+cluster with zero routes).
     local CLUSTER_FLAGS=""
     if [ -n "$MESH_PEERS" ]; then
-        CLUSTER_FLAGS="--cluster_name ${CLUSTER_NAME} --cluster nats://0.0.0.0:6222"
+        # NATS rejects JetStream+cluster without --server_name; fixed
+        # 2026-05-14 during first cross-host cluster deploy. Use the host's
+        # short hostname so each peer in the mesh has a stable, distinct ID.
+        local SERVER_NAME="$(hostname -s)"
+        CLUSTER_FLAGS="--server_name ${SERVER_NAME} --cluster_name ${CLUSTER_NAME} --cluster nats://0.0.0.0:6222"
         IFS=',' read -ra _PEER_LIST <<< "$MESH_PEERS"
         for p in "${_PEER_LIST[@]}"; do
             CLUSTER_FLAGS="${CLUSTER_FLAGS} --routes ${p}"
