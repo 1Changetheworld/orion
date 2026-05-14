@@ -54,6 +54,8 @@ ORION_HOME = Path(os.environ.get("ORION_BRAIN_DIR")
 GRAPH_PATH = ORION_HOME / "brain" / "graph_memory.json"
 SOUL_PATH = ORION_HOME / "identity" / "SOUL.md"
 VITALS_DIR = ORION_HOME / "vitals"
+MCP_LOG_PATH = ORION_HOME / "mcp_calls.log"
+DECISIONS_PATH = ORION_HOME / "executive" / "decisions.jsonl"
 
 # Identical to dashboard_server's KNOWN_* so the exported vault matches
 # the nervous system the visualizer renders.
@@ -96,6 +98,63 @@ def _frontmatter(d: dict) -> str:
     return "\n".join(lines)
 
 
+def _load_recent_activity(limit: int = 200) -> list:
+    """Pull recent brain activity. Sources (any host): mcp_calls.log
+    (recall / memorize / identity calls) and executive/decisions.jsonl
+    (autonomous deliberations). Each event carries when, what, and
+    enough context to wiki-link from the timeline back into the graph.
+    """
+    events = []
+    if MCP_LOG_PATH.exists():
+        try:
+            with open(MCP_LOG_PATH, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    m = re.match(r"^\[([^\]]+)\] (\S+)\s+(.+)$", line)
+                    if not m:
+                        continue
+                    ts, kind, rest = m.groups()
+                    # Extract tool name from "tools/call orion_recall args=..."
+                    tool = None
+                    tm = re.match(r"tools/call (\w+)", rest)
+                    if tm:
+                        tool = tm.group(1)
+                    # Extract query/content snippet for context
+                    snippet = ""
+                    sm = re.search(r'"(?:query|content|fact)":\s*"([^"]{1,140})', rest)
+                    if sm:
+                        snippet = sm.group(1)
+                    events.append({
+                        "ts": ts, "source": "mcp", "kind": kind,
+                        "tool": tool or kind, "snippet": snippet,
+                    })
+        except Exception:
+            pass
+    if DECISIONS_PATH.exists():
+        try:
+            with open(DECISIONS_PATH, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except Exception:
+                        continue
+                    events.append({
+                        "ts": d.get("ts") or d.get("timestamp") or "",
+                        "source": "executive",
+                        "kind": d.get("symptom_class") or "decision",
+                        "tool": d.get("service") or "executive",
+                        "snippet": str(d.get("proposal") or d.get("outcome") or "")[:140],
+                    })
+        except Exception:
+            pass
+    # newest first; cap
+    events.sort(key=lambda e: e["ts"], reverse=True)
+    return events[:limit]
+
+
 def export_vault(out_dir: Path) -> dict:
     """Build the vault. Returns summary stats."""
     out_dir = out_dir.resolve()
@@ -103,7 +162,16 @@ def export_vault(out_dir: Path) -> dict:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
 
-    stats = {"memories": 0, "devices": 0, "channels": 0, "services": 0, "wiki_links": 0}
+    stats = {"memories": 0, "devices": 0, "channels": 0, "services": 0, "wiki_links": 0, "activity_days": 0, "activity_events": 0}
+    activity = _load_recent_activity(limit=500)
+    # Group by date for daily activity files + per-channel/per-tool indexes.
+    by_date = defaultdict(list)
+    by_tool = defaultdict(list)
+    for ev in activity:
+        # Normalize date prefix YYYY-MM-DD
+        date_key = (ev["ts"] or "")[:10] or "unknown"
+        by_date[date_key].append(ev)
+        by_tool[ev.get("tool", "?")].append(ev)
 
     # README ───────────────────────────────────────
     (out_dir / "README.md").write_text(
@@ -118,8 +186,9 @@ def export_vault(out_dir: Path) -> dict:
         "- `Identity/` — who Orion is\n"
         "- `Memories/` — every fact, preference, project, decision Orion holds\n"
         "- `Devices/` — the hosts in the mesh (COMMAND / FORGE / ORIONS HOME)\n"
-        "- `Channels/` — communication points (iMessage / Voice / Telegram / LoRa / …)\n"
-        "- `Services/` — Plexus services running on this host (if any)\n",
+        "- `Channels/` — communication points (iMessage / Voice / Telegram / LoRa / ...)\n"
+        "- `Services/` — Plexus services running on this host (if any)\n"
+        "- `Activity/` — timeline of recent brain activity (recalls / memorizes / decisions)\n",
         encoding="utf-8",
     )
 
@@ -151,6 +220,51 @@ def export_vault(out_dir: Path) -> dict:
                           "ip": d["ip"], "tags": ["device", d["id"]]}) + body,
             encoding="utf-8")
         stats["devices"] += 1
+
+    # ACTIVITY (timeline) ──────────────────────────
+    act_dir = out_dir / "Activity"
+    act_dir.mkdir()
+    for date_key, evs in sorted(by_date.items(), reverse=True):
+        if date_key == "unknown":
+            continue
+        lines = [f"# Activity — {date_key}", ""]
+        for ev in evs:
+            tool = ev.get("tool", "?")
+            snippet = ev.get("snippet", "").strip()
+            ts = ev.get("ts", "")
+            tool_link = f"[[{tool}]]"
+            line = f"- `{ts[11:19] if len(ts) >= 19 else ts}` · {tool_link}"
+            if snippet:
+                line += f" — {snippet[:100]}"
+            lines.append(line)
+        (act_dir / f"{date_key}.md").write_text(
+            _frontmatter({"kind": "activity", "date": date_key,
+                          "event_count": len(evs),
+                          "tags": ["activity", date_key]}) + "\n".join(lines),
+            encoding="utf-8")
+        stats["activity_days"] += 1
+        stats["activity_events"] += len(evs)
+
+    # Per-tool index — Memories/recalls.md, Memories/memorizes.md, etc.
+    # Each lets Obsidian show "what tool fired most often"
+    for tool, evs in by_tool.items():
+        if not tool or tool == "?":
+            continue
+        fname = _safe_filename(tool) + ".md"
+        body_lines = [
+            f"# {tool}", "",
+            f"_{len(evs)} invocation{'s' if len(evs) != 1 else ''} recorded._",
+            "",
+            "## Recent uses",
+        ]
+        for ev in evs[:30]:
+            ts = ev.get("ts", "")[:19]
+            snip = ev.get("snippet", "")[:80]
+            body_lines.append(f"- `{ts}` — {snip}" if snip else f"- `{ts}`")
+        (act_dir / fname).write_text(
+            _frontmatter({"kind": "tool", "name": tool,
+                          "tags": ["tool", tool]}) + "\n".join(body_lines),
+            encoding="utf-8")
 
     # CHANNELS ─────────────────────────────────────
     chan_dir = out_dir / "Channels"
