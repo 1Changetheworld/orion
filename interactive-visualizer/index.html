@@ -247,9 +247,10 @@ let Graph = null;
     Graph.cameraPosition({ x: 0, y: 0, z: 380 });
 
     setBoot('', 'gone');
+    document.getElementById('boot-status').remove();
 
-    // Auto-rotate
-    let rotateOn = true;
+    // Auto-rotate DISABLED — fights user controls. Founder feedback 2026-05-14.
+    let rotateOn = false;
     let angle = 0;
     const distance = 380;
     setInterval(() => {
