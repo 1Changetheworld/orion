@@ -502,7 +502,7 @@ def get_fuel(prompt, interface="cli", max_turns=15):
     response, engine = fuel.query(prompt, max_turns)
     if response:
         return response, engine
-    return "All models unavailable, sir. Try another interface.", "none"
+    return "All models unavailable. Try another interface.", "none"
 
 
 def status():
