@@ -383,6 +383,32 @@ def _absence_message_if_any(cli: str) -> str:
         return ""
 
 
+def _team_room_if_any() -> str:
+    """Surface other active Orion sessions so this CLI knows its teammates.
+
+    Founder feedback 2026-05-15: '3 terminals = teammates in the same
+    room. They should know what each other is doing — that's exactly
+    what Orion exists to solve.'
+    """
+    try:
+        repo = Path(__file__).resolve().parent
+        sys.path.insert(0, str(repo))
+        import orion_team as team
+        sessions = team.list_active()
+        if not sessions:
+            return ""
+        body = team.format_team_room(sessions)
+        return (
+            "\n## ORION TEAM ROOM — other active sessions right now\n\n"
+            "Other Orion sessions are awake. Treat them like teammates "
+            "in the same room — coordinate via brain memorize before "
+            "duplicating their work.\n\n"
+            f"{body}\n"
+        )
+    except Exception:
+        return ""
+
+
 def _session_resume_brief(cli: str) -> str:
     """Real-time existence layer (founder 2026-05-13 ask: "talking to a
     person through different windows"). On every flag-exists session start,
@@ -456,15 +482,16 @@ def main(argv: list[str]) -> int:
     if flag.exists():
         # Already met for the first time. Stay silent on persona — Orion
         # does its work without re-introducing — but ALWAYS emit the
-        # continuity brief (real-time existence layer) and the absence
-        # note when a gap is detected.
+        # continuity brief (real-time existence layer), the absence
+        # note when a gap is detected, and the team room (other active
+        # Orion sessions) so the model knows who else is awake.
         brief = _session_resume_brief(cli)
         absence = _absence_message_if_any(cli)
-        if brief:
-            sys.stdout.write(brief)
-        if absence:
-            sys.stdout.write(absence)
-        if brief or absence:
+        team = _team_room_if_any()
+        for chunk in (brief, absence, team):
+            if chunk:
+                sys.stdout.write(chunk)
+        if brief or absence or team:
             sys.stdout.flush()
         return 0
 
