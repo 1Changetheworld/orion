@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import sys
@@ -72,6 +73,48 @@ KNOWN_CHANNELS = [
     {"id": "webhook",  "label": "Webhook",   "host": "command", "transport": "HTTP :5555"},
     {"id": "lora",     "label": "LoRa",      "host": "orions-home", "transport": "Meshtastic v3"},
 ]
+
+
+def _ssh_pull(host_alias: str, command: str, timeout: int = 6) -> str:
+    """Run a small shell command on a remote host via ssh alias.
+    Best-effort: returns "" on any error so the vault always renders.
+    """
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes",
+             "-o", f"ConnectTimeout={timeout}",
+             host_alias, command],
+            capture_output=True, text=True, timeout=timeout + 2)
+        return (r.stdout or "") if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _pull_remote_host(dev: dict) -> dict:
+    """Pull live state from a known device via ssh."""
+    alias_map = {
+        "command":     "command",
+        "orions-home": "pi",
+        "forge":       None,
+    }
+    alias = alias_map.get(dev["id"])
+    info = {"services": [], "activity_lines": []}
+    if alias is None:
+        return info
+    if dev["id"] == "command":
+        out = _ssh_pull(alias, "launchctl list 2>/dev/null | awk '/com\\.orion\\./{print $3}' | sort")
+    else:
+        # systemctl --user over ssh needs XDG_RUNTIME_DIR set explicitly.
+        out = _ssh_pull(alias,
+            "XDG_RUNTIME_DIR=/run/user/$(id -u) "
+            "systemctl --user list-units 'orion-*' --no-pager --no-legend 2>/dev/null "
+            "| awk '/orion-/{for(i=1;i<=NF;i++) if($i ~ /^orion-/) print $i}'")
+    info["services"] = [s.strip() for s in out.splitlines()
+                        if s.strip() and s.strip() != "●"]
+    log = _ssh_pull(alias, "tail -20 ~/.orion/mcp_calls.log 2>/dev/null")
+    info["activity_lines"] = [l for l in log.splitlines() if l.strip()][:20]
+    return info
 
 
 def _safe_filename(name: str) -> str:
@@ -205,19 +248,44 @@ def export_vault(out_dir: Path) -> dict:
     dev_dir = out_dir / "Devices"
     dev_dir.mkdir()
     for d in KNOWN_DEVICES:
+        remote = _pull_remote_host(d)
+        # services live: from remote pull, or locally if this IS the host
+        services = remote["services"]
+        if not services and d["id"] in platform.node().lower():
+            # We're running on this host — read local vitals dir
+            if VITALS_DIR.exists():
+                services = sorted(f.stem for f in VITALS_DIR.glob("*.json"))
+        activity_lines = remote["activity_lines"]
         body = (
             f"# {d['label']}\n\n"
             f"- **role:** {d['role']}\n"
-            f"- **IP:** {d['ip']}\n\n"
+            f"- **IP:** {d['ip']}\n"
+            f"- **services running:** {len(services)}\n\n"
             f"## Channels hosted here\n"
-            + "".join(f"- [[{ch['label']}]]\n" for ch in KNOWN_CHANNELS
-                     if ch['host'] == d['id']) +
+            + ("".join(f"- [[{ch['label']}]]\n" for ch in KNOWN_CHANNELS
+                       if ch['host'] == d['id']) or "_(none)_\n")
+        )
+        if services:
+            body += (
+                f"\n## Plexus services on this host ({len(services)})\n"
+                + "".join(f"- `{s}`\n" for s in services[:30])
+            )
+        body += (
             f"\n## Mesh peers\n"
             + "".join(f"- [[{o['label']}]]\n" for o in KNOWN_DEVICES if o['id'] != d['id'])
         )
+        if activity_lines:
+            body += "\n## Recent brain activity (this host)\n```\n"
+            for line in activity_lines[-10:]:
+                body += line[:120] + "\n"
+            body += "```\n"
         (dev_dir / f"{_safe_filename(d['label'])}.md").write_text(
-            _frontmatter({"kind": "device", "id": d["id"], "role": d["role"],
-                          "ip": d["ip"], "tags": ["device", d["id"]]}) + body,
+            _frontmatter({
+                "kind": "device", "id": d["id"], "role": d["role"],
+                "ip": d["ip"],
+                "service_count": len(services),
+                "tags": ["device", d["id"]]
+            }) + body,
             encoding="utf-8")
         stats["devices"] += 1
 
