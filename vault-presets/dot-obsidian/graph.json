@@ -7,13 +7,14 @@
   "showOrphans": false,
   "collapse-color-groups": false,
   "colorGroups": [
-    { "query": "tag:#identity",   "color": { "a": 1, "rgb": 16767082 } },
-    { "query": "tag:#device",     "color": { "a": 1, "rgb": 16756826 } },
-    { "query": "tag:#cli",        "color": { "a": 1, "rgb": 6989311  } },
-    { "query": "tag:#llm",        "color": { "a": 1, "rgb": 5959423  } },
-    { "query": "tag:#channel",    "color": { "a": 1, "rgb": 16738514 } },
-    { "query": "tag:#service",    "color": { "a": 1, "rgb": 7012296  } },
-    { "query": "tag:#architecture","color": { "a": 1, "rgb": 13148415 } }
+    { "query": "tag:#identity",    "color": { "a": 1, "rgb": 16767082 } },
+    { "query": "tag:#architecture","color": { "a": 1, "rgb": 13148415 } },
+    { "query": "tag:#device",      "color": { "a": 1, "rgb": 16756826 } },
+    { "query": "tag:#hardware",    "color": { "a": 1, "rgb": 16747082 } },
+    { "query": "tag:#cli",         "color": { "a": 1, "rgb": 5959018  } },
+    { "query": "tag:#llm",         "color": { "a": 1, "rgb": 5959423  } },
+    { "query": "tag:#channel",     "color": { "a": 1, "rgb": 16738514 } },
+    { "query": "tag:#service",     "color": { "a": 1, "rgb": 7012296  } }
   ],
   "collapse-display": false,
   "showArrow": true,

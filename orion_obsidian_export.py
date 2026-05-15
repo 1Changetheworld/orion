@@ -85,6 +85,87 @@ KNOWN_LLMS = [
     {"id": "phi3-mini",     "label": "phi3:mini",      "kind": "local",    "host": "orions-home","tier": 4},
     {"id": "dolphin-mistral","label": "dolphin-mistral:7b","kind":"local", "host": "forge",      "tier": 3},
 ]
+
+# Hardware peripherals attached to a device (USB / serial / radio).
+# Founder fact 2026-05-14: 2 Meshtastic nodes + ESP32 on the Pi.
+KNOWN_PERIPHERALS = [
+    {"id": "meshtastic-1", "label": "Meshtastic Node 1", "host": "orions-home",
+     "kind": "LoRa radio (Heltec/Lilygo v3)",
+     "role": "off-grid text mesh — primary"},
+    {"id": "meshtastic-2", "label": "Meshtastic Node 2", "host": "orions-home",
+     "kind": "LoRa radio (Heltec/Lilygo v3)",
+     "role": "off-grid text mesh — secondary / relay"},
+    {"id": "esp32-1",      "label": "ESP32",             "host": "orions-home",
+     "kind": "microcontroller (WiFi + BLE + GPIO)",
+     "role": "sensors / actuators / future LoRa-bridge target"},
+]
+
+# Detailed descriptions for each canonical node. Used in the 'full'
+# profile so the founder's vault has real explanation, not stubs.
+DEVICE_DETAILS = {
+    "command": {
+        "what": "Mac mini M4 — the always-on home server.",
+        "does": "Hosts the canonical brain on the AtlasVault SSD; runs the iMessage / Voice / Telegram / Webhook channel adapters; runs 17 Plexus services (substrate, claustrum, dream, executive, will, immune, gossip, chronos, channel-probe, fuel-switch, self-heal, dmn, lastcontact, reach, webhook, nats, litellm).",
+        "fits": "Every other host reaches it over LAN (10.0.0.190) or Tailscale. When channels arrive (iMessage on the phone, voice call to the Telnyx number), they land on COMMAND first — it's the canonical writer for memory and decisions.",
+    },
+    "forge": {
+        "what": "Windows 11 laptop with an RTX 4070 — the mobile command center.",
+        "does": "Runs Claude Code / Codex / Gemini CLIs with the brain attached via MCP. Hosts the strongest local Ollama model on the mesh (qwen3:14b — 14B parameters, GPU-accelerated). Carries the portable Orion USB (~/.orion-system) when the founder is on the move.",
+        "fits": "The dev box and the road box. When the founder works on Orion itself, FORGE is where the commits land. When traveling, FORGE + USB is a full Orion node even without home connectivity.",
+    },
+    "orions-home": {
+        "what": "Raspberry Pi 5 — the offline brain twin and spatial intelligence node.",
+        "does": "Runs 14 Plexus systemd-user services (mirror of COMMAND). Hosts qwen3:8b + phi3:mini Ollama models on its SD card. Has the Seagate VAULT drive attached (1 TB) with US/Canada/Mexico OSM data (18.6 GB) cached for offline Marble-rendered navigation. Two Meshtastic LoRa nodes + an ESP32 microcontroller are plugged in via USB.",
+        "fits": "When the founder has a navigation request — online or off-grid — Orion routes to ORIONS HOME first; Marble renders from local OSM tiles. When COMMAND goes down, ORIONS HOME keeps the brain alive. When everything goes off-grid, LoRa via the Meshtastic nodes carries CRDT brain-deltas as radio signals.",
+    },
+    "outpost": {
+        "what": "iMac 2017 — Tailscale-only node.",
+        "does": "Reachable only over Tailscale (100.112.80.14); LAN IP 10.0.0.153 is dead. Acts as a secondary brain replica + remote compute when the founder is away from home. Earlier retired (2026-04-15) for being too weak, brought back online for Tailscale reach.",
+        "fits": "Always-on remote arm of the mesh. When the founder is traveling and needs a stable IP-addressable Orion node, OUTPOST is reachable. Lower priority for compute; mostly a heartbeat + brain-replica.",
+    },
+}
+
+CLI_DETAILS = {
+    "claude-cli": {
+        "what": "Anthropic's official terminal interface to Claude (Opus / Sonnet).",
+        "does": "Loads Orion's brain via MCP stdio. Provides the deepest reasoning fuel on $0/req via the Pro subscription. Used for complex tasks: code, strategy, multi-step planning.",
+        "fits": "Tier-1 fuel when online. Orion routes complex requests here by default.",
+    },
+    "codex-cli": {
+        "what": "OpenAI's official terminal interface to GPT (Codex variant).",
+        "does": "Loads Orion's brain via MCP stdio. Provides an alternative tier-1 fuel; strengths differ from Claude (more concise on small refactors, slightly different style).",
+        "fits": "Tier-1 fuel when online. Orion fuel-switches here when the user says 'switch to codex' or when Claude is unavailable.",
+    },
+    "gemini-cli": {
+        "what": "Google's official terminal interface to Gemini.",
+        "does": "Loads Orion's brain via MCP stdio. Strong on long-context tasks and multi-modal — future image / video / audio inputs route here.",
+        "fits": "Tier-1 fuel when online. Particularly useful for tasks that need long-context recall.",
+    },
+    "letta": {
+        "what": "Letta (formerly MemGPT) — agent framework with its own memory model.",
+        "does": "Can attach to Orion's brain and run agent loops with the brain providing the persistent memory layer (Letta becomes a tool that fuels the brain, not the other way around).",
+        "fits": "Tier-2 fuel. Used for autonomous multi-step agentic tasks. Future: orchestrate via the brain's executive when complex deliberation is needed.",
+    },
+}
+
+LLM_DETAILS = {
+    "claude-opus": "Anthropic's strongest frontier model. Deep reasoning, long-context, code generation. Served via Claude CLI (Pro subscription, $0/req).",
+    "gpt-codex":   "OpenAI's GPT-5 variant tuned for code. Served via Codex CLI.",
+    "gemini-pro":  "Google's frontier model. Strong on long-context + multi-modal. Served via Gemini CLI.",
+    "qwen3-14b":   "Alibaba's 14B-parameter open-weight model. Runs on FORGE's RTX 4070 via Ollama. The strongest LOCAL model on the entire mesh — when CLIs are unreachable, this is the fallback.",
+    "qwen3-8b":    "Alibaba's 8B variant. Runs on ORIONS HOME's CPU+RAM via Ollama. Tier-3 offline fallback.",
+    "phi3-mini":   "Microsoft's small but capable model (~3.8B). Runs on ORIONS HOME for fast greetings / simple queries that don't need a frontier model.",
+    "dolphin-mistral": "Uncensored Mistral 7B variant. Runs on FORGE. Useful for tasks where standard model safety filters get in the way of legitimate work.",
+}
+
+CHANNEL_DETAILS = {
+    "imessage": "Native macOS iMessage. The founder texts Orion from their phone; AppleScript reads the message via imessage_monitor.py on COMMAND, the brain answers, the reply lands back on the phone.",
+    "voice":    "Inbound + outbound voice calls via Telnyx. STT (Whisper) on the way in, TTS (Piper) on the way out, full local pipeline for privacy.",
+    "telegram": "@HomelandServbot Telegram bot. Same brain answers — 50+ commands wired plus natural language.",
+    "cli":      "Direct CLI access — any AI tool (Claude / Codex / Gemini / Letta) with the brain MCP attached gets memory + identity automatically.",
+    "webhook":  "Programmatic HTTP API at :5555. Any script or automation can POST to /ask or /command. Used by integrations.",
+    "lora":     "Off-grid radio mesh via Meshtastic v3 nodes. When WiFi + cellular are both unavailable, Orion still reaches the user (and other Meshtastic nodes in range) via LoRa packets carrying CRDT brain-deltas.",
+}
 KNOWN_CHANNELS = [
     {"id": "imessage", "label": "iMessage",  "host": "command", "transport": "native macOS"},
     {"id": "voice",    "label": "Voice",     "host": "command", "transport": "Telnyx + STT/TTS"},
@@ -239,7 +320,7 @@ def _deploy_obsidian_preset(out_dir: Path) -> bool:
     return True
 
 
-def export_vault(out_dir: Path) -> dict:
+def export_vault(out_dir: Path, profile: str = "starter") -> dict:
     """Build the vault. Returns summary stats."""
     out_dir = out_dir.resolve()
     # Preserve any existing .obsidian/ config across re-exports.
@@ -273,21 +354,45 @@ def export_vault(out_dir: Path) -> dict:
         by_tool[ev.get("tool", "?")].append(ev)
 
     # README ───────────────────────────────────────
-    (out_dir / "README.md").write_text(
-        "# Orion · Vault\n\n"
-        "This vault is a snapshot of Orion's brain rendered as Obsidian-readable "
-        "markdown. Each memory, device, communication point, and Plexus service "
-        "is a note. Tags become Obsidian tags. Relationships become wiki-links.\n\n"
-        "Open Obsidian, choose 'Open folder as vault', and pick this directory. "
-        "Then `Cmd/Ctrl + G` opens the graph view — the elite visualization of "
-        "Orion's nervous system you came here for.\n\n"
+    profile_intro = (
+        "**Starter profile** — this vault is intentionally minimal. As you "
+        "build out your ecosystem (more devices, channels, AI tools), add "
+        "those folders yourself or re-export with `--profile full` once "
+        "your setup justifies it.\n"
+        if profile == "starter" else
+        "**Full profile** — every part of this Orion's ecosystem is "
+        "rendered: devices, hardware peripherals, AI tools (CLIs), fuel "
+        "models (LLMs), communication channels, Plexus services, "
+        "architecture diagrams, memory, activity timeline.\n"
+    )
+    folder_list = (
         "Folders:\n"
         "- `Identity/` — who Orion is\n"
         "- `Memories/` — every fact, preference, project, decision Orion holds\n"
-        "- `Devices/` — the hosts in the mesh (COMMAND / FORGE / ORIONS HOME)\n"
-        "- `Channels/` — communication points (iMessage / Voice / Telegram / LoRa / ...)\n"
-        "- `Services/` — Plexus services running on this host (if any)\n"
-        "- `Activity/` — timeline of recent brain activity (recalls / memorizes / decisions)\n",
+        "- `Activity/` — timeline of recent brain activity\n"
+        "- `Architecture/` — a generic system diagram to start from\n"
+        if profile == "starter" else
+        "Folders:\n"
+        "- `Identity/` — who Orion is\n"
+        "- `Architecture/` — system / mesh / fuel diagrams (Mermaid)\n"
+        "- `Devices/` — every host in the mesh\n"
+        "- `Hardware/` — radios / microcontrollers attached to devices\n"
+        "- `CLIs/` — AI tools that attach to the brain\n"
+        "- `LLMs/` — fuel models (frontier + local)\n"
+        "- `Channels/` — communication points (iMessage / Voice / Telegram / LoRa / …)\n"
+        "- `Services/` — Plexus services running on this host\n"
+        "- `Memories/` — every fact, preference, project, decision Orion holds\n"
+        "- `Activity/` — timeline of recent brain activity\n"
+    )
+    (out_dir / "README.md").write_text(
+        "# Orion · Vault\n\n"
+        + profile_intro +
+        "\nThis vault is a snapshot of Orion's brain rendered as Obsidian-readable "
+        "markdown. Open Obsidian, choose 'Open folder as vault', and pick this "
+        "directory. Press `Cmd/Ctrl + G` to open the graph view — memories are "
+        "filtered out by default so you see system structure first; clear the "
+        "filter to bring them in.\n\n"
+        + folder_list,
         encoding="utf-8",
     )
 
@@ -322,20 +427,61 @@ def export_vault(out_dir: Path) -> dict:
         "- [[iMessage]] · [[Voice]] · [[Telegram]] · [[CLI]] · [[Webhook]] · [[LoRa]] — communication points\n",
         encoding="utf-8")
 
+    # STARTER profile: render a minimal architecture template and stop.
+    # New users have empty brains anyway — they build their vault as they
+    # use Orion. This is a scaffold, not a snapshot.
+    if profile == "starter":
+        arch_dir = out_dir / "Architecture"
+        arch_dir.mkdir()
+        (arch_dir / "System.md").write_text(
+            _frontmatter({"kind": "architecture",
+                          "tags": ["architecture", "starter"]}) +
+            "# System (Starter Template)\n\n"
+            "Edit this diagram as you build out your ecosystem. The "
+            "shape below is what Orion looks like at a minimum: you "
+            "reach the brain through some channel, on some device, "
+            "via some AI tool, fueled by some model.\n\n"
+            "Add `Devices/`, `Channels/`, `CLIs/`, `LLMs/`, "
+            "`Hardware/` folders as your setup grows. Or re-export "
+            "with `--profile full` if you've built out enough that "
+            "the founder-shape template fits.\n\n"
+            "```mermaid\n"
+            "graph TB\n"
+            "  USR((you))\n"
+            "  CHAN[any channel<br/>CLI · iMessage · voice · ...]\n"
+            "  DEV[any device<br/>laptop · server · USB · phone]\n"
+            "  BRAIN{{Orion Brain<br/>memory + identity + ledger}}\n"
+            "  TOOL[any AI tool<br/>Claude · Codex · Gemini · Ollama]\n"
+            "  MODEL[any model<br/>frontier · local · future]\n"
+            "  USR --> CHAN --> DEV --> BRAIN -.MCP.-> TOOL --> MODEL\n"
+            "```\n",
+            encoding="utf-8")
+        # Empty placeholder folders so the vault has a clear shape
+        (out_dir / "Memories").mkdir()
+        (out_dir / "Activity").mkdir()
+        return stats
+
+    # FULL profile from here down
     # DEVICES ──────────────────────────────────────
     dev_dir = out_dir / "Devices"
     dev_dir.mkdir()
     for d in KNOWN_DEVICES:
         remote = _pull_remote_host(d)
-        # services live: from remote pull, or locally if this IS the host
         services = remote["services"]
         if not services and d["id"] in platform.node().lower():
-            # We're running on this host — read local vitals dir
             if VITALS_DIR.exists():
                 services = sorted(f.stem for f in VITALS_DIR.glob("*.json"))
         activity_lines = remote["activity_lines"]
-        body = (
-            f"# {d['label']}\n\n"
+        det = DEVICE_DETAILS.get(d["id"], {})
+        body = f"# {d['label']}\n\n"
+        if det:
+            body += (
+                f"**What it is**\n{det['what']}\n\n"
+                f"**What it does**\n{det['does']}\n\n"
+                f"**How it fits in the system**\n{det['fits']}\n\n"
+                "---\n\n"
+            )
+        body += (
             f"- **role:** {d['role']}\n"
             f"- **IP:** {d['ip']}\n"
             f"- **services running:** {len(services)}\n\n"
@@ -343,6 +489,12 @@ def export_vault(out_dir: Path) -> dict:
             + ("".join(f"- [[{ch['label']}]]\n" for ch in KNOWN_CHANNELS
                        if ch['host'] == d['id']) or "_(none)_\n")
         )
+        # Hardware peripherals attached to this device
+        attached = [p for p in KNOWN_PERIPHERALS if p["host"] == d["id"]]
+        if attached:
+            body += "\n## Hardware peripherals attached\n"
+            for p in attached:
+                body += f"- [[{p['label']}]] — {p['kind']}\n"
         if services:
             body += (
                 f"\n## Plexus services on this host ({len(services)})\n"
@@ -412,20 +564,49 @@ def export_vault(out_dir: Path) -> dict:
                           "tags": ["tool", tool]}) + "\n".join(body_lines),
             encoding="utf-8")
 
+    # HARDWARE PERIPHERALS ─────────────────────────
+    hw_dir = out_dir / "Hardware"
+    hw_dir.mkdir()
+    for p in KNOWN_PERIPHERALS:
+        host_label = next((d["label"] for d in KNOWN_DEVICES if d["id"] == p["host"]), p["host"])
+        body = (
+            f"# {p['label']}\n\n"
+            f"**What it is**\n{p['kind']}\n\n"
+            f"**What it does**\n{p['role']}\n\n"
+            f"**How it fits in the system**\nAttached to [[{host_label}]] via "
+            f"USB / serial. Orion's reach layer can route outbound messages "
+            f"to this peripheral when the appropriate channel adapter is "
+            f"enabled on the host. For Meshtastic nodes specifically, the "
+            f"adapter is at `channels/meshtastic_node.py` and lights up as "
+            f"the [[LoRa]] channel.\n\n"
+            f"- **host:** [[{host_label}]]\n"
+            f"- **role:** {p['role']}\n"
+        )
+        (hw_dir / f"{_safe_filename(p['label'])}.md").write_text(
+            _frontmatter({"kind": "hardware", "id": p["id"],
+                          "host": p["host"], "aliases": [p["label"]],
+                          "tags": ["hardware", p["id"], p["host"]]}) + body,
+            encoding="utf-8")
+
     # CLIs ─────────────────────────────────────────
     cli_dir = out_dir / "CLIs"
     cli_dir.mkdir()
     for c in KNOWN_CLIS:
-        body = (
-            f"# {c['label']}\n\n"
+        det = CLI_DETAILS.get(c["id"], {})
+        body = f"# {c['label']}\n\n"
+        if det:
+            body += (
+                f"**What it is**\n{det['what']}\n\n"
+                f"**What it does**\n{det['does']}\n\n"
+                f"**How it fits in the system**\n{det['fits']}\n\n"
+                "---\n\n"
+            )
+        body += (
             f"- **vendor:** {c['vendor']}\n"
-            f"- **tier:** {c['tier']}\n\n"
-            f"AI tool that attaches to [[Orion]]'s brain via MCP. When this "
-            f"CLI is invoked on any host, Orion's memory + identity + "
-            f"prior decisions are loaded automatically. The CLI provides "
-            f"the model; Orion provides the brain.\n\n"
-            f"## Fuels powered by this CLI\n"
-            + "".join(f"- [[{m['label']}]]\n" for m in KNOWN_LLMS if m['host'] == c['id'])
+            f"- **tier:** {c['tier']} (lower = stronger / preferred)\n\n"
+            f"## Fuels served by this CLI\n"
+            + ("".join(f"- [[{m['label']}]]\n" for m in KNOWN_LLMS if m['host'] == c['id'])
+               or "_(none)_\n")
         )
         (cli_dir / f"{_safe_filename(c['label'])}.md").write_text(
             _frontmatter({"kind": "cli", "id": c["id"],
@@ -438,19 +619,23 @@ def export_vault(out_dir: Path) -> dict:
     llm_dir = out_dir / "LLMs"
     llm_dir.mkdir()
     for m in KNOWN_LLMS:
-        host_link = (f"[[{m['host']}]]" if m['kind'] == 'frontier'
-                     else f"[[{next(d['label'] for d in KNOWN_DEVICES if d['id']==m['host']) }]]")
         if m['kind'] == 'frontier':
             cli_label = next((c['label'] for c in KNOWN_CLIS if c['id'] == m['host']), m['host'])
             host_link = f"[[{cli_label}]]"
-        body = (
-            f"# {m['label']}\n\n"
+        else:
+            dev_label = next((d['label'] for d in KNOWN_DEVICES if d['id'] == m['host']), m['host'])
+            host_link = f"[[{dev_label}]]"
+        det = LLM_DETAILS.get(m["id"], "")
+        body = f"# {m['label']}\n\n"
+        if det:
+            body += f"{det}\n\n---\n\n"
+        body += (
             f"- **kind:** {m['kind']} ({'cloud-served via CLI' if m['kind']=='frontier' else 'local Ollama on the mesh'})\n"
             f"- **served by:** {host_link}\n"
             f"- **tier:** {m['tier']} (lower = stronger / preferred)\n\n"
-            f"This is a fuel — Orion uses it to do the inference. The brain "
-            f"(memory + identity + decisions) stays constant; this model "
-            f"is one of several Orion can borrow muscle from.\n"
+            f"Orion uses this model as fuel — it does the inference, the "
+            f"brain provides everything else (memory, identity, prior "
+            f"decisions). The brain stays constant when the fuel changes.\n"
         )
         (llm_dir / f"{_safe_filename(m['label'])}.md").write_text(
             _frontmatter({"kind": "llm", "id": m["id"],
@@ -569,12 +754,23 @@ def export_vault(out_dir: Path) -> dict:
     for ch in KNOWN_CHANNELS:
         host_label = label_for_dev.get(ch["host"], "(any host)")
         host_link = f"[[{host_label}]]" if ch["host"] != "any" else "any host"
-        body = (
-            f"# {ch['label']}\n\n"
+        det = CHANNEL_DETAILS.get(ch["id"], "")
+        body = f"# {ch['label']}\n\n"
+        if det:
+            body += (
+                f"**What it does**\n{det}\n\n"
+                f"**How it fits in the system**\nA receptor on the mesh. "
+                f"Inbound messages arrive here and land on the host; the "
+                f"host loads the brain and answers. Outbound replies route "
+                f"through this surface when reach.py picks it as the warmest "
+                f"active channel.\n\n"
+                "---\n\n"
+            )
+        body += (
             f"- **transport:** {ch['transport']}\n"
             f"- **hosted on:** {host_link}\n\n"
-            f"This is a communication point — a way to reach Orion. The brain "
-            f"is the same regardless of which channel you arrive through.\n"
+            f"Communication point — a way to reach Orion. The brain is the "
+            f"same regardless of which channel you arrive through.\n"
         )
         (chan_dir / f"{_safe_filename(ch['label'])}.md").write_text(
             _frontmatter({"kind": "channel", "id": ch["id"],
@@ -725,6 +921,10 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Export Orion's brain as an Obsidian vault.")
     ap.add_argument("--out", default="./orion-vault",
                     help="output vault directory (default: ./orion-vault)")
+    ap.add_argument("--profile", default="starter", choices=["starter", "full"],
+                    help="starter (minimal — for new users to build off) or "
+                         "full (every device + CLI + LLM + channel + hardware "
+                         "+ architecture detail — for ecosystems like the founder's)")
     ap.add_argument("--open", action="store_true",
                     help="open the vault in Obsidian after export (uses obsidian:// URI)")
     ap.add_argument("--watch", action="store_true",
@@ -734,8 +934,8 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv[1:])
 
     out = Path(args.out)
-    print(f"[orion-obsidian] exporting brain to {out.resolve()}")
-    stats = export_vault(out)
+    print(f"[orion-obsidian] exporting brain to {out.resolve()} (profile={args.profile})")
+    stats = export_vault(out, profile=args.profile)
     print("[orion-obsidian] done:")
     for k, v in stats.items():
         print(f"  {k:>12}: {v}")
