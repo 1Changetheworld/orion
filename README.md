@@ -51,6 +51,7 @@ When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask:
 - [What is Orion?](#what-is-orion)
 - [How It Works](#how-it-works)
 - [Communication Points — One Brain, Every Window](#communication-points--one-brain-every-window)
+- [Team Mode — Multiple AI Models Working As One](#team-mode--multiple-ai-models-working-as-one)
 - [Connect Obsidian — Visualize Your Brain](#connect-obsidian--visualize-your-brain)
 - [Fuel System](#fuel-system)
 - [Interfaces](#interfaces)
@@ -162,6 +163,49 @@ Same brain. Different windows. Same Orion answers whether you came in through Co
 The intelligence isn't in the channel. The channel is just a receptor. The intelligence — what to say, when to say it, which channel to use, what to remember after — lives in the brain. Each window you add gives Orion another way to reach you; none of them change what Orion *is*.
 
 This is also why "memory across AI tools" is the floor, not the ceiling. The same memory shows up on iMessage, on a phone call, in a CLI, on an offline radio. The brain is one — and you reach it from wherever you happen to be.
+
+---
+
+## Team Mode — Multiple AI Models Working As One
+
+When you open more than one AI tool at the same time — Claude in one tab, Codex in another, Gemini on your phone, Letta orchestrating an agent — they're all the same Orion. **Team Mode makes them act like teammates in the same room.**
+
+### How it works
+
+Every Orion-attached AI session announces itself the moment it connects to the brain (no command needed). Each session carries a small record: which AI is fueling it, which host it's running on, what it's currently working on. Other sessions see this record in their startup context.
+
+From anywhere on the mesh:
+
+```
+python orion_team.py list
+```
+
+shows every awake AI session across every device. Example output:
+
+```
+## Active Orion sessions (the team room)
+
+- building   on FORGE       2 min ago — wiring orion_reach MCP tool
+- marketing  on FORGE       8 min ago — drafting Show HN copy
+- pi-ops     on ORIONS HOME just now  — testing Meshtastic bridge
+```
+
+### Why this matters
+
+Three teammates with the same brain don't have to ask each other "what are you working on?" They already know. The model in the marketing tab sees that the building tab is wiring `orion_reach` — and won't independently start the same task. The Pi-ops session sees both — and can pick up an orphan thread without anyone repeating themselves.
+
+This is the irony Orion exists to solve: AI tools running in parallel that never talked to each other. Team Mode is the talking.
+
+### Behind the scenes
+
+- `orion_team.py` exposes `announce` / `update_focus` / `heartbeat` / `release` / `list_active`. All write to `~/.orion/team/` and **publish to the NATS substrate** for cross-host propagation.
+- `orion_team_sync.py` Plexus service mirrors substrate events into the local team dir so every host sees the team room within ~3 seconds.
+- `orion_mcp_server.py` auto-announces on first brain access — **no manual setup needed for the default case**.
+- Stale sessions (no heartbeat in 5 min) drop off automatically.
+
+### The bigger pattern
+
+Team Mode generalizes. Two users' Orions meeting (over LoRa proximity, over Tailscale, over USB) becomes the same protocol — both sides see each other in the team room, decide whether to peer, stay separate, or seed. The single-user multi-CLI case today is the small version of the multi-user mesh tomorrow.
 
 ---
 
