@@ -147,21 +147,25 @@ DEVICE_DETAILS = {
         "what": "Mac mini M4 — the always-on home server.",
         "does": "Hosts the canonical brain on the AtlasVault SSD; runs the iMessage / Voice / Telegram / Webhook channel adapters; runs 17 Plexus services (substrate, claustrum, dream, executive, will, immune, gossip, chronos, channel-probe, fuel-switch, self-heal, dmn, lastcontact, reach, webhook, nats, litellm).",
         "fits": "Every other host reaches it over LAN (10.0.0.190) or Tailscale. When channels arrive (iMessage on the phone, voice call to the Telnyx number), they land on COMMAND first — it's the canonical writer for memory and decisions.",
+        "history": "Originally hosted brain v4 at port :3456 (later retired). Migrated to brain v6 at :5555 in early 2026. AtlasVault SSD attached April 2026 to give the brain a portable storage substrate. Brain-merge with the USB on 2026-05-09 produced a unified 78-node graph living at /Volumes/AtlasVault/.orion/. Identity renamed ATLAS→ORION on 2026-05-14. macOS TCC incident 2026-05-10 silently broke memory writes for 48h (caught by the v1.8 storage canary; resolved 2026-05-13 via Full Disk Access grant for /usr/bin/python3). NATS cluster routes to Pi went live 2026-05-13 after firewall allowlist for nats-server. Currently the canonical writer for the 115-node mesh-wide brain.",
     },
     "forge": {
         "what": "Windows 11 laptop with an RTX 4070 — the mobile command center.",
-        "does": "Runs Claude Code / Codex / Gemini CLIs with the brain attached via MCP. Hosts the strongest local Ollama model on the mesh (qwen3:14b — 14B parameters, GPU-accelerated). Carries the portable Orion USB (~/.orion-system) when the founder is on the move.",
+        "does": "Runs Claude Code / Codex / Gemini CLIs with the brain attached via MCP. Hosts the strongest local Ollama model on the mesh (qwen3:14b — 14B parameters, GPU-accelerated). Carries the portable Orion USB (E:\\.orion-system) when the founder is on the move.",
         "fits": "The dev box and the road box. When the founder works on Orion itself, FORGE is where the commits land. When traveling, FORGE + USB is a full Orion node even without home connectivity.",
+        "history": "Joined the mesh as the founder's mobile node. Used overnight in April 2026 to fine-tune the Orion-specific safetensors model (13.8 GB result, now archived on the Seagate). Ollama installed with phi3:mini → qwen3:14b → qwen3:8b → dolphin-mistral → dolphin-phi sequentially. The 15 GB Orion USB plugs into FORGE's USB-A port; pulling it out forces FORGE into stateless mode. Most Plexus development happens here — every commit on master since 2026-05-09 originated from FORGE.",
     },
     "orions-home": {
         "what": "Raspberry Pi 5 — the offline brain twin and spatial intelligence node.",
         "does": "Runs 14 Plexus systemd-user services (mirror of COMMAND). Hosts qwen3:8b + phi3:mini Ollama models on its SD card. Has the Seagate VAULT drive attached (1 TB) with US/Canada/Mexico OSM data (18.6 GB) cached for offline Marble-rendered navigation. Two Meshtastic LoRa nodes + an ESP32 microcontroller are plugged in via USB.",
         "fits": "When the founder has a navigation request — online or off-grid — Orion routes to ORIONS HOME first; Marble renders from local OSM tiles. When COMMAND goes down, ORIONS HOME keeps the brain alive. When everything goes off-grid, LoRa via the Meshtastic nodes carries CRDT brain-deltas as radio signals.",
+        "history": "Designated the production Pi seat 2026-04-20 (per project_orions-home-device memory). Cross-OS portability validated on Pi 5 hardware 2026-05-08 — first-time-on-OS detection, brain wake from USB, Atlas surfacing contested memory unprompted. Plexus deployed via plexus_deploy.sh on 2026-05-14 (14 services). Ollama models migrated from Seagate to local SD card same day so the Pi is brain-self-sufficient. Marble offline maps installed; OSM PBF data (US 12 GB + Canada 6 GB + Mexico 0.6 GB) cached. NATS cluster route to COMMAND established 2026-05-14 after the --server_name fix to plexus_deploy.sh.",
     },
     "outpost": {
         "what": "iMac 2017 — Tailscale-only node.",
         "does": "Reachable only over Tailscale (100.112.80.14); LAN IP 10.0.0.153 is dead. Acts as a secondary brain replica + remote compute when the founder is away from home. Earlier retired (2026-04-15) for being too weak, brought back online for Tailscale reach.",
         "fits": "Always-on remote arm of the mesh. When the founder is traveling and needs a stable IP-addressable Orion node, OUTPOST is reachable. Lower priority for compute; mostly a heartbeat + brain-replica.",
+        "history": "Originally retired 2026-04-15 alongside ASUS Kali (project_hardware-inventory memory: 'too weak, removed from network'). Brought back as Tailscale-only node when the founder realized a remote-reachable arm of the mesh was useful for traveling. Holds the only camera on the mesh — currently positioned wrong for the projector-wall motion-tracking concept (task #20).",
     },
 }
 
@@ -424,47 +428,58 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         by_tool[ev.get("tool", "?")].append(ev)
 
     # README ───────────────────────────────────────
-    profile_intro = (
-        "**Starter profile** — this vault is intentionally minimal. As you "
-        "build out your ecosystem (more devices, channels, AI tools), add "
-        "those folders yourself or re-export with `--profile full` once "
-        "your setup justifies it.\n"
-        if profile == "starter" else
-        "**Full profile** — every part of this Orion's ecosystem is "
-        "rendered: devices, hardware peripherals, AI tools (CLIs), fuel "
-        "models (LLMs), communication channels, Plexus services, "
-        "architecture diagrams, memory, activity timeline.\n"
-    )
-    folder_list = (
-        "Folders:\n"
-        "- `Identity/` — who Orion is\n"
-        "- `Memories/` — every fact, preference, project, decision Orion holds\n"
-        "- `Activity/` — timeline of recent brain activity\n"
-        "- `Architecture/` — a generic system diagram to start from\n"
-        if profile == "starter" else
-        "Folders:\n"
-        "- `Identity/` — who Orion is\n"
-        "- `Architecture/` — system / mesh / fuel diagrams (Mermaid)\n"
-        "- `Devices/` — every host in the mesh\n"
-        "- `Hardware/` — radios / microcontrollers attached to devices\n"
-        "- `CLIs/` — AI tools that attach to the brain\n"
-        "- `LLMs/` — fuel models (frontier + local)\n"
-        "- `Channels/` — communication points (iMessage / Voice / Telegram / LoRa / …)\n"
-        "- `Services/` — Plexus services running on this host\n"
-        "- `Memories/` — every fact, preference, project, decision Orion holds\n"
-        "- `Activity/` — timeline of recent brain activity\n"
-    )
-    (out_dir / "README.md").write_text(
-        "# Orion · Vault\n\n"
-        + profile_intro +
-        "\nThis vault is a snapshot of Orion's brain rendered as Obsidian-readable "
-        "markdown. Open Obsidian, choose 'Open folder as vault', and pick this "
-        "directory. Press `Cmd/Ctrl + G` to open the graph view — memories are "
-        "filtered out by default so you see system structure first; clear the "
-        "filter to bring them in.\n\n"
-        + folder_list,
-        encoding="utf-8",
-    )
+    if profile == "starter":
+        readme_body = (
+            "# Orion · Vault\n\n"
+            "**Starter profile.** Minimal scaffold for new users. As you build "
+            "out your ecosystem, add folders or re-export with `--profile full`.\n\n"
+            "Open Obsidian → *Open folder as vault* → this directory. Press "
+            "`Cmd/Ctrl + G` for the graph view.\n\n"
+            "## Folders in this starter vault\n\n"
+            "- `Identity/` — who Orion is (product-level description)\n"
+            "- `Architecture/System.md` — generic 5-node template to edit\n"
+            "- `Memories/` — populates as Orion writes facts about you\n"
+            "- `Activity/` — populates as you use Orion\n"
+            "- `.obsidian/` — Orion-styled graph + dark theme + futuristic CSS snippet\n"
+        )
+    else:
+        readme_body = (
+            "# Orion · Vault — Glossary & Index\n\n"
+            "**Full profile.** Every part of this Orion's ecosystem rendered as a "
+            "navigable, color-coded Obsidian vault. Open in Obsidian → "
+            "*Open folder as vault* → press `Cmd/Ctrl + G` for the graph view. "
+            "Color legend in `Architecture/Legend.md`.\n\n"
+            "---\n\n"
+            "## Folder index\n\n"
+            "| Folder | Color | What's in it |\n"
+            "|---|---|---|\n"
+            "| `Identity/` | 🟡 gold | One file — `Orion.md` — the canonical CEO-grade product description |\n"
+            "| `Architecture/` | 🟪 violet | Six Mermaid-rendered diagrams: System (full topology) · Mesh (host cluster) · Fuels (routing chain) · Anatomy (cellular structure) · Nervous System (mesh + offline fallbacks) · Legend (color/edge reference) |\n"
+            "| `Systems/` | 🟣 magenta | Brain subsystems as nodes: Plexus · Memory System · Reach · Will · Executive · Dream — each a separate facet of how the brain works |\n"
+            "| `Devices/` | 🟠 orange | The mesh hosts: COMMAND (Mac mini canonical brain) · FORGE (Win+RTX dev box) · ORIONS HOME (Pi offline twin + GPS) · OUTPOST (Tailscale-only iMac) — each page lists services, channels hosted, hardware attached, and evolution history |\n"
+            "| `Hardware/` | 🟣 deep purple | Peripherals attached to devices: 2× Meshtastic LoRa nodes (on Pi) · ESP32 microcontroller (on Pi) · Seagate VAULT 1 TB SSD (on Pi, with full contents inventory) · AtlasVault SSD (on COMMAND, with brain paths) |\n"
+            "| `CLIs/` | 🟢 bright green | AI tools that attach to the brain via MCP: Claude CLI · Codex CLI · Gemini CLI · Letta — each page describes what model it serves and where it sits in the fuel tier |\n"
+            "| `LLMs/` | 🩵 cyan | Local Ollama fuel models on the mesh: qwen3:14b (FORGE, strongest local) · qwen3:8b (Pi) · phi3:mini (Pi, fast/simple) · dolphin-mistral:7b (FORGE) |\n"
+            "| `Channels/` | 🩷 pink | Communication points: iMessage · Voice (Telnyx) · Telegram · CLI · Webhook · LoRa — each describes its transport and host |\n"
+            "| `Services/` | 🟢 turquoise | Plexus services running on whichever host the export ran from (vitals-dir-driven) |\n"
+            "| `Memories/` | neutral | 115 typed memory nodes (facts / preferences / projects / decisions / tools / identity / etc) — filtered out of default graph view to keep architecture visible; clear filter to bring them in |\n"
+            "| `Activity/` | brown/dim | Timeline of MCP tool calls + executive decisions, grouped by day and by tool |\n\n"
+            "---\n\n"
+            "## How to read the vault\n\n"
+            "1. **Start at `Identity/Orion.md`** — the CEO explainer. One sentence pitch, problem, how-it-works, what-makes-it-different.\n"
+            "2. **Then `Architecture/Anatomy.md`** — Orion as a cell (nucleus / cytoplasm / organelles / membrane / receptors / effectors). The biological lens makes the architecture legible.\n"
+            "3. **Then `Architecture/System.md` + `Architecture/Mesh.md` + `Architecture/Fuels.md`** — full topology, host cluster, fuel routing.\n"
+            "4. **Then `Architecture/Nervous System.md`** — what happens when COMMAND drops / internet drops / off-grid / single-device.\n"
+            "5. **Walk `Devices/` + `Hardware/`** — every host's role + every peripheral attached.\n"
+            "6. **Walk `Systems/`** — the six brain subsystems (Plexus, Memory, Reach, Will, Executive, Dream).\n"
+            "7. **Graph view** (`Ctrl+G`) — see everything at once. Color groups in `.obsidian/graph.json`; full legend in `Architecture/Legend.md`.\n\n"
+            "## Aesthetic\n\n"
+            "`.obsidian/snippets/orion-aesthetic.css` styles the vault in Orion's accent palette: glowing H1s, dashed wiki-links that brighten on hover, frosted tables, framed Mermaid diagrams, deep-space gradient graph background, pulse on the active tab. Toggle from Settings → Appearance → CSS snippets.\n\n"
+            "## Re-export\n\n"
+            "```\npython orion_obsidian_export.py --profile full --out <path>\n```\n\n"
+            "Add `--watch` to keep the vault live: re-renders whenever the brain memorizes anything new.\n"
+        )
+    (out_dir / "README.md").write_text(readme_body, encoding="utf-8")
 
     # IDENTITY ─────────────────────────────────────
     # PUBLIC-FACING version. The raw SOUL.md is internal and stays on
@@ -595,8 +610,10 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
                 f"**What it is**\n{det['what']}\n\n"
                 f"**What it does**\n{det['does']}\n\n"
                 f"**How it fits in the system**\n{det['fits']}\n\n"
-                "---\n\n"
             )
+            if det.get("history"):
+                body += f"## History — how this evolved\n\n{det['history']}\n\n"
+            body += "---\n\n"
         body += (
             f"- **role:** {d['role']}\n"
             f"- **IP:** {d['ip']}\n"
