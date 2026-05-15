@@ -1178,6 +1178,35 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
             for t in node.get("tags", []) or []:
                 tag_to_ids[(t or "").strip().lower()].append(nid)
 
+        # Tag → architecture-node label, for radial linking
+        TAG_TO_ARCH = {
+            "fuel": "Fuels", "fuel-policy": "Fuels", "fuel-calibration": "Fuels",
+            "fuel-tier": "Fuels", "ollama-fallback-only": "Fuels",
+            "no-api-keys": "Fuels", "forge-ollama": "Fuels",
+            "mesh-design": "Mesh", "mesh": "Mesh", "cross-host": "Mesh",
+            "one-brain": "Anatomy", "architecture": "Anatomy",
+            "cellular": "Anatomy",
+            "membrane": "Anatomy", "empathy": "Anatomy", "meta-cognition": "Anatomy",
+            "sensorium": "Anatomy", "federation": "Anatomy",
+            "nervous-system": "Nervous System",
+            "offline": "Nervous System", "offline-mesh": "Nervous System",
+            "offline-fallback": "Nervous System",
+            "brain-as-signal": "System", "lora": "System", "phase-4-horizon": "System",
+            "pi": "ORIONS HOME", "orions-home": "ORIONS HOME",
+            "navigation": "ORIONS HOME", "marble": "ORIONS HOME",
+            "offline-maps": "ORIONS HOME",
+            "command": "COMMAND", "command-plist": "COMMAND",
+            "tcc": "COMMAND", "macos": "COMMAND",
+            "forge": "FORGE",
+            "outpost": "OUTPOST",
+            "meshtastic": "Meshtastic Node 1", "esp32": "ESP32",
+            "imessage": "iMessage", "telegram": "Telegram", "voice": "Voice",
+            "session-snapshot": "Activity",
+            "plexus": "Plexus", "claustrum": "Plexus", "executive": "Executive",
+            "dream": "Dream", "will": "Will", "reach": "Reach",
+            "memory": "Memory System",
+        }
+
         for nid_str, node in raw.get("nodes", {}).items():
             try:
                 nid = int(nid_str)
@@ -1185,12 +1214,18 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
                 continue
             content = node.get("content", "")
             content = content if isinstance(content, str) else str(content)
+            # Strip MCP XML-tag leakage from earlier memorize calls
+            content = re.sub(r"</content>\s*\n*<parameter[^>]*>[\w-]*", "", content)
+            content = re.sub(r"<parameter\s+name=\"[^\"]+\">[\w-]*\s*", "", content)
+            content = content.replace("</content>", "").strip()
             tags = list(node.get("tags", []) or [])
             mtype = node.get("type", "fact")
 
-            # Wiki-links to siblings sharing any non-stopword tag
+            # Reduced sibling linking: only top 3 most-distinctive shared
+            # tags, not the full mesh. Keeps the graph from flooding.
             STOPWORDS = {"fact", "preference", "project", "identity", "task",
-                         "ephemeral", "person", "skill", "tool"}
+                         "ephemeral", "person", "skill", "tool", "user",
+                         "founder", "orion", "brain"}
             related = set()
             for t in tags:
                 tlow = (t or "").strip().lower()
@@ -1199,10 +1234,24 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
                 for sib in tag_to_ids.get(tlow, []):
                     if sib != nid:
                         related.add(sib)
-            # Build a slug index so wiki-links resolve to renamed files
-            related_sorted = sorted(related)[:12]
+            # Only keep first 3 siblings — drastically reduces memory-to-memory
+            # edges that flood the graph
+            related_sorted = sorted(related)[:3]
             related_links = "".join(f"- [[mem-{r}]]\n" for r in related_sorted)
-            stats["wiki_links"] += min(len(related), 12)
+            stats["wiki_links"] += min(len(related), 3)
+
+            # RADIAL ANCHOR: link memory to its closest architecture/system
+            # node based on tag match. Makes architecture the gravitational
+            # center; memories spread outward as a Saturn ring.
+            arch_links = []
+            seen_arch = set()
+            for t in tags:
+                arch_label = TAG_TO_ARCH.get((t or "").strip().lower())
+                if arch_label and arch_label not in seen_arch:
+                    seen_arch.add(arch_label)
+                    arch_links.append(f"- [[{arch_label}]]\n")
+                if len(arch_links) >= 2:
+                    break
 
             # Readable filename: mem-<id>-<slug>.md — what Obsidian shows
             # in the graph by default. Slug is the first meaningful chunk
@@ -1226,8 +1275,10 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
                 f"> Memory node #{nid} · type: `{mtype}`\n\n"
                 f"{content}\n"
             )
+            if arch_links:
+                body += f"\n## Belongs to\n{''.join(arch_links)}"
             if related_links:
-                body += f"\n## Related\n{related_links}"
+                body += f"\n## Related memories\n{related_links}"
             (mem_dir / fname).write_text(fm + body, encoding="utf-8")
             stats["memories"] += 1
 
