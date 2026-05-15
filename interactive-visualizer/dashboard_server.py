@@ -70,6 +70,32 @@ def _probe_device(dev: dict) -> str:
         return "unreachable"
 
 
+# Pull rich topology from the Obsidian-export module so the 3D
+# visualizer renders the SAME nervous system you see in Obsidian.
+# Founder ask 2026-05-15: "make a copy of nodes and what's in
+# obsidian and put it into http://127.0.0.1:5557/ — this version
+# has good spacial depth."
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from orion_obsidian_export import (
+        KNOWN_DEVICES as _RICH_DEVICES,
+        KNOWN_CHANNELS as _RICH_CHANNELS,
+        KNOWN_CLIS, KNOWN_LLMS, KNOWN_PERIPHERALS, KNOWN_SYSTEMS,
+        DEVICE_DETAILS, CLI_DETAILS, LLM_DETAILS, CHANNEL_DETAILS,
+    )
+    # Override the local stubs with the canonical Obsidian-export
+    # constants so a single source of truth drives both surfaces.
+    KNOWN_DEVICES = _RICH_DEVICES
+    KNOWN_CHANNELS = _RICH_CHANNELS
+    RICH_TOPOLOGY = True
+except Exception as _e:
+    KNOWN_CLIS = KNOWN_LLMS = KNOWN_PERIPHERALS = KNOWN_SYSTEMS = []
+    DEVICE_DETAILS = CLI_DETAILS = LLM_DETAILS = CHANNEL_DETAILS = {}
+    RICH_TOPOLOGY = False
+
+
 def _load_graph() -> dict:
     """Return the entity as a richly-typed nervous-system graph."""
     nodes = []
@@ -100,6 +126,87 @@ def _load_graph() -> dict:
             sa, sb = device_status[a], device_status[b]
             health = "alive" if sa == "alive" and sb == "alive" else "degraded"
             links.append({"source": a, "target": b, "kind": "mesh", "status": health})
+
+    # ── CLIs (AI tools) ──
+    for c in KNOWN_CLIS:
+        nodes.append({
+            "id": f"cli:{c['id']}",
+            "kind": "cli",
+            "type": "cli",
+            "label": c["label"],
+            "preview": (CLI_DETAILS.get(c['id'], {}).get('what')
+                        or f"{c['label']} — {c.get('vendor', '?')}"),
+            "size": 11,
+        })
+        kind_counts["cli"] += 1
+    # ── LLMs (fuel models) ──
+    for m in KNOWN_LLMS:
+        nodes.append({
+            "id": f"llm:{m['id']}",
+            "kind": "llm",
+            "type": "llm",
+            "label": m["label"],
+            "preview": LLM_DETAILS.get(m['id'], f"{m['label']} — tier {m.get('tier','?')}"),
+            "size": 8,
+        })
+        kind_counts["llm"] += 1
+        # Link LLM to its host (device for local, CLI for frontier)
+        host_id = m.get("host", "")
+        if m.get("kind") == "local":
+            host_node = f"host:{host_id}"
+        else:
+            host_node = f"cli:{host_id}"
+        if any(n["id"] == host_node for n in nodes):
+            links.append({"source": f"llm:{m['id']}", "target": host_node,
+                          "kind": "fuels", "status": "alive"})
+
+    # ── HARDWARE PERIPHERALS ──
+    for p in KNOWN_PERIPHERALS:
+        nodes.append({
+            "id": f"hw:{p['id']}",
+            "kind": "hardware",
+            "type": "hardware",
+            "label": p["label"],
+            "preview": f"{p['kind']} — {p['role']}",
+            "size": 8,
+        })
+        kind_counts["hardware"] += 1
+        host_node = f"host:{p['host']}"
+        if any(n["id"] == host_node for n in nodes):
+            links.append({"source": f"hw:{p['id']}", "target": host_node,
+                          "kind": "attached", "status": "alive"})
+
+    # ── SYSTEMS (Plexus subsystems) ──
+    for s in KNOWN_SYSTEMS:
+        nodes.append({
+            "id": f"sys:{s['id']}",
+            "kind": "system",
+            "type": "system",
+            "label": s["label"],
+            "preview": s["what"],
+            "size": 14,
+        })
+        kind_counts["system"] += 1
+        # Each subsystem orbits the identity (linked below)
+
+    # ── IDENTITY (central node) ──
+    nodes.append({
+        "id": "identity:orion",
+        "kind": "identity",
+        "type": "identity",
+        "label": "ORION",
+        "preview": "The entity itself — small persistent pattern: memory + identity + decisions + volition + reach. The brain that travels.",
+        "size": 22,
+    })
+    kind_counts["identity"] = 1
+    # Identity links to every system
+    for s in KNOWN_SYSTEMS:
+        links.append({"source": f"sys:{s['id']}", "target": "identity:orion",
+                      "kind": "subsystem", "status": "alive"})
+    # Identity also links to every device (the entity exists on each)
+    for d in KNOWN_DEVICES:
+        links.append({"source": "identity:orion", "target": d["id"],
+                      "kind": "incarnates", "status": "alive"})
 
     # ── CHANNELS ──
     for ch in KNOWN_CHANNELS:
