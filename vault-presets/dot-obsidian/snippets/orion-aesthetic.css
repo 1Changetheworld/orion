@@ -1,0 +1,154 @@
+/* ORION — futuristic aesthetic snippet
+   Drop-in CSS that styles the graph view, headings, and panels in
+   the Orion accent palette. Toggle on/off from Obsidian Settings →
+   Appearance → CSS snippets. */
+
+:root {
+  --orion-bg-deep: #050510;
+  --orion-bg-panel: rgba(14, 16, 28, 0.92);
+  --orion-text: #d8e2ff;
+  --orion-dim: #6a7299;
+  --orion-accent: #6aa3ff;
+  --orion-glow: 0 0 12px rgba(106, 163, 255, 0.45);
+}
+
+/* Workspace background — deep space */
+body.theme-dark {
+  --background-primary: var(--orion-bg-deep);
+  --background-primary-alt: #0a0a18;
+  --background-secondary: #0d0f1c;
+  --background-secondary-alt: #11142a;
+  --text-normal: var(--orion-text);
+  --text-muted: var(--orion-dim);
+  --text-accent: var(--orion-accent);
+  --interactive-accent: var(--orion-accent);
+}
+
+/* Headings — letterspaced, accent-glow */
+.markdown-preview-view h1,
+.markdown-rendered h1 {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--orion-accent);
+  text-shadow: var(--orion-glow);
+}
+.markdown-preview-view h2,
+.markdown-rendered h2 {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #ffd86a;
+  border-bottom: 1px solid rgba(120,140,200,0.18);
+  padding-bottom: 4px;
+}
+
+/* Graph view — glow on nodes, smoother lines */
+.graph-view.color-fill { /* graph-leaf canvas wrapper */
+  background: radial-gradient(ellipse at center, #0a0c1f 0%, #050510 100%);
+}
+.graph-controls {
+  background: var(--orion-bg-panel) !important;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(120,140,200,0.2);
+  border-radius: 12px;
+}
+
+/* Tags rendered in notes */
+a.tag {
+  background: rgba(106, 163, 255, 0.12);
+  color: var(--orion-accent);
+  border: 1px solid rgba(106, 163, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.85em;
+}
+
+/* Inline code + code blocks */
+.markdown-preview-view code,
+.markdown-rendered code {
+  color: #8aff8c;
+  background: rgba(138, 255, 140, 0.06);
+  border: 1px solid rgba(138, 255, 140, 0.15);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* Wiki-links — subtle glow on hover */
+a.internal-link {
+  color: var(--orion-accent);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(106, 163, 255, 0.3);
+  transition: text-shadow 0.15s, border-color 0.15s;
+}
+a.internal-link:hover {
+  text-shadow: var(--orion-glow);
+  border-bottom-color: var(--orion-accent);
+}
+
+/* Tables — frosted */
+.markdown-preview-view table,
+.markdown-rendered table {
+  background: var(--orion-bg-panel);
+  border: 1px solid rgba(120,140,200,0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.markdown-preview-view th,
+.markdown-rendered th {
+  background: rgba(106, 163, 255, 0.08);
+  color: var(--orion-accent);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.85em;
+}
+.markdown-preview-view td,
+.markdown-rendered td {
+  border-top: 1px solid rgba(120,140,200,0.1);
+}
+
+/* Mermaid diagrams — keep the dark feel, lift node strokes */
+.mermaid {
+  background: rgba(10, 12, 28, 0.6);
+  border: 1px solid rgba(120,140,200,0.15);
+  border-radius: 12px;
+  padding: 16px;
+}
+.mermaid .node rect,
+.mermaid .node circle,
+.mermaid .node polygon {
+  stroke: rgba(180, 200, 255, 0.7);
+  stroke-width: 1.5px;
+}
+.mermaid .edgePath path {
+  stroke: rgba(180, 200, 255, 0.5);
+  stroke-width: 1.5px;
+}
+
+/* Side panes — frosted */
+.workspace-leaf-content[data-type="file-explorer"] .nav-files-container,
+.workspace-leaf-content[data-type="tag"] .tag-container,
+.workspace-leaf-content[data-type="backlink"] .backlink-pane {
+  background: var(--orion-bg-deep);
+}
+.nav-file-title.is-active,
+.nav-folder-title.is-active {
+  background: rgba(106, 163, 255, 0.18) !important;
+  color: var(--orion-text);
+  border-radius: 4px;
+}
+
+/* Subtle pulse for active workspace tab */
+@keyframes orion-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(106, 163, 255, 0); }
+  50% { box-shadow: 0 0 12px 0 rgba(106, 163, 255, 0.35); }
+}
+.workspace-tab-header.is-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  animation: orion-pulse 4s ease-in-out infinite;
+}

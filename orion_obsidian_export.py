@@ -385,6 +385,8 @@ def _deploy_obsidian_preset(out_dir: Path) -> bool:
     for src in preset_root.iterdir():
         if src.is_file():
             shutil.copy2(src, target / src.name)
+        elif src.is_dir():
+            shutil.copytree(src, target / src.name)
     return True
 
 
@@ -883,6 +885,48 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         "strongest local). Never API keys — only flat-rate Pro subscriptions "
         "or free local models.\n\n"
         + "\n".join(fuel_mermaid),
+        encoding="utf-8")
+
+    # Legend — color + category system for the whole vault
+    (arch_dir / "Legend.md").write_text(
+        _frontmatter({"kind": "architecture",
+                      "tags": ["architecture", "legend"]}) +
+        "# Legend — Reading the Vault\n\n"
+        "Every node belongs to one category. Categories share a tag, and "
+        "the graph view colors nodes by tag. Toggle individual color "
+        "groups from the graph panel's color filter to focus on one "
+        "layer at a time.\n\n"
+        "## Node categories\n\n"
+        "| Color | Category | Tag | What it represents |\n"
+        "|---|---|---|---|\n"
+        "| 🟡 gold | **Identity** | `identity` | The canonical 'who Orion is' — SOUL.md content, name, address-form preference |\n"
+        "| 🟣 magenta | **System** | `system` | Brain subsystems — Plexus / Memory / Reach / Will / Executive / Dream |\n"
+        "| 🟪 violet | **Architecture** | `architecture` | Mermaid diagrams — System, Mesh, Fuels, Anatomy, Nervous System, Legend |\n"
+        "| 🟠 orange | **Device** | `device` | Mesh hosts — COMMAND, FORGE, ORIONS HOME, OUTPOST |\n"
+        "| 🟣 deep purple | **Hardware** | `hardware` | Peripherals attached to a host — radios, MCUs, SSDs |\n"
+        "| 🟢 bright green | **CLI** | `cli` | AI tools that attach to the brain — Claude / Codex / Gemini / Letta |\n"
+        "| 🩵 cyan | **LLM** | `llm` | Local fuel models — qwen3:14b / qwen3:8b / phi3:mini / dolphin-mistral |\n"
+        "| 🩷 pink | **Channel** | `channel` | Communication points — iMessage / Voice / Telegram / CLI / Webhook / LoRa |\n"
+        "| 🟢 turquoise | **Service** | `service` | Plexus services on this host (drawn from vitals dir) |\n"
+        "| ⚪ neutral | **Memory** | `fact / preference / project / task / tool / reference / ephemeral` | Filtered out of default graph view; clear filter to bring in |\n"
+        "| 🟤 dim | **Activity** | `activity` | Daily timeline + per-tool usage; filtered out by default |\n\n"
+        "## How to use the graph view\n\n"
+        "- **Default view**: all categories visible, color-coded as above.\n"
+        "- **Focus on one layer**: turn off others in the color filter panel.\n"
+        "- **Bring in memories**: clear the search filter (top-right of graph panel).\n"
+        "- **Drill into a node**: click → opens the file with full prose detail.\n"
+        "- **Trace a connection**: hover an edge to see which two nodes it links.\n\n"
+        "## How nodes connect\n\n"
+        "| Edge type | What it means |\n"
+        "|---|---|\n"
+        "| device ↔ device | Mesh substrate cluster route |\n"
+        "| channel → device | This channel is hosted on this device |\n"
+        "| service → device | This Plexus service runs on this device |\n"
+        "| hardware → device | This peripheral is attached to this device |\n"
+        "| CLI → LLM | This CLI fuels through this model |\n"
+        "| LLM → device | This local model is hosted on this device |\n"
+        "| system → Orion | This subsystem orbits the brain |\n"
+        "| memory ↔ memory | Shared tag (Obsidian-style co-occurrence) |\n",
         encoding="utf-8")
 
     # Anatomy — cellular layout of the brain as one body

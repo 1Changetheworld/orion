@@ -4,5 +4,6 @@
   "baseFontSize": 16,
   "interfaceFontFamily": "ui-sans-serif",
   "textFontFamily": "ui-sans-serif",
-  "monospaceFontFamily": "ui-monospace"
+  "monospaceFontFamily": "ui-monospace",
+  "enabledCssSnippets": ["orion-aesthetic"]
 }
