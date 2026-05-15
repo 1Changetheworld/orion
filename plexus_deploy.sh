@@ -52,6 +52,7 @@ PLEXUS_SERVICES=(
     "gossip:orion_gossip.py"
     "will:orion_will.py"
     "chronos:orion_chronos.py"
+    "intent:orion_intent.py"
 )
 
 # Detect platform
