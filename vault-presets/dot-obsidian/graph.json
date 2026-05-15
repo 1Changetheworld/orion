@@ -8,9 +8,10 @@
   "collapse-color-groups": false,
   "colorGroups": [
     { "query": "tag:#identity",    "color": { "a": 1, "rgb": 16767082 } },
+    { "query": "tag:#system",      "color": { "a": 1, "rgb": 16711935 } },
     { "query": "tag:#architecture","color": { "a": 1, "rgb": 13148415 } },
     { "query": "tag:#device",      "color": { "a": 1, "rgb": 16756826 } },
-    { "query": "tag:#hardware",    "color": { "a": 1, "rgb": 16747082 } },
+    { "query": "tag:#hardware",    "color": { "a": 1, "rgb": 10515712 } },
     { "query": "tag:#cli",         "color": { "a": 1, "rgb": 5959018  } },
     { "query": "tag:#llm",         "color": { "a": 1, "rgb": 5959423  } },
     { "query": "tag:#channel",     "color": { "a": 1, "rgb": 16738514 } },

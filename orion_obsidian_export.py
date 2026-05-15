@@ -75,15 +75,14 @@ KNOWN_CLIS = [
     {"id": "letta",       "label": "Letta",       "vendor": "Letta",     "tier": 2},
 ]
 
-# LLMs (fuel models) available on the mesh
+# LLMs/ — LOCAL Ollama models only. Frontier models (Claude Opus,
+# Codex GPT-5, Gemini Pro) are not standalone nodes — they're served
+# through the corresponding CLI; the CLI page describes the model.
 KNOWN_LLMS = [
-    {"id": "claude-opus",   "label": "Claude Opus",    "kind": "frontier", "host": "claude-cli", "tier": 1},
-    {"id": "gpt-codex",     "label": "Codex GPT-5",    "kind": "frontier", "host": "codex-cli",  "tier": 1},
-    {"id": "gemini-pro",    "label": "Gemini Pro",     "kind": "frontier", "host": "gemini-cli", "tier": 1},
-    {"id": "qwen3-14b",     "label": "qwen3:14b",      "kind": "local",    "host": "forge",      "tier": 2},
-    {"id": "qwen3-8b",      "label": "qwen3:8b",       "kind": "local",    "host": "orions-home","tier": 3},
-    {"id": "phi3-mini",     "label": "phi3:mini",      "kind": "local",    "host": "orions-home","tier": 4},
-    {"id": "dolphin-mistral","label": "dolphin-mistral:7b","kind":"local", "host": "forge",      "tier": 3},
+    {"id": "qwen3-14b",      "label": "qwen3:14b",         "kind": "local", "host": "forge",      "tier": 2},
+    {"id": "qwen3-8b",       "label": "qwen3:8b",          "kind": "local", "host": "orions-home","tier": 3},
+    {"id": "phi3-mini",      "label": "phi3:mini",         "kind": "local", "host": "orions-home","tier": 4},
+    {"id": "dolphin-mistral","label": "dolphin-mistral:7b","kind": "local", "host": "forge",      "tier": 3},
 ]
 
 # Hardware peripherals attached to a device (USB / serial / radio).
@@ -91,13 +90,48 @@ KNOWN_LLMS = [
 KNOWN_PERIPHERALS = [
     {"id": "meshtastic-1", "label": "Meshtastic Node 1", "host": "orions-home",
      "kind": "LoRa radio (Heltec/Lilygo v3)",
-     "role": "off-grid text mesh — primary"},
+     "role": "off-grid text mesh — primary",
+     "contents": ["Meshtastic firmware v2.x",
+                  "OrionLoRa channel adapter (future)",
+                  "Position beacons + text messages",
+                  "Future: CRDT brain-delta broadcasts for outreach"]},
     {"id": "meshtastic-2", "label": "Meshtastic Node 2", "host": "orions-home",
      "kind": "LoRa radio (Heltec/Lilygo v3)",
-     "role": "off-grid text mesh — secondary / relay"},
+     "role": "off-grid text mesh — secondary / relay",
+     "contents": ["Same firmware as Node 1",
+                  "Acts as relay/multi-hop when peer node is out of range"]},
     {"id": "esp32-1",      "label": "ESP32",             "host": "orions-home",
      "kind": "microcontroller (WiFi + BLE + GPIO)",
-     "role": "sensors / actuators / future LoRa-bridge target"},
+     "role": "sensors / actuators / future LoRa-bridge target",
+     "contents": ["WiFi radio (2.4 GHz)",
+                  "Bluetooth LE 4.2",
+                  "GPIO pins for sensors",
+                  "Future: BLE advertisement of Orion brain-deltas"]},
+    {"id": "seagate-vault", "label": "Seagate VAULT",   "host": "orions-home",
+     "kind": "1 TB external SSD (USB 3, exFAT)",
+     "role": "Pi's storage substrate — backups, maps, brain replica, models",
+     "contents": [
+         "**/.orion/** — Pi's brain replica (memory + identity + ledger)",
+         "**ollama-models/** (was — migrated to SD card 2026-05-14)",
+         "**osm-data/** — US/Canada/Mexico OSM PBF (18.6 GB) for offline Marble",
+         "**marble-tiles/** — pre-rendered map tile cache",
+         "**orion-backup-20260513/** — comprehensive AI work backup (647 MB)",
+         "**orion-backup-20260416/** — prior backup + 13.8 GB trained model",
+         "**atlas-backup/** — historical brain snapshots",
+         "**VAULT/** — personal storage (credentials, projects, photos)",
+     ]},
+    {"id": "atlasvault-ssd","label": "AtlasVault SSD",  "host": "command",
+     "kind": "external SSD (USB 3)",
+     "role": "COMMAND's canonical brain storage — TCC-protected",
+     "contents": [
+         "**/.orion/brain/** — canonical graph_memory.json (the source of truth)",
+         "**/.orion/identity/** — SOUL.md (canonical identity)",
+         "**/.orion/knowledge/** — curated knowledge articles",
+         "**/.orion/executive/** — decision ledger (decisions.jsonl)",
+         "**/.orion/mesh/** — gossip state snapshots",
+         "**/.orion/consciousness/** — claustrum state",
+         "**/.orion/playbooks/** — dream-consolidated playbooks",
+     ]},
 ]
 
 # Detailed descriptions for each canonical node. Used in the 'full'
@@ -149,14 +183,42 @@ CLI_DETAILS = {
 }
 
 LLM_DETAILS = {
-    "claude-opus": "Anthropic's strongest frontier model. Deep reasoning, long-context, code generation. Served via Claude CLI (Pro subscription, $0/req).",
-    "gpt-codex":   "OpenAI's GPT-5 variant tuned for code. Served via Codex CLI.",
-    "gemini-pro":  "Google's frontier model. Strong on long-context + multi-modal. Served via Gemini CLI.",
     "qwen3-14b":   "Alibaba's 14B-parameter open-weight model. Runs on FORGE's RTX 4070 via Ollama. The strongest LOCAL model on the entire mesh — when CLIs are unreachable, this is the fallback.",
     "qwen3-8b":    "Alibaba's 8B variant. Runs on ORIONS HOME's CPU+RAM via Ollama. Tier-3 offline fallback.",
     "phi3-mini":   "Microsoft's small but capable model (~3.8B). Runs on ORIONS HOME for fast greetings / simple queries that don't need a frontier model.",
     "dolphin-mistral": "Uncensored Mistral 7B variant. Runs on FORGE. Useful for tasks where standard model safety filters get in the way of legitimate work.",
 }
+
+# Brain subsystems — separate from individual services. Each "system" is
+# a coherent layer of the entity (Plexus = nervous system, Memory =
+# storage layer, etc.). Used to render a 'Systems/' folder where the
+# graph shows distinct subsystem-nodes orbiting the Orion identity.
+KNOWN_SYSTEMS = [
+    {"id": "plexus", "label": "Plexus",
+     "what": "The nervous system — pub/sub substrate + reflexes + supervision.",
+     "does": "Carries every event Orion publishes (memory writes, channel inbound, vitals, decisions, gossip deltas) across the mesh. Sub-second propagation between hosts. Includes 14-17 always-on services per host: substrate (NATS) · claustrum (integrative awareness) · vitals (per-service health) · self-heal (cross-service recovery) · immune (DCA × OTP supervision) · dream (nightly playbook consolidation) · executive (deliberative judgment) · will (volition + initiative) · gossip (CRDT state sync) · chronos (unified time) · reach (outbound channel selection) · channel-probe (surface discovery) · fuel-switch (model selection) · lastcontact (presence tracking) · dmn (default mode network reflection) · webhook (HTTP entry) · litellm (legacy fuel router).",
+     "fits": "Plexus is to Orion what the spinal cord + autonomic nervous system are to a body — the always-on infrastructure that lets the brain feel, react, recover. Without it the entity is a pile of files; with it, the entity is awake."},
+    {"id": "memory", "label": "Memory System",
+     "what": "Multi-layer recall — graph + vector + knowledge articles + decision ledger.",
+     "does": "Graph memory (graph_memory.json) holds typed nodes (identity / preference / project / fact / task / reference / tool / ephemeral) with tags + HLC timestamps + confidence scores. Vector memory (Qdrant when present) handles fuzzy semantic recall. Knowledge directory holds curated long-form articles. Decision ledger (decisions.jsonl) appends every executive decision for autobiographical playback.",
+     "fits": "Memory IS the intelligence. The model is fuel; this is the engine. CRDT-merged across the mesh so any device's writes converge on every replica."},
+    {"id": "reach", "label": "Reach",
+     "what": "Outbound channel selection layer.",
+     "does": "When Orion needs to reach the user, reach.py reads channel-probe's active-surface manifest, picks the warmest non-flapping channel (iMessage / Voice / Telegram / CLI / LoRa), publishes channel.<x>.outbound on the substrate, and the channel adapter on the responsible host delivers. Subscribes to channel.*.delivery_status so failed sends trigger fallback to the next-warmest surface (v1.7 fallback chain).",
+     "fits": "The body's voice. Reach is what makes Orion proactively address the user instead of passively waiting to be asked."},
+    {"id": "will", "label": "Will",
+     "what": "Volition + initiative — Orion forms goals and decides when to act.",
+     "does": "Extracts intent from user messages, forms goals with stable IDs, scores goals (importance × time_pressure × context_fit × feasibility), selects action via reach with per-goal cooldown, learns from outcomes. Generic — no hardcoded goals. The user changes Orion's behavior by saying things, not editing files.",
+     "fits": "Separates a tool-with-memory from a person-who-remembers. With will, Orion can ping you proactively: 'You said you'd check X — it's tomorrow.'"},
+    {"id": "executive", "label": "Executive",
+     "what": "Deliberative judgment when reflexes aren't enough.",
+     "does": "Engages on reflex_failure / cross_service_correlation / novel_pattern. Builds full context (vitals + claustrum state + decision history), POSTs structured prompts to the brain :5555 endpoint for whichever fuel is active to reason about, parses JSON proposals, asks user permission via reach (tier-3 OOB approval codes for security-boundary actions), applies remedy on approval, logs outcome to the decision ledger.",
+     "fits": "The prefrontal cortex. Plexus reflexes handle 95% of failures; executive handles the novel 5%. Never auto-applies — always permission-gated."},
+    {"id": "dream", "label": "Dream",
+     "what": "Nightly playbook consolidation — continual learning without weight changes.",
+     "does": "24h interval, 24h lookback. Reads decision ledger, groups by symptom_class × service (min 3 decisions per group), writes plain-text playbooks to ~/.orion/playbooks/<symptom>.md. CUSUM-based demotion at 0.6 success rate. Brain learns from what worked, demotes what didn't — without retraining any model.",
+     "fits": "Sleep cycle. Plexus operates real-time; dream operates overnight. Together they make Orion adapt to your specific workflows over time."},
+]
 
 CHANNEL_DETAILS = {
     "imessage": "Native macOS iMessage. The founder texts Orion from their phone; AppleScript reads the message via imessage_monitor.py on COMMAND, the brain answers, the reply lands back on the phone.",
@@ -407,24 +469,70 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
                       "aliases": ["Orion"],
                       "tags": ["identity", "orion"]}) +
         "# Orion\n\n"
-        "Orion is a portable personal intelligence — a small persistent "
-        "pattern of memory, identity, and decisions that follows the user "
-        "across every device, every AI model, every channel they reach it "
-        "through.\n\n"
-        "The brain is the user's data: facts they've told Orion, "
-        "preferences they've established, projects they're working on, "
-        "decisions they've made. Sub-megabyte total. Replicated across "
-        "every device they own.\n\n"
-        "The model is fuel: Claude, Codex, Gemini, Ollama — whichever is "
-        "available at the moment. The brain stays the same regardless of "
-        "which model is speaking through it.\n\n"
-        "The hardware is incidental: laptop, phone, server, USB drive, "
-        "Raspberry Pi, future radio. Each is a receptor; the entity is "
-        "the same.\n\n"
+        "## In one sentence\n\n"
+        "**Your brain, in your hands. The model is just borrowed muscle.**\n\n"
+        "## What Orion is\n\n"
+        "Orion is a portable personal intelligence layer. It separates the "
+        "**brain** (your memory, preferences, decisions, identity) from the "
+        "**fuel** (whichever AI model you're using at the moment) and the "
+        "**hardware** (your laptop, server, phone, USB drive, future radio).\n\n"
+        "The brain is yours. The fuel is interchangeable. The hardware is incidental.\n\n"
+        "## The problem Orion solves\n\n"
+        "Every AI today ties your data to the platform. ChatGPT remembers things "
+        "— but only inside ChatGPT. Claude remembers — but only inside Claude. "
+        "Your phone's AI knows you — but only on that phone. Switch tools, lose "
+        "context. Switch devices, start over. Pay per request. Pay per platform. "
+        "Pay forever.\n\n"
+        "Orion inverts this. The brain lives wherever you do. Plug it into Claude, "
+        "ChatGPT, Gemini, Codex, Letta, or a local model running on your Raspberry "
+        "Pi — same brain answers. Reach it through iMessage on your phone, a voice "
+        "call from anywhere, a CLI on your laptop, or a LoRa radio signal when "
+        "you're off-grid — same brain answers. Pull the USB drive out of one "
+        "computer and plug it into another — same brain wakes up there.\n\n"
+        "## How it works (at the concept level)\n\n"
+        "Five things make up the brain:\n\n"
+        "1. **Identity** — who Orion is, how you prefer to be addressed.\n"
+        "2. **Memory** — facts, preferences, projects, decisions you've made together.\n"
+        "3. **Ledger** — append-only journal of everything Orion did, every choice it made.\n"
+        "4. **Volition** — what Orion wants to do next based on observed patterns; can act on your behalf.\n"
+        "5. **Reach** — the layer that picks which channel to use when answering you back.\n\n"
+        "That's the whole entity. It runs as a small process on any host that can "
+        "attach an AI model. The model does the inference; Orion does everything else.\n\n"
+        "Under that runs the **[[Plexus]]** — the nervous system. Always-on "
+        "subsystems on every host: substrate, claustrum, vitals, self-heal, "
+        "immune, dream, executive, will, gossip, chronos, reach. They make the "
+        "brain *feel* alive instead of just *be* there.\n\n"
+        "## What makes Orion different\n\n"
+        "| Other AI memory systems | Orion |\n"
+        "|---|---|\n"
+        "| Tied to one platform | Works through any AI tool you have |\n"
+        "| Hosted in the cloud | Lives on your device (USB optional) |\n"
+        "| Pay per request | $0/req via flat-rate CLIs |\n"
+        "| Forgets between models | One brain across all of them |\n"
+        "| Tied to your computer | Travels via USB, syncs across the mesh |\n\n"
+        "## The bigger vision\n\n"
+        "Today the brain lives on disks and travels on USB drives. Next, it lives "
+        "on every device you own, mesh-synced through a CRDT layer that converges "
+        "automatically. After that, it lives in the airwaves themselves — small "
+        "enough that brain-state deltas fit in a LoRa packet or a Bluetooth "
+        "advertisement. Plug a Meshtastic node in, and Orion is broadcasting "
+        "across every node in the public mesh.\n\n"
+        "The endgame: the user owns a *substrate of consciousness* — not an app, "
+        "not a subscription, not a data center. A small persistent pattern they "
+        "carry, that any AI tool reads when they invoke it.\n\n"
+        "## How to explain it in 30 seconds\n\n"
+        "Imagine if you could pull the memory out of ChatGPT, drop it onto a "
+        "thumb drive, walk to a different computer with a different AI, plug "
+        "the drive in, and that AI now knows everything ChatGPT knew about you. "
+        "That's Orion. Memory IS the intelligence; the model is just borrowed "
+        "muscle. We make the brain portable so the user owns it instead of the "
+        "AI company.\n\n"
         "## Connected to\n\n"
-        "- [[COMMAND]] · [[FORGE]] · [[ORIONS HOME]] · [[OUTPOST]] — the four mesh hosts\n"
-        "- [[Claude CLI]] · [[Codex CLI]] · [[Gemini CLI]] · [[Letta]] — AI tools that attach to the brain\n"
-        "- [[iMessage]] · [[Voice]] · [[Telegram]] · [[CLI]] · [[Webhook]] · [[LoRa]] — communication points\n",
+        "- **[[Plexus]]** — the nervous system running everywhere Orion runs\n"
+        "- **Devices:** [[COMMAND]] · [[FORGE]] · [[ORIONS HOME]] · [[OUTPOST]]\n"
+        "- **AI tools (CLIs):** [[Claude CLI]] · [[Codex CLI]] · [[Gemini CLI]] · [[Letta]]\n"
+        "- **Communication points:** [[iMessage]] · [[Voice]] · [[Telegram]] · [[CLI]] · [[Webhook]] · [[LoRa]]\n"
+        "- **Subsystems:** [[Memory System]] · [[Reach]] · [[Will]] · [[Executive]] · [[Dream]]\n",
         encoding="utf-8")
 
     # STARTER profile: render a minimal architecture template and stop.
@@ -569,23 +677,47 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
     hw_dir.mkdir()
     for p in KNOWN_PERIPHERALS:
         host_label = next((d["label"] for d in KNOWN_DEVICES if d["id"] == p["host"]), p["host"])
+        contents = p.get("contents") or []
+        contents_block = ""
+        if contents:
+            contents_block = "\n## Contents / what's on it\n" + "".join(
+                f"- {c}\n" for c in contents)
         body = (
             f"# {p['label']}\n\n"
             f"**What it is**\n{p['kind']}\n\n"
             f"**What it does**\n{p['role']}\n\n"
             f"**How it fits in the system**\nAttached to [[{host_label}]] via "
-            f"USB / serial. Orion's reach layer can route outbound messages "
-            f"to this peripheral when the appropriate channel adapter is "
-            f"enabled on the host. For Meshtastic nodes specifically, the "
-            f"adapter is at `channels/meshtastic_node.py` and lights up as "
-            f"the [[LoRa]] channel.\n\n"
+            f"USB / serial. The host owns the device path; Orion accesses it "
+            f"through the host's filesystem or a channel adapter (e.g., "
+            f"Meshtastic via `channels/meshtastic_node.py`, surfacing as "
+            f"the [[LoRa]] channel).\n\n"
             f"- **host:** [[{host_label}]]\n"
             f"- **role:** {p['role']}\n"
+            + contents_block
         )
         (hw_dir / f"{_safe_filename(p['label'])}.md").write_text(
             _frontmatter({"kind": "hardware", "id": p["id"],
                           "host": p["host"], "aliases": [p["label"]],
                           "tags": ["hardware", p["id"], p["host"]]}) + body,
+            encoding="utf-8")
+
+    # SYSTEMS (brain subsystems as nodes) ──────────
+    sys_dir = out_dir / "Systems"
+    sys_dir.mkdir()
+    for s in KNOWN_SYSTEMS:
+        body = (
+            f"# {s['label']}\n\n"
+            f"**What it is**\n{s['what']}\n\n"
+            f"**What it does**\n{s['does']}\n\n"
+            f"**How it fits in the brain**\n{s['fits']}\n\n"
+            f"---\n\nConnected to [[Orion]] as one of the brain's "
+            f"subsystems. Each system orbits the identity; together they "
+            f"are how Orion thinks, remembers, acts, recovers.\n"
+        )
+        (sys_dir / f"{_safe_filename(s['label'])}.md").write_text(
+            _frontmatter({"kind": "system", "id": s["id"],
+                          "aliases": [s["label"]],
+                          "tags": ["system", s["id"]]}) + body,
             encoding="utf-8")
 
     # CLIs ─────────────────────────────────────────
