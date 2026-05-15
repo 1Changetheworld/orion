@@ -203,15 +203,23 @@ async def main_async() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     logger.info("connecting to %s", NATS_URL)
-    nc = await nats.connect(NATS_URL,
-                            error_cb=lambda e: logger.debug("nats err: %s", e),
-                            disconnected_cb=lambda: logger.debug("nats disconnected"),
-                            reconnected_cb=lambda: logger.debug("nats reconnected"))
 
-    await nc.subscribe("brain.memory.stored",
-                       cb=lambda m: asyncio.create_task(_on_memory_stored(m, nc)))
-    await nc.subscribe("channel.*.inbound",
-                       cb=lambda m: asyncio.create_task(_on_channel_inbound(m, nc)))
+    async def _err_cb(e): logger.debug("nats err: %s", e)
+    async def _dis_cb(): logger.debug("nats disconnected")
+    async def _rec_cb(): logger.debug("nats reconnected")
+
+    nc = await nats.connect(NATS_URL,
+                            error_cb=_err_cb,
+                            disconnected_cb=_dis_cb,
+                            reconnected_cb=_rec_cb)
+
+    async def _mem_cb(msg):
+        await _on_memory_stored(msg, nc)
+    async def _chan_cb(msg):
+        await _on_channel_inbound(msg, nc)
+
+    await nc.subscribe("brain.memory.stored", cb=_mem_cb)
+    await nc.subscribe("channel.*.inbound", cb=_chan_cb)
     logger.info("orion-intent alive — watching memory.stored + channel.*.inbound")
 
     stop = asyncio.Event()
