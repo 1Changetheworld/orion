@@ -1,0 +1,48 @@
+{
+  "main": {
+    "id": "root",
+    "type": "split",
+    "children": [
+      {
+        "id": "graph-root",
+        "type": "leaf",
+        "state": {
+          "type": "graph",
+          "state": {}
+        }
+      }
+    ]
+  },
+  "left": {
+    "id": "left-root",
+    "type": "split",
+    "children": [
+      {
+        "id": "left-tabs",
+        "type": "tabs",
+        "children": [
+          { "id": "file-explorer-leaf", "type": "leaf", "state": { "type": "file-explorer", "state": {} } },
+          { "id": "tag-leaf", "type": "leaf", "state": { "type": "tag", "state": {} } }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 240
+  },
+  "right": {
+    "id": "right-root",
+    "type": "split",
+    "children": [
+      {
+        "id": "right-tabs",
+        "type": "tabs",
+        "children": [
+          { "id": "backlink-leaf", "type": "leaf", "state": { "type": "backlink", "state": {} } }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 280
+  },
+  "active": "graph-root"
+}

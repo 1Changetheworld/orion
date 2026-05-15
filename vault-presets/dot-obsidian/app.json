@@ -1,0 +1,10 @@
+{
+  "defaultViewMode": "preview",
+  "livePreview": true,
+  "showFrontmatter": true,
+  "useTab": true,
+  "tabSize": 2,
+  "showLineNumber": false,
+  "newFileLocation": "current",
+  "attachmentFolderPath": "."
+}

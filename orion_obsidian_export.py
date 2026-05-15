@@ -61,9 +61,10 @@ DECISIONS_PATH = ORION_HOME / "executive" / "decisions.jsonl"
 # Identical to dashboard_server's KNOWN_* so the exported vault matches
 # the nervous system the visualizer renders.
 KNOWN_DEVICES = [
-    {"id": "command",     "label": "COMMAND",      "role": "canonical brain",  "ip": "10.0.0.190"},
-    {"id": "forge",       "label": "FORGE",        "role": "mobile + dev",     "ip": "10.0.0.88"},
-    {"id": "orions-home", "label": "ORIONS HOME",  "role": "offline twin",     "ip": "10.0.0.56"},
+    {"id": "command",     "label": "COMMAND",      "role": "canonical brain",       "ip": "10.0.0.190"},
+    {"id": "forge",       "label": "FORGE",        "role": "mobile + dev",          "ip": "10.0.0.88"},
+    {"id": "orions-home", "label": "ORIONS HOME",  "role": "offline twin + maps",   "ip": "10.0.0.56"},
+    {"id": "outpost",     "label": "OUTPOST",      "role": "tailscale-only node",   "ip": "100.112.80.14"},
 ]
 KNOWN_CHANNELS = [
     {"id": "imessage", "label": "iMessage",  "host": "command", "transport": "native macOS"},
@@ -198,14 +199,50 @@ def _load_recent_activity(limit: int = 200) -> list:
     return events[:limit]
 
 
+def _deploy_obsidian_preset(out_dir: Path) -> bool:
+    """Copy the curated .obsidian/ config into the vault if none exists.
+    This is what makes every user's first vault open look like Orion's —
+    color-coded graph nodes, dark theme, graph view open by default,
+    sensible workspace layout.
+
+    Idempotent: if user already configured .obsidian/, we don't overwrite.
+    """
+    preset_root = Path(__file__).resolve().parent / "vault-presets" / "dot-obsidian"
+    if not preset_root.exists():
+        return False
+    target = out_dir / ".obsidian"
+    if target.exists():
+        return False  # respect existing user config
+    target.mkdir()
+    for src in preset_root.iterdir():
+        if src.is_file():
+            shutil.copy2(src, target / src.name)
+    return True
+
+
 def export_vault(out_dir: Path) -> dict:
     """Build the vault. Returns summary stats."""
     out_dir = out_dir.resolve()
+    # Preserve any existing .obsidian/ config across re-exports.
+    existing_obsidian = out_dir / ".obsidian"
+    saved_obsidian = None
+    if existing_obsidian.exists():
+        saved_obsidian = out_dir.parent / f".obsidian-cache-{os.getpid()}"
+        if saved_obsidian.exists():
+            shutil.rmtree(saved_obsidian)
+        shutil.move(str(existing_obsidian), str(saved_obsidian))
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
+    if saved_obsidian:
+        shutil.move(str(saved_obsidian), str(out_dir / ".obsidian"))
 
-    stats = {"memories": 0, "devices": 0, "channels": 0, "services": 0, "wiki_links": 0, "activity_days": 0, "activity_events": 0}
+    # Deploy default preset if no user config present
+    preset_applied = _deploy_obsidian_preset(out_dir)
+
+    stats = {"memories": 0, "devices": 0, "channels": 0, "services": 0,
+             "wiki_links": 0, "activity_days": 0, "activity_events": 0,
+             "preset_applied": preset_applied}
     activity = _load_recent_activity(limit=500)
     # Group by date for daily activity files + per-channel/per-tool indexes.
     by_date = defaultdict(list)
@@ -420,16 +457,24 @@ def export_vault(out_dir: Path) -> dict:
                 for sib in tag_to_ids.get(tlow, []):
                     if sib != nid:
                         related.add(sib)
-            related_links = "".join(f"- [[mem-{r}]]\n" for r in sorted(related)[:12])
+            # Build a slug index so wiki-links resolve to renamed files
+            related_sorted = sorted(related)[:12]
+            related_links = "".join(f"- [[mem-{r}]]\n" for r in related_sorted)
             stats["wiki_links"] += min(len(related), 12)
 
-            title_seed = content.split(":")[0].strip()[:60] or f"memory {nid}"
-            fname = f"mem-{nid}.md"
+            # Readable filename: mem-<id>-<slug>.md — what Obsidian shows
+            # in the graph by default. Slug is the first meaningful chunk
+            # of content so the graph reads naturally instead of "mem-37".
+            title_seed = content.split(":")[0].split("\n")[0].strip()[:50] or f"memory {nid}"
+            slug = re.sub(r"[^\w\s-]", "", title_seed).strip()
+            slug = re.sub(r"\s+", "-", slug)[:40].lower() or f"node-{nid}"
+            fname = f"mem-{nid}-{slug}.md"
 
             fm = _frontmatter({
                 "kind": "memory",
                 "id": nid,
                 "type": mtype,
+                "aliases": [title_seed, f"mem-{nid}"],
                 "tags": [mtype] + tags[:8],
                 "confidence": node.get("confidence", 1.0),
                 "created": node.get("created", 0),
