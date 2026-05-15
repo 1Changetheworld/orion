@@ -67,6 +67,16 @@ def _session_file(session_id: str) -> Path:
 # Public API
 # ─────────────────────────────────────────────────────────
 
+def _publish_substrate(event: str, rec: dict) -> None:
+    """Publish to the NATS substrate so other hosts see the event.
+    Best-effort — silent no-op if substrate unreachable."""
+    try:
+        from orion_substrate import publish
+        publish(f"orion.team.{event}", rec)
+    except Exception:
+        pass
+
+
 def announce(role: str,
              session: Optional[str] = None,
              focus: str = "",
@@ -92,6 +102,7 @@ def announce(role: str,
         "last_heartbeat": time.time(),
     }
     _session_file(sid).write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _publish_substrate("announce", rec)
     return rec
 
 
@@ -108,6 +119,7 @@ def update_focus(focus: str, session: Optional[str] = None) -> bool:
         rec["focus"] = focus
         rec["last_heartbeat"] = time.time()
         p.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+        _publish_substrate("update", rec)
         return True
     except Exception:
         return False
@@ -125,6 +137,7 @@ def heartbeat(session: Optional[str] = None) -> bool:
         rec = json.loads(p.read_text(encoding="utf-8"))
         rec["last_heartbeat"] = time.time()
         p.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+        _publish_substrate("heartbeat", rec)
         return True
     except Exception:
         return False
@@ -138,7 +151,12 @@ def release(session: Optional[str] = None) -> bool:
     p = _session_file(sid)
     if p.exists():
         try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            rec = {"session_id": sid}
+        try:
             p.unlink()
+            _publish_substrate("release", rec)
             return True
         except Exception:
             return False

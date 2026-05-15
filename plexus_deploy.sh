@@ -53,6 +53,7 @@ PLEXUS_SERVICES=(
     "will:orion_will.py"
     "chronos:orion_chronos.py"
     "intent:orion_intent.py"
+    "team-sync:orion_team_sync.py"
 )
 
 # Detect platform
