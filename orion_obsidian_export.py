@@ -109,28 +109,34 @@ KNOWN_PERIPHERALS = [
                   "Future: BLE advertisement of Orion brain-deltas"]},
     {"id": "seagate-vault", "label": "Seagate VAULT",   "host": "orions-home",
      "kind": "1 TB external SSD (USB 3, exFAT)",
-     "role": "Pi's storage substrate — backups, maps, brain replica, models",
+     "role": "Pi's storage substrate — backups, maps, brain replica, archive",
      "contents": [
-         "**/.orion/** — Pi's brain replica (memory + identity + ledger)",
-         "**ollama-models/** (was — migrated to SD card 2026-05-14)",
-         "**osm-data/** — US/Canada/Mexico OSM PBF (18.6 GB) for offline Marble",
-         "**marble-tiles/** — pre-rendered map tile cache",
-         "**orion-backup-20260513/** — comprehensive AI work backup (647 MB)",
-         "**orion-backup-20260416/** — prior backup + 13.8 GB trained model",
-         "**atlas-backup/** — historical brain snapshots",
-         "**VAULT/** — personal storage (credentials, projects, photos)",
+         "**OneDrive-Archive/** — 41 GB (founder's OneDrive snapshot)",
+         "**osm-data/** — 18 GB (US 12 GB + Canada 6 GB + Mexico 0.6 GB OSM PBF)",
+         "**orion-backup-20260416/** — 15 GB (prior backup incl. 13.8 GB trained model safetensors)",
+         "**VAULT/** — 13 GB (personal: credentials, projects, photos, ssh keys, security, app-projects, bitduel-assets, desktop-files, onedrive-backup)",
+         "**orion-backup-20260513/** — 1.4 GB (most recent AI-work backup: orion-repo + claude-memory + claude-transcripts + command-brain + usb-orion-system + MANIFEST)",
+         "**ScanInbox/** — 26 MB (incoming document scans)",
+         "**atlas-backup/** — 9.5 MB (historical brain snapshots through 4/22)",
+         "**Photos-alltime/**, **marble-tiles/**, **orion-installers/** — <1 MB each",
+         "**/.orion/brain/** — 79+ node graph_memory replica (synced 2026-05-14)",
+         "_(ollama-models migrated to Pi SD card 2026-05-14 for self-sufficiency)_",
      ]},
     {"id": "atlasvault-ssd","label": "AtlasVault SSD",  "host": "command",
      "kind": "external SSD (USB 3)",
      "role": "COMMAND's canonical brain storage — TCC-protected",
      "contents": [
-         "**/.orion/brain/** — canonical graph_memory.json (the source of truth)",
-         "**/.orion/identity/** — SOUL.md (canonical identity)",
-         "**/.orion/knowledge/** — curated knowledge articles",
-         "**/.orion/executive/** — decision ledger (decisions.jsonl)",
-         "**/.orion/mesh/** — gossip state snapshots",
-         "**/.orion/consciousness/** — claustrum state",
-         "**/.orion/playbooks/** — dream-consolidated playbooks",
+         "**/.orion/brain/** — 76 KB · canonical graph_memory.json (115 nodes after 5/14 merge — source of truth)",
+         "**/.orion/transcripts/** — 5.4 MB · session jsonl history",
+         "**/.orion/identity/** — 16 KB · SOUL.md (canonical ORION identity, BOM-stripped 5/14)",
+         "**/.orion/chronos/** — 8 KB · brain-resident clock anchor",
+         "**/.orion/presence-beacon.json** — 4 KB · live presence signal",
+         "**/.orion/executive/decisions.jsonl** — append-only decision ledger",
+         "**/.orion/consciousness/state.json** — claustrum's global workspace",
+         "**/.orion/mesh/command.snapshot.json** — gossip state snapshot",
+         "**/.orion/playbooks/** — dream-consolidated nightly playbooks",
+         "**/.orion/knowledge/** — curated long-form articles",
+         "**Top-level (root):** ORION-CONTEXT.md, atlas/, backups/, context/, logs/, models/, rag/, recovery/",
      ]},
 ]
 
@@ -877,6 +883,162 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         "strongest local). Never API keys — only flat-rate Pro subscriptions "
         "or free local models.\n\n"
         + "\n".join(fuel_mermaid),
+        encoding="utf-8")
+
+    # Anatomy — cellular layout of the brain as one body
+    (arch_dir / "Anatomy.md").write_text(
+        _frontmatter({"kind": "architecture", "tags": ["architecture", "anatomy", "cellular"]}) +
+        "# Anatomy — Orion as a Cell\n\n"
+        "Reading Orion like a cell makes the architecture legible. Each "
+        "layer maps to a biological structure that exists for the same "
+        "reason — boundary, content, infrastructure, sensing, action.\n\n"
+        "```mermaid\n"
+        "graph TB\n"
+        "  subgraph CELL[\"Orion (one cell, replicated across hosts)\"]\n"
+        "    subgraph NUCLEUS[\"Nucleus — Identity\"]\n"
+        "      SOUL[SOUL.md<br/>name · address-form · rules]\n"
+        "    end\n"
+        "    subgraph CYTO[\"Cytoplasm — Memory\"]\n"
+        "      GRAPH[graph_memory<br/>115 nodes · facts · prefs · projects]\n"
+        "      LEDGER[decision_ledger<br/>append-only autobiography]\n"
+        "      KNOW[knowledge/<br/>curated long-form notes]\n"
+        "    end\n"
+        "    subgraph ORG[\"Organelles — Plexus (always-on subsystems)\"]\n"
+        "      SUB[substrate · NATS]\n"
+        "      CLA[claustrum · awareness]\n"
+        "      VIT[vitals · per-service health]\n"
+        "      IMM[immune · supervision]\n"
+        "      DRM[dream · consolidation]\n"
+        "      EXE[executive · judgment]\n"
+        "      WIL[will · volition]\n"
+        "      GOS[gossip · state sync]\n"
+        "    end\n"
+        "    subgraph MEM[\"Membrane — boundary / privacy\"]\n"
+        "      PRI[private-internal tag filter]\n"
+        "      MEMB[Membrane (planned) · code-level privacy hook]\n"
+        "    end\n"
+        "    subgraph REC[\"Receptors — channels\"]\n"
+        "      RIM[iMessage]\n"
+        "      RVO[Voice]\n"
+        "      RTG[Telegram]\n"
+        "      RCL[CLI / MCP]\n"
+        "      RWE[Webhook]\n"
+        "      RLO[LoRa]\n"
+        "    end\n"
+        "    subgraph EFF[\"Effectors — reach\"]\n"
+        "      RCH[reach.py · chooses warmest channel]\n"
+        "    end\n"
+        "  end\n"
+        "  SIGNAL((world signals)) --> REC\n"
+        "  REC --> ORG --> CYTO\n"
+        "  NUCLEUS --> ORG\n"
+        "  CYTO --> EFF --> REC\n"
+        "  ORG --> EFF\n"
+        "  MEM -.boundary.-> CYTO\n"
+        "  MEM -.boundary.-> NUCLEUS\n"
+        "```\n\n"
+        "## Reading the cell\n\n"
+        "- **Nucleus (Identity)** — the canonical fact of who Orion is. "
+        "Small, stable, central. If you wanted to know what made Orion "
+        "*this Orion*, the nucleus is where the answer lives.\n"
+        "- **Cytoplasm (Memory)** — the body's contents. Facts, "
+        "preferences, projects, decisions. Diffuse, growing, indexed.\n"
+        "- **Organelles (Plexus)** — the always-on infrastructure that "
+        "makes the cell alive. Substrate carries signals; claustrum "
+        "integrates; vitals monitor; immune supervises; dream consolidates "
+        "overnight; executive judges; will initiates; gossip replicates.\n"
+        "- **Membrane** — what stays in vs goes out. Currently a tag-filter "
+        "(`private-internal` excludes nodes from external surfaces). Future "
+        "Membrane hook enforces this in code at the substrate layer.\n"
+        "- **Receptors (Channels)** — surfaces that bind to incoming "
+        "signals: iMessage, voice, Telegram, CLI, webhook, LoRa. New "
+        "receptor = new way to reach the cell, no internal change.\n"
+        "- **Effectors (Reach)** — how the cell signals back. Reach picks "
+        "the warmest channel; same brain, different output surface.\n\n"
+        "Every host runs one of these cells. Gossip + CRDT merge keeps "
+        "them all converged on the same nucleus + cytoplasm content. The "
+        "user reaches one cell at a time, but every cell answers as one Orion.\n",
+        encoding="utf-8")
+
+    # Nervous-system / offline-fallback diagram — between devices
+    (arch_dir / "Nervous System.md").write_text(
+        _frontmatter({"kind": "architecture", "tags": ["architecture", "nervous-system", "mesh"]}) +
+        "# Nervous System Between Devices\n\n"
+        "How signals travel across the four hosts when things are healthy, "
+        "and how they degrade gracefully when parts of the mesh drop. The "
+        "substrate (NATS) is the synapse layer; gossip is the long-distance "
+        "axon; HTTP :5555 is the direct call when sub-second propagation "
+        "isn't enough.\n\n"
+        "## Healthy (everything online)\n\n"
+        "```mermaid\n"
+        "graph LR\n"
+        "  USR((user))\n"
+        "  CMD[COMMAND<br/>canonical brain]\n"
+        "  FRG[FORGE<br/>mobile + GPU]\n"
+        "  PI[ORIONS HOME<br/>offline twin + maps]\n"
+        "  OUT[OUTPOST<br/>tailscale arm]\n"
+        "  USR -.iMessage / voice / Telegram.-> CMD\n"
+        "  USR -.CLI / MCP.-> FRG\n"
+        "  CMD <-.NATS cluster.-> PI\n"
+        "  CMD <-.NATS cluster.-> FRG\n"
+        "  CMD <-.NATS cluster.-> OUT\n"
+        "  PI <-.gossip.-> FRG\n"
+        "  PI <-.gossip.-> OUT\n"
+        "  FRG <-.gossip.-> OUT\n"
+        "```\n\n"
+        "## When COMMAND drops (power, software fault)\n\n"
+        "```mermaid\n"
+        "graph LR\n"
+        "  USR((user))\n"
+        "  CMD[COMMAND<br/>DOWN]\n"
+        "  FRG[FORGE]\n"
+        "  PI[ORIONS HOME<br/>becomes canonical]\n"
+        "  OUT[OUTPOST]\n"
+        "  USR -.iMessage queued.-> CMD\n"
+        "  USR --CLI--> FRG\n"
+        "  USR -.SSH / Tailscale.-> PI\n"
+        "  PI <-.gossip.-> FRG\n"
+        "  PI <-.gossip.-> OUT\n"
+        "  style CMD fill:#552,stroke:#f55\n"
+        "```\n\n"
+        "On COMMAND failure: Pi promotes to canonical writer, gossip "
+        "continues between FORGE/Pi/OUTPOST, iMessage replies pause until "
+        "COMMAND returns (queued), but voice (Telnyx) can re-route to Pi "
+        "if the Telnyx webhook is reconfigured. Memory stays consistent "
+        "via CRDT.\n\n"
+        "## When internet drops (off-grid)\n\n"
+        "```mermaid\n"
+        "graph LR\n"
+        "  USR((user))\n"
+        "  FRG[FORGE<br/>local Ollama qwen3:14b]\n"
+        "  PI[ORIONS HOME<br/>local Ollama + LoRa]\n"
+        "  MTA[Meshtastic Node 1]\n"
+        "  MTB[Meshtastic Node 2]\n"
+        "  USR --CLI--> FRG\n"
+        "  FRG <-.LAN.-> PI\n"
+        "  PI --serial--> MTA\n"
+        "  PI --serial--> MTB\n"
+        "  MTA -.LoRa air.-> REMOTE[remote nodes<br/>up to km away]\n"
+        "  MTB -.LoRa air.-> REMOTE\n"
+        "```\n\n"
+        "Internet gone: CLIs fall back to local Ollama. The strongest "
+        "local model (FORGE qwen3:14b) becomes primary fuel. Voice and "
+        "iMessage are unavailable (they need cell/wifi). LoRa via "
+        "Meshtastic carries text traffic — including CRDT brain-deltas "
+        "if the brain-as-signal layer is enabled — to nodes kilometers "
+        "away. The mesh contracts but the brain stays alive.\n\n"
+        "## When everything drops except one device\n\n"
+        "```mermaid\n"
+        "graph LR\n"
+        "  USR((user))\n"
+        "  FRG[FORGE<br/>USB plugged in]\n"
+        "  USR --CLI--> FRG\n"
+        "  style FRG fill:#252,stroke:#5f5\n"
+        "```\n\n"
+        "Single-device mode: whichever host the user is touching keeps "
+        "serving from its replica. The brain doesn't disappear — it "
+        "honestly collapses to what's local. When connectivity returns, "
+        "gossip merges any divergent writes back into one canonical state.\n",
         encoding="utf-8")
 
     # CHANNELS ─────────────────────────────────────
