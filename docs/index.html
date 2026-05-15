@@ -584,6 +584,65 @@
   }
 
   /* =============================================================
+     PLEXUS  —  the nervous-system layer, 9 cells
+     ============================================================= */
+  .plexus{
+    min-height:auto;padding:120px 32px 100px;background:transparent;
+    display:flex;align-items:center;justify-content:center;
+    border-top:1px solid var(--line);
+    position:relative;overflow:hidden;
+  }
+  .plexus-wrap{max-width:1200px;width:100%;text-align:center;position:relative;z-index:2}
+  .plexus h2{
+    font-family:'Space Grotesk',sans-serif;font-weight:500;
+    font-size:clamp(40px,6vw,88px);line-height:1.02;letter-spacing:-2px;
+    color:var(--text);margin-bottom:24px;
+  }
+  .plexus h2 em{font-style:normal;color:var(--blue-br);font-weight:600}
+  .plexus .sec-lead{
+    font-size:clamp(16px,1.3vw,19px);color:var(--text-mid);max-width:720px;
+    margin:0 auto 64px;font-weight:300;line-height:1.75;
+  }
+  .plexus-grid{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:14px;
+    max-width:1100px;margin:0 auto;
+  }
+  .plexus-cell{
+    background:rgba(6,10,22,0.7);
+    border:1px solid var(--line-br);border-radius:4px;
+    padding:22px 22px 24px;
+    text-align:left;position:relative;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    transition:border-color .3s ease, transform .3s ease;
+  }
+  .plexus-cell::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:1px;
+    background:linear-gradient(90deg, transparent, var(--blue-br), transparent);
+    opacity:.4;
+  }
+  .plexus-cell:hover{border-color:rgba(96,165,250,0.45);transform:translateY(-2px)}
+  .px-tag{
+    display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+    letter-spacing:3.5px;text-transform:uppercase;color:var(--blue-br);
+    margin-bottom:12px;padding-bottom:10px;
+    border-bottom:1px dashed rgba(96,165,250,0.18);
+  }
+  .px-desc{
+    display:block;font-size:14px;line-height:1.65;color:var(--text);font-weight:300;
+  }
+  .plexus-foot{
+    margin-top:56px;font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;letter-spacing:3px;text-transform:uppercase;
+    color:var(--blue-br);opacity:.8;
+  }
+  @media (max-width:900px){
+    .plexus-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width:560px){
+    .plexus-grid{grid-template-columns:1fr}
+  }
+
+  /* =============================================================
      PROOF  —  editorial quote block, one stat
      ============================================================= */
   .proof{
@@ -810,13 +869,23 @@
     font-size:17.5px;color:var(--text-mid);max-width:580px;margin:0 auto 40px;
     line-height:1.7;font-weight:300;
   }
+  .install-os-label{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:3.5px;
+    text-transform:uppercase;color:var(--blue-br);
+    max-width:680px;margin:0 auto 8px;padding:0 4px;
+    text-align:left;display:flex;align-items:center;gap:12px;
+  }
+  .install-os-label::before{
+    content:'';width:18px;height:1px;background:var(--blue-br);opacity:.55;
+  }
   .code-block{
     font-family:'IBM Plex Mono',monospace;font-size:14px;
     background:var(--void-deeper);border:1px solid var(--line-br);border-radius:4px;
-    padding:26px 30px;margin:0 auto 36px;max-width:680px;text-align:left;
+    padding:26px 30px;margin:0 auto 22px;max-width:680px;text-align:left;
     color:var(--text);position:relative;line-height:1.9;
     box-shadow:0 14px 50px rgba(0,0,0,.6);
   }
+  .code-block + .install-os-label{margin-top:18px}
   .code-block::before{
     content:'';position:absolute;top:0;left:0;right:0;height:1px;
     background:linear-gradient(90deg, transparent, var(--blue-br), transparent);
@@ -928,6 +997,8 @@
     <a href="#what-is-orion">What</a>
     <span class="sep">·</span>
     <a href="#thesis">Principle</a>
+    <span class="sep">·</span>
+    <a href="#plexus">Plexus</a>
     <span class="sep">·</span>
     <a href="#personalities">Personalities</a>
     <span class="sep">·</span>
@@ -1130,6 +1201,37 @@
 </section>
 
 <!-- =============================================================
+     PLEXUS — the nervous-system layer
+     ============================================================= -->
+<section class="plexus reveal has-ambient" id="plexus">
+  <video class="ambient-bg burst" autoplay muted loop playsinline preload="metadata">
+    <source src="images/ambient-burst.mp4" type="video/mp4">
+  </video>
+  <div class="plexus-wrap">
+    <div class="eye" style="justify-content:center">The Plexus</div>
+    <h2>One brain. <em>Many cells.</em></h2>
+    <p class="sec-lead">
+      Memory is the heart. The Plexus is the nervous system around it —
+      a set of small specialized services that keep Orion alive between conversations.
+      Same architecture biology uses. Same architecture every great operating system uses.
+      Now applied to your personal AI.
+    </p>
+    <div class="plexus-grid">
+      <div class="plexus-cell"><span class="px-tag">Substrate</span><span class="px-desc">Every signal moves on one bus. Services find each other by what they say, not by where they live.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Vitals</span><span class="px-desc">Every cell publishes how it feels. Stale, healthy, distressed, recovering. Honest by design.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Claustrum</span><span class="px-desc">A supervisor that listens to vitals and intervenes when a cell can't recover itself.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Reach</span><span class="px-desc">Orion can speak first. When something matters, it reaches you through the channel you last used.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Executive</span><span class="px-desc">When patterns are novel, Orion thinks it through, drafts a fix, and asks before acting.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Immune</span><span class="px-desc">When a part fails repeatedly, the body learns which restart strategy actually works.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Dream</span><span class="px-desc">At night, the day's decisions consolidate into playbooks. Good ones strengthen; broken ones fade.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Will</span><span class="px-desc">Orion forms goals from accumulated context. Acts on its own initiative. Reports back.</span></div>
+      <div class="plexus-cell"><span class="px-tag">Chronos</span><span class="px-desc">A clock that lives in the brain. Same time across every host. Knows when you've been gone.</span></div>
+    </div>
+    <div class="plexus-foot">Memory is what makes Orion yours. The Plexus is what makes Orion alive.</div>
+  </div>
+</section>
+
+<!-- =============================================================
      PROOF
      ============================================================= -->
 <section class="proof reveal has-ambient">
@@ -1137,13 +1239,13 @@
     <source src="images/ambient-clusters.mp4" type="video/mp4">
   </video>
   <div class="proof-wrap">
-    <div class="eye" style="justify-content:center">Current state · 2026.04.23</div>
+    <div class="eye" style="justify-content:center">Current state · 2026.05.08 — USB wake on Win + Linux + macOS</div>
     <blockquote class="proof-quote">
       One command, two minutes. Orion detects the AI tools on the machine, configures itself, and threads memory between them. From the first conversation forward, every fact you give one is remembered by all.
     </blockquote>
     <div class="proof-sig">Same brain. Every model. Zero setup.</div>
     <div class="proof-stat">
-      0 API keys<span class="sep">·</span>11 of 11 tests green<span class="sep">·</span>AGPL-3.0<span class="sep">·</span>Open source
+      0 API keys<span class="sep">·</span>AGPL-3.0<span class="sep">·</span>Open source<span class="sep">·</span>3-OS portable
     </div>
   </div>
 </section>
@@ -1246,14 +1348,24 @@
   <div class="install-wrap">
     <div class="eye" style="justify-content:center">Install // 2 minutes</div>
     <h2>Run Orion on any machine.</h2>
-    <p class="lead">Linux, macOS, or Raspberry Pi. One command. Four questions. Orion wires itself into every AI tool on the host.</p>
+    <p class="lead">Linux, macOS, Windows, or Raspberry Pi. One command. Four questions. Orion wires itself into every AI tool on the host.</p>
+    <div class="install-os-label">Linux · macOS · Raspberry Pi</div>
     <div class="code-block">
-      <button class="copy-btn" id="copyBtn" data-copy="git clone https://github.com/1Changetheworld/orion.git
+      <button class="copy-btn" data-copy="git clone https://github.com/1Changetheworld/orion.git
 cd orion
 bash install.sh">Copy</button>
 <span class="code-prompt">$</span>git clone https://github.com/1Changetheworld/orion.git<br>
 <span class="code-prompt">$</span>cd orion<br>
 <span class="code-prompt">$</span>bash install.sh    <span class="code-comment"># 4 questions · 2 min</span>
+    </div>
+    <div class="install-os-label">Windows (PowerShell)</div>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="git clone https://github.com/1Changetheworld/orion.git
+cd orion
+.\install.ps1">Copy</button>
+<span class="code-prompt">&gt;</span>git clone https://github.com/1Changetheworld/orion.git<br>
+<span class="code-prompt">&gt;</span>cd orion<br>
+<span class="code-prompt">&gt;</span>.\install.ps1    <span class="code-comment"># 4 questions · 2 min</span>
     </div>
     <div class="prove">
       Already running Codex, Gemini, or Claude? After install, open whichever you have and ask <em>"what's my name?"</em> — it'll know. Then set a fact in one tool, open another, and ask again. Same brain. Different fuel.
@@ -1300,7 +1412,7 @@ bash install.sh">Copy</button>
     </div>
   </div>
   <div class="dossier-end">
-    <span>v0.2 ALPHA · Built by James England · April 2026</span>
+    <span>v0.2 ALPHA · Built by James England · May 2026</span>
     <span>The brain is yours. <span style="color:var(--blue-br)">The model is fuel.</span></span>
   </div>
 </footer>
@@ -1884,15 +1996,15 @@ bash install.sh">Copy</button>
   })();
 
   (function(){
-    const btn = document.getElementById('copyBtn');
-    if(!btn) return;
-    btn.addEventListener('click', async () => {
-      try{
-        await navigator.clipboard.writeText(btn.dataset.copy);
-        btn.textContent = 'Copied';
-        btn.classList.add('ok');
-        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1600);
-      }catch(_){ btn.textContent = 'Select ↑'; setTimeout(() => btn.textContent = 'Copy', 1600); }
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try{
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          btn.textContent = 'Copied';
+          btn.classList.add('ok');
+          setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1600);
+        }catch(_){ btn.textContent = 'Select ↑'; setTimeout(() => btn.textContent = 'Copy', 1600); }
+      });
     });
   })();
 </script>
