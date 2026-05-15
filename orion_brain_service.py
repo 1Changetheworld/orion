@@ -290,8 +290,8 @@ class BrainHandler(BaseHTTPRequestHandler):
         # the new service.
         #
         # Authenticated like everything else (bearer token). If a channel
-        # daemon needs to call from another host (e.g., COMMAND's iMessage
-        # daemon hitting a cloud-mode brain), it presents the bearer.
+        # daemon needs to call from another host (e.g., a macOS box running
+        # the iMessage bridge hitting a cloud-mode brain), it presents the bearer.
         if self.path == "/chat":
             message = (payload.get("message") or "").strip()
             interface = payload.get("interface") or "unknown"

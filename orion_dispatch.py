@@ -132,7 +132,7 @@ def subdomains(domain):
 def dolphin(prompt):
     """Uncensored local-model query via configured workstation's Ollama."""
     out, elapsed = run_cmd(
-        f'curl -s --max-time 120 http://{FORGE_IP}:11434/api/generate '
+        f'curl -s --max-time 120 http://{os.environ.get("ORION_OLLAMA_HOST", "127.0.0.1")}:11434/api/generate '
         f'-d \'{{"model":"dolphin-mistral:7b","prompt":"{prompt[:500]}","stream":false}}\' '
         f'2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get(\'response\',\'\'))"',
         timeout=130

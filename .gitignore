@@ -4,6 +4,7 @@ __pycache__/
 
 # User's personal config and brain state (never ship)
 .orion/
+.orion-system/
 orion_user_config.json
 conversations/
 knowledge/
