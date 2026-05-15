@@ -63,8 +63,27 @@ DECISIONS_PATH = ORION_HOME / "executive" / "decisions.jsonl"
 KNOWN_DEVICES = [
     {"id": "command",     "label": "COMMAND",      "role": "canonical brain",       "ip": "10.0.0.190"},
     {"id": "forge",       "label": "FORGE",        "role": "mobile + dev",          "ip": "10.0.0.88"},
-    {"id": "orions-home", "label": "ORIONS HOME",  "role": "offline twin + maps",   "ip": "10.0.0.56"},
+    {"id": "orions-home", "label": "ORIONS HOME",  "role": "offline brain twin + GPS navigator (online + offline)", "ip": "10.0.0.56"},
     {"id": "outpost",     "label": "OUTPOST",      "role": "tailscale-only node",   "ip": "100.112.80.14"},
+]
+
+# CLIs that can attach to the brain via MCP
+KNOWN_CLIS = [
+    {"id": "claude-cli",  "label": "Claude CLI",  "vendor": "Anthropic", "tier": 1},
+    {"id": "codex-cli",   "label": "Codex CLI",   "vendor": "OpenAI",    "tier": 1},
+    {"id": "gemini-cli",  "label": "Gemini CLI",  "vendor": "Google",    "tier": 1},
+    {"id": "letta",       "label": "Letta",       "vendor": "Letta",     "tier": 2},
+]
+
+# LLMs (fuel models) available on the mesh
+KNOWN_LLMS = [
+    {"id": "claude-opus",   "label": "Claude Opus",    "kind": "frontier", "host": "claude-cli", "tier": 1},
+    {"id": "gpt-codex",     "label": "Codex GPT-5",    "kind": "frontier", "host": "codex-cli",  "tier": 1},
+    {"id": "gemini-pro",    "label": "Gemini Pro",     "kind": "frontier", "host": "gemini-cli", "tier": 1},
+    {"id": "qwen3-14b",     "label": "qwen3:14b",      "kind": "local",    "host": "forge",      "tier": 2},
+    {"id": "qwen3-8b",      "label": "qwen3:8b",       "kind": "local",    "host": "orions-home","tier": 3},
+    {"id": "phi3-mini",     "label": "phi3:mini",      "kind": "local",    "host": "orions-home","tier": 4},
+    {"id": "dolphin-mistral","label": "dolphin-mistral:7b","kind":"local", "host": "forge",      "tier": 3},
 ]
 KNOWN_CHANNELS = [
     {"id": "imessage", "label": "iMessage",  "host": "command", "transport": "native macOS"},
@@ -273,13 +292,35 @@ def export_vault(out_dir: Path) -> dict:
     )
 
     # IDENTITY ─────────────────────────────────────
+    # PUBLIC-FACING version. The raw SOUL.md is internal and stays on
+    # the brain host; what shows up in the vault is the user-visible
+    # description of who Orion is.
     ident_dir = out_dir / "Identity"
     ident_dir.mkdir()
-    soul_text = SOUL_PATH.read_text(encoding="utf-8") if SOUL_PATH.exists() \
-        else "(SOUL.md not present on this host)"
     (ident_dir / "Orion.md").write_text(
-        _frontmatter({"kind": "identity", "tags": ["identity", "orion"]}) +
-        soul_text, encoding="utf-8")
+        _frontmatter({"kind": "identity",
+                      "aliases": ["Orion"],
+                      "tags": ["identity", "orion"]}) +
+        "# Orion\n\n"
+        "Orion is a portable personal intelligence — a small persistent "
+        "pattern of memory, identity, and decisions that follows the user "
+        "across every device, every AI model, every channel they reach it "
+        "through.\n\n"
+        "The brain is the user's data: facts they've told Orion, "
+        "preferences they've established, projects they're working on, "
+        "decisions they've made. Sub-megabyte total. Replicated across "
+        "every device they own.\n\n"
+        "The model is fuel: Claude, Codex, Gemini, Ollama — whichever is "
+        "available at the moment. The brain stays the same regardless of "
+        "which model is speaking through it.\n\n"
+        "The hardware is incidental: laptop, phone, server, USB drive, "
+        "Raspberry Pi, future radio. Each is a receptor; the entity is "
+        "the same.\n\n"
+        "## Connected to\n\n"
+        "- [[COMMAND]] · [[FORGE]] · [[ORIONS HOME]] · [[OUTPOST]] — the four mesh hosts\n"
+        "- [[Claude CLI]] · [[Codex CLI]] · [[Gemini CLI]] · [[Letta]] — AI tools that attach to the brain\n"
+        "- [[iMessage]] · [[Voice]] · [[Telegram]] · [[CLI]] · [[Webhook]] · [[LoRa]] — communication points\n",
+        encoding="utf-8")
 
     # DEVICES ──────────────────────────────────────
     dev_dir = out_dir / "Devices"
@@ -370,6 +411,156 @@ def export_vault(out_dir: Path) -> dict:
             _frontmatter({"kind": "tool", "name": tool,
                           "tags": ["tool", tool]}) + "\n".join(body_lines),
             encoding="utf-8")
+
+    # CLIs ─────────────────────────────────────────
+    cli_dir = out_dir / "CLIs"
+    cli_dir.mkdir()
+    for c in KNOWN_CLIS:
+        body = (
+            f"# {c['label']}\n\n"
+            f"- **vendor:** {c['vendor']}\n"
+            f"- **tier:** {c['tier']}\n\n"
+            f"AI tool that attaches to [[Orion]]'s brain via MCP. When this "
+            f"CLI is invoked on any host, Orion's memory + identity + "
+            f"prior decisions are loaded automatically. The CLI provides "
+            f"the model; Orion provides the brain.\n\n"
+            f"## Fuels powered by this CLI\n"
+            + "".join(f"- [[{m['label']}]]\n" for m in KNOWN_LLMS if m['host'] == c['id'])
+        )
+        (cli_dir / f"{_safe_filename(c['label'])}.md").write_text(
+            _frontmatter({"kind": "cli", "id": c["id"],
+                          "vendor": c["vendor"], "tier": c["tier"],
+                          "aliases": [c["label"]],
+                          "tags": ["cli", c["id"]]}) + body,
+            encoding="utf-8")
+
+    # LLMs ─────────────────────────────────────────
+    llm_dir = out_dir / "LLMs"
+    llm_dir.mkdir()
+    for m in KNOWN_LLMS:
+        host_link = (f"[[{m['host']}]]" if m['kind'] == 'frontier'
+                     else f"[[{next(d['label'] for d in KNOWN_DEVICES if d['id']==m['host']) }]]")
+        if m['kind'] == 'frontier':
+            cli_label = next((c['label'] for c in KNOWN_CLIS if c['id'] == m['host']), m['host'])
+            host_link = f"[[{cli_label}]]"
+        body = (
+            f"# {m['label']}\n\n"
+            f"- **kind:** {m['kind']} ({'cloud-served via CLI' if m['kind']=='frontier' else 'local Ollama on the mesh'})\n"
+            f"- **served by:** {host_link}\n"
+            f"- **tier:** {m['tier']} (lower = stronger / preferred)\n\n"
+            f"This is a fuel — Orion uses it to do the inference. The brain "
+            f"(memory + identity + decisions) stays constant; this model "
+            f"is one of several Orion can borrow muscle from.\n"
+        )
+        (llm_dir / f"{_safe_filename(m['label'])}.md").write_text(
+            _frontmatter({"kind": "llm", "id": m["id"],
+                          "model_kind": m["kind"], "tier": m["tier"],
+                          "aliases": [m["label"]],
+                          "tags": ["llm", m["id"], m["kind"]]}) + body,
+            encoding="utf-8")
+
+    # ARCHITECTURE (Mermaid diagrams) ──────────────
+    # Founder feedback 2026-05-14: the graph view is too chaotic for
+    # system structure. Mermaid diagrams render as clear architecture
+    # diagrams inside Obsidian — built-in, no plugin needed.
+    arch_dir = out_dir / "Architecture"
+    arch_dir.mkdir()
+
+    # System overview — everything connected
+    sys_mermaid = ["```mermaid", "graph TB",
+                   "  subgraph User['User']",
+                   "    USR((you))",
+                   "  end",
+                   "  subgraph Channels['Communication Points']"]
+    for ch in KNOWN_CHANNELS:
+        sys_mermaid.append(f"    {ch['id'].upper().replace('-','_')}[{ch['label']}]")
+    sys_mermaid.append("  end")
+    sys_mermaid.append("  subgraph Devices['Mesh Devices']")
+    for d in KNOWN_DEVICES:
+        sys_mermaid.append(f"    {d['id'].upper().replace('-','_')}[{d['label']}]")
+    sys_mermaid.append("  end")
+    sys_mermaid.append("  subgraph CLIs['AI Tools (MCP attached)']")
+    for c in KNOWN_CLIS:
+        sys_mermaid.append(f"    {c['id'].upper().replace('-','_')}[{c['label']}]")
+    sys_mermaid.append("  end")
+    sys_mermaid.append("  subgraph LLMs['Fuel Models']")
+    for m in KNOWN_LLMS:
+        sys_mermaid.append(f"    {m['id'].upper().replace(':','_').replace('-','_')}[{m['label']}]")
+    sys_mermaid.append("  end")
+    sys_mermaid.append("  BRAIN{{Orion Brain<br/>memory + identity + ledger}}")
+    # User -> channels
+    for ch in KNOWN_CHANNELS:
+        sys_mermaid.append(f"  USR --> {ch['id'].upper().replace('-','_')}")
+    # Channels -> devices
+    for ch in KNOWN_CHANNELS:
+        if ch["host"] != "any":
+            sys_mermaid.append(f"  {ch['id'].upper().replace('-','_')} --> {ch['host'].upper().replace('-','_')}")
+    # Devices -> brain
+    for d in KNOWN_DEVICES:
+        sys_mermaid.append(f"  {d['id'].upper().replace('-','_')} --> BRAIN")
+    # Brain -> CLIs (brain is loaded into each CLI via MCP)
+    for c in KNOWN_CLIS:
+        sys_mermaid.append(f"  BRAIN -.MCP.-> {c['id'].upper().replace('-','_')}")
+    # CLIs -> LLMs
+    for m in KNOWN_LLMS:
+        if m["kind"] == "frontier":
+            sys_mermaid.append(f"  {m['host'].upper().replace('-','_')} --fuels--> {m['id'].upper().replace(':','_').replace('-','_')}")
+    # Devices -> local LLMs (Ollama)
+    for m in KNOWN_LLMS:
+        if m["kind"] == "local":
+            sys_mermaid.append(f"  {m['host'].upper().replace('-','_')} --hosts--> {m['id'].upper().replace(':','_').replace('-','_')}")
+    sys_mermaid.append("```")
+    (arch_dir / "System.md").write_text(
+        _frontmatter({"kind": "architecture", "aliases": ["System"],
+                      "tags": ["architecture", "system"]}) +
+        "# System — One Brain, Many Receptors\n\n"
+        "How the whole thing fits together. The user reaches Orion through "
+        "any communication point; the channel lands on a host; the host "
+        "loads the brain; the brain attaches to whatever AI tool / model "
+        "is currently fueling it.\n\n"
+        + "\n".join(sys_mermaid),
+        encoding="utf-8")
+
+    # Mesh-only diagram
+    mesh_mermaid = ["```mermaid", "graph LR"]
+    for d in KNOWN_DEVICES:
+        mesh_mermaid.append(f"  {d['id'].upper().replace('-','_')}[{d['label']}<br/>{d['role']}]")
+    # full mesh (every pair)
+    ids = [d["id"] for d in KNOWN_DEVICES]
+    for i, a in enumerate(ids):
+        for b in ids[i+1:]:
+            mesh_mermaid.append(f"  {a.upper().replace('-','_')} <--mesh--> {b.upper().replace('-','_')}")
+    mesh_mermaid.append("```")
+    (arch_dir / "Mesh.md").write_text(
+        _frontmatter({"kind": "architecture", "tags": ["architecture", "mesh"]}) +
+        "# Mesh — Devices in the Brain\n\n"
+        "Every host runs a replica of Orion's brain. The substrate (NATS) "
+        "gossips changes between them in real time. When you write a fact "
+        "on one device, every other device sees it.\n\n"
+        + "\n".join(mesh_mermaid),
+        encoding="utf-8")
+
+    # Fuel routing diagram
+    fuel_mermaid = ["```mermaid", "graph TD",
+                    "  IN((incoming request))",
+                    "  ROUTE{which fuel?}",
+                    "  IN --> ROUTE"]
+    for c in KNOWN_CLIS:
+        fuel_mermaid.append(f"  ROUTE -.tier {c['tier']}.-> {c['id'].upper().replace('-','_')}[{c['label']}]")
+    for m in KNOWN_LLMS:
+        if m["kind"] == "local":
+            fuel_mermaid.append(f"  ROUTE -.tier {m['tier']}.-> {m['id'].upper().replace(':','_').replace('-','_')}[{m['label']}]")
+    fuel_mermaid.append("```")
+    (arch_dir / "Fuels.md").write_text(
+        _frontmatter({"kind": "architecture", "tags": ["architecture", "fuels"]}) +
+        "# Fuels — How Orion Chooses Which Model to Use\n\n"
+        "Orion routes requests to the strongest reachable fuel. Online: the "
+        "frontier CLIs (Claude, Codex, Gemini) handle complex reasoning. "
+        "Offline: local Ollama models on the mesh (FORGE qwen3:14b is the "
+        "strongest local). Never API keys — only flat-rate Pro subscriptions "
+        "or free local models.\n\n"
+        + "\n".join(fuel_mermaid),
+        encoding="utf-8")
 
     # CHANNELS ─────────────────────────────────────
     chan_dir = out_dir / "Channels"
