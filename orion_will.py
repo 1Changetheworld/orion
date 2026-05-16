@@ -271,16 +271,35 @@ def _utility(g: dict, now: float) -> float:
         decay = 0.5 ** ((age_days - 3.0) / GOAL_DECAY_HALF_LIFE_DAYS)
         time_pressure = max(0.05, 1.0 * decay)
 
-    # context_fit: any user-facing channel had inbound recently?
-    last_user_inbound_age_sec = _last_user_inbound_age_sec()
-    if last_user_inbound_age_sec is None:
-        context_fit = 0.3
-    elif last_user_inbound_age_sec < 60 * 30:
-        context_fit = 0.8  # user is engaged right now
-    elif last_user_inbound_age_sec < 60 * 60 * 4:
-        context_fit = 0.5
-    else:
-        context_fit = 0.2
+    # context_fit: prefer Empathy's live state vector (memo §7) — it
+    # captures availability AND focus, not just last-inbound recency.
+    # Falls back to the original last-inbound-age heuristic when
+    # Empathy is unavailable (older hosts, missing module). A user
+    # in focus drops context_fit hard so will doesn't promote goals
+    # mid-flow; high availability lifts it; the floor is 0.15 so a
+    # goal can still fire when nothing is observable.
+    context_fit = None
+    try:
+        from orion_empathy import tick as _empathy_tick
+        state = _empathy_tick(now)
+        if state.get("focus"):
+            context_fit = 0.15  # heads-down — let it ride unless emergency
+        else:
+            # availability already decays with time-since-last-activity
+            # over a 10-min half-life; ride that as the headline signal.
+            context_fit = max(0.2, float(state.get("availability", 0.5)))
+    except Exception:
+        # Empathy not importable on this host yet — use the original
+        # last-inbound-age heuristic so existing behavior is preserved.
+        last_user_inbound_age_sec = _last_user_inbound_age_sec()
+        if last_user_inbound_age_sec is None:
+            context_fit = 0.3
+        elif last_user_inbound_age_sec < 60 * 30:
+            context_fit = 0.8  # user is engaged right now
+        elif last_user_inbound_age_sec < 60 * 60 * 4:
+            context_fit = 0.5
+        else:
+            context_fit = 0.2
 
     # feasibility: is at least one channel wired?
     feasibility = 0.6 if _any_channel_wired() else 0.2

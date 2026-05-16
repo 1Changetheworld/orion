@@ -62,6 +62,7 @@ PLEXUS_SERVICES=(
     "autofix:orion_autofix.py"
     "deterministic:orion_deterministic.py"
     "empathy:orion_empathy.py"
+    "federation:orion_federation.py"
 )
 
 # Detect platform

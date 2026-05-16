@@ -507,6 +507,38 @@ TOOLS = [
             "required": []
         }
     },
+    {
+        "name": "orion_empathy_explain",
+        "description": (
+            "Return Empathy's live read of the user's state — focus, fatigue, "
+            "stress, availability, co-presence. Use this when the user asks "
+            "'what does Orion think of me right now?' or 'why did you defer "
+            "that alert?' Honors the empathy-research.md §8 commitment: the "
+            "user must always be able to audit what Empathy thinks of them. "
+            "Without this, Empathy becomes a hidden judge."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "orion_federation_identity",
+        "description": (
+            "Return this brain's federation identity — public fingerprint and "
+            "human-verifiable 5-word safety number. Use when the user is "
+            "setting up a peering with another Orion (their partner's brain, "
+            "co-founder's brain) and needs to compare safety numbers "
+            "out-of-band. Private key never returned. v1 is trusted-peer "
+            "only; stranger-meets-stranger federation is deferred to v2."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 
@@ -1091,6 +1123,35 @@ def _handle_orion_heartbeat(args: dict) -> list:
     return [{"type": "text", "text": status}]
 
 
+def _handle_orion_empathy_explain(args: dict) -> list:
+    """Surface Empathy's live state vector so the user can audit what
+    the gate thinks of them right now. Per empathy-research.md §8: the
+    'Orion is for you, not on you' thesis dies the day the user finds
+    Empathy gating things on a guess they couldn't see."""
+    try:
+        from orion_empathy import explain
+        data = explain()
+    except Exception as e:
+        return [{"type": "text",
+                 "text": f"orion_empathy_explain: empathy module unavailable ({e})."}]
+    import json as _json
+    return [{"type": "text", "text": _json.dumps(data, indent=2, default=str)}]
+
+
+def _handle_orion_federation_identity(args: dict) -> list:
+    """Return the public federation identity summary — fingerprint +
+    5-word safety number + pubkey. Used when setting up a trusted peer
+    out-of-band. Private key never crosses this boundary."""
+    try:
+        from orion_federation import identity_summary
+        data = identity_summary()
+    except Exception as e:
+        return [{"type": "text",
+                 "text": f"orion_federation_identity: module unavailable ({e})."}]
+    import json as _json
+    return [{"type": "text", "text": _json.dumps(data, indent=2, default=str)}]
+
+
 def _handle_orion_reach(args: dict) -> list:
     """Generic action dispatch — any AI model calls this to make Orion DO
     something (send a message, place a call, schedule a reminder, fan-out).
@@ -1174,6 +1235,8 @@ _HANDLERS = {
     "orion_identity": _handle_orion_identity,
     "orion_heartbeat": _handle_orion_heartbeat,
     "orion_reach": _handle_orion_reach,
+    "orion_empathy_explain": _handle_orion_empathy_explain,
+    "orion_federation_identity": _handle_orion_federation_identity,
 }
 
 
