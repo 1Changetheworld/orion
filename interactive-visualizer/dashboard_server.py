@@ -366,7 +366,20 @@ def _load_pulse() -> dict:
 
 # ── HTTP handler ───────────────────────────────────────────
 
+# Resolve the visualizer's static-asset root once. SimpleHTTPRequestHandler
+# defaults to os.getcwd() at request time, which 404s every sibling asset
+# (3d-force-graph.min.js, d3.v7.min.js) whenever the server is launched from
+# any cwd other than this folder. Pinning to the script directory makes
+# /3d-force-graph.min.js work regardless of launch path AND prevents the
+# fallback from accidentally exposing files from upstream directories.
+_STATIC_ROOT = str(Path(__file__).resolve().parent)
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        # `directory=` was added in Python 3.7; we require 3.9+ per README.
+        super().__init__(*args, directory=_STATIC_ROOT, **kwargs)
+
     def do_GET(self):
         if self.path == "/api/graph":
             return self._json(_load_graph())
@@ -374,6 +387,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._json(_load_pulse())
         if self.path in ("/", "/index.html"):
             return self._serve_static("index.html", "text/html; charset=utf-8")
+        # Fall through to SimpleHTTPRequestHandler, now correctly rooted at
+        # the visualizer dir — serves 3d-force-graph.min.js / d3.v7.min.js
+        # / index.html siblings with proper mimetypes.
         return super().do_GET()
 
     def _json(self, data: dict) -> None:
