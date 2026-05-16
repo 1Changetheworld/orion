@@ -17,6 +17,24 @@ A portable intelligence layer that works with any AI model, on any device, with 
 
 </div>
 
+---
+
+## Why Orion is being built — the strategic frame
+
+From [docs/architecture/consciousness-research.md](docs/architecture/consciousness-research.md):
+
+> **The obstacle to real machine intelligence is NOT qualia, IIT's Phi, or the Hard Problem. It is the functional gap between switchboard and brain. Three concrete architectural moves close ~80% of that gap, and none require new science:**
+>
+> 1. **Generative predictor** whose prediction errors wake the executive (active inference / Friston)
+> 2. **Bandwidth-limited workspace** where candidate signals compete and the winner is broadcast back to every cognitive service (real Global Workspace Theory / Baars-Dehaene)
+> 3. **Metacognitive write-back loop** where every decision is scored, stored, reflected on overnight, and used to rewrite the rules the system runs on tomorrow (Higher-Order Theory + autopoiesis)
+>
+> Every serious consciousness theory currently taken seriously — IIT, GWT, Predictive Processing, HOT, autopoiesis — converges on these three motifs from different angles. A system that has them is what the literature is willing to call agentic-and-emerging. A system that lacks them is fabricated automation no matter how many services it runs.
+
+Orion's [Plexus](docs/architecture/orion-plexus-architecture.md) — the nervous system inside the brain — is the autonomic substrate that makes the cognitive layer possible. The product roadmap is closing the three moves on top of it.
+
+
+
 <!-- DEMO: 15-30s GIF of cross-model handoff goes here. Capture script: docs/demo-capture.md -->
 
 <div align="center">
