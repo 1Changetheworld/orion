@@ -56,6 +56,9 @@ PLEXUS_SERVICES=(
     "team-sync:orion_team_sync.py"
     "workspace:orion_workspace.py"
     "metacog:orion_metacognition.py"
+    "predictor:orion_predictor.py"
+    "canary:orion_canary.py"
+    "imessage-outbound:channels/imessage_outbound.py"
 )
 
 # Detect platform

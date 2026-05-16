@@ -71,6 +71,14 @@ async def _on_outbound(msg, nc):
     except Exception as e:
         logger.warning("bad outbound payload: %s", e)
         return
+    # Canary dry-run: do not actually send; just ACK so the canary
+    # confirms this subscriber is alive and reachable.
+    if payload.get("dry_run"):
+        ack = {"ok": True, "probe_id": payload.get("probe_id"),
+               "kind": "imessage.outbound", "ts": __import__("time").time()}
+        await nc.publish("channel.imessage.canary_ack",
+                         json.dumps(ack).encode())
+        return
     text = payload.get("text") or ""
     if not text:
         logger.debug("empty text, skipping")

@@ -97,6 +97,7 @@ SOURCE_WEIGHTS = {
     "brain.intent.detected":    1.3,
     "brain.will.alerted":       1.2,
     "brain.executive.proposal": 1.4,
+    "brain.surprise.spike":     1.8,   # rhythm broke — top priority
     "channel.imessage.inbound": 1.3,
     "channel.voice.inbound":    1.4,
     "channel.telegram.inbound": 1.1,
@@ -309,6 +310,7 @@ async def main_async() -> int:
         "brain.storage.degraded", "brain.fuel.degraded",
         "brain.intent.detected", "brain.will.alerted",
         "brain.memory.stored",
+        "brain.surprise.spike",
         "channel.*.inbound",
         "host.*.vitals",
     ]:
