@@ -494,6 +494,122 @@ def _scan_loop() -> None:
         _stop.wait(SCAN_INTERVAL_SEC)
 
 
+# ─────────────────────────────────────────────────────────
+# PROACTIVE ALERT REFLEX (task #22)
+# Founder rule 2026-05-15: 'the user should always know when something's
+# wrong AND when something was fixed. Silent failures are unacceptable.'
+# This is the will turning its initiative outward at SYSTEM events,
+# not just user-intent events.
+# ─────────────────────────────────────────────────────────
+
+# Cooldown per source so a flapping service doesn't spam the user.
+_alert_cooldowns: dict[str, float] = {}
+ALERT_COOLDOWN_SEC = float(os.environ.get("ORION_ALERT_COOLDOWN", "180"))
+
+
+def _classify_severity(subject: str, payload: dict) -> str:
+    """Map substrate event into info / warning / critical."""
+    if subject == "brain.storage.degraded":
+        return "critical"  # silent storage loss is always critical
+    if subject == "brain.executive.failure":
+        return "critical"
+    if subject == "brain.fuel.degraded":
+        # If we still have ANY working fuel, it's a warning; otherwise critical.
+        return "warning"
+    if subject == "brain.health.alert":
+        kind = (payload or {}).get("kind", "")
+        if kind in ("silent", "down", "high_error_rate"):
+            return "critical"
+        return "warning"
+    return "info"
+
+
+def _format_alert(subject: str, payload: dict, severity: str) -> str:
+    """Plain-English narration of a system event for the user."""
+    p = payload or {}
+    host = p.get("host") or os.environ.get("ORION_HOST_ID", "?")
+    service = p.get("service") or p.get("component") or "?"
+    cause = (p.get("error") or p.get("reason") or p.get("cause") or "")[:200]
+    tag = {"info": "Heads up", "warning": "Heads up",
+           "critical": "Critical"}.get(severity, "Heads up")
+    if subject == "brain.storage.degraded":
+        return (f"{tag}: brain storage write failed on {host}.\n"
+                f"Cause: {cause}\n"
+                f"I can't memorize anything until the underlying storage is writable. "
+                f"This usually means filesystem permissions or a disk that went read-only.")
+    if subject == "brain.executive.failure":
+        return (f"{tag}: executive deliberation failed.\n"
+                f"Component: {service}\n"
+                f"Cause: {cause}\n"
+                f"I couldn't auto-resolve the underlying issue. Surface ticket: "
+                f"~/.orion/executive/decisions.jsonl latest entry.")
+    if subject == "brain.fuel.degraded":
+        return (f"{tag}: fuel quality dropped — falling back to a weaker model.\n"
+                f"Component: {service}\n"
+                f"Cause: {cause}\n"
+                f"Recovery: run `claude /login` (or codex/gemini equivalent), "
+                f"or check ANTHROPIC_API_KEY / Ollama availability.")
+    if subject == "brain.health.alert":
+        kind = p.get("kind", "alert")
+        return (f"{tag}: {service} on {host} flagged '{kind}'.\n"
+                f"Vitals: {p.get('vitals', '?')}\n"
+                f"Self-heal will attempt automatic recovery; if it can't, "
+                f"you'll get a follow-up.")
+    return f"{tag}: {subject} on {host} — {cause}"
+
+
+def _on_health_event(subject: str, payload: dict) -> None:
+    """Subscriber for system-health events. Classifies + reaches out."""
+    severity = _classify_severity(subject, payload)
+    src_key = f"{subject}::{(payload or {}).get('service','?')}::{(payload or {}).get('host','?')}"
+    now = time.time()
+    last = _alert_cooldowns.get(src_key, 0.0)
+    if (now - last) < ALERT_COOLDOWN_SEC and severity != "critical":
+        logger.debug("alert cooldown active for %s; skipping", src_key)
+        return
+    _alert_cooldowns[src_key] = now
+    text = _format_alert(subject, payload or {}, severity)
+    try:
+        from orion_substrate import publish
+        # Route via reach — reach picks the warmest active channel
+        publish("channel.imessage.outbound", {
+            "text": text,
+            "ts": now,
+            "severity": severity,
+            "source": subject,
+            "via": "orion_will.proactive_alert",
+        })
+        # Also publish on a topic any other listener can hook
+        publish("brain.will.alerted", {
+            "subject": subject, "severity": severity,
+            "text_preview": text[:120], "ts": now,
+        })
+        logger.info("PROACTIVE ALERT [%s] %s :: %s",
+                    severity, subject, text[:120])
+    except Exception as e:
+        logger.warning("alert publish failed for %s: %s", subject, e)
+
+
+def _on_recovery_event(subject: str, payload: dict) -> None:
+    """Subscriber for autonomous recoveries — narrate the FIX too."""
+    p = payload or {}
+    text = (
+        f"Recovered: {p.get('service', 'a component')} on "
+        f"{p.get('host', os.environ.get('ORION_HOST_ID', '?'))} is healthy again.\n"
+        f"What I did: {p.get('action', 'self-heal reflex')}\n"
+        f"You don't need to do anything."
+    )
+    try:
+        from orion_substrate import publish
+        publish("channel.imessage.outbound", {
+            "text": text, "ts": time.time(), "severity": "info",
+            "source": subject, "via": "orion_will.proactive_recovery",
+        })
+        logger.info("RECOVERY NARRATED :: %s", text[:120])
+    except Exception as e:
+        logger.warning("recovery narrate publish failed: %s", e)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -514,6 +630,15 @@ def main() -> int:
     subscribe("brain.memory.stored", _on_text_event)
     # Outcome feedback
     subscribe("channel.*.inbound", _on_user_inbound)
+    # Proactive-alert reflex — Orion narrates compromises + autonomous
+    # fixes so the user never has to discover a silent failure (founder
+    # requirement 2026-05-15, task #22). Subscribes the four substrate
+    # subjects that mean 'something broke or got fixed without you':
+    subscribe("brain.health.alert", _on_health_event)
+    subscribe("brain.executive.failure", _on_health_event)
+    subscribe("brain.fuel.degraded", _on_health_event)
+    subscribe("brain.storage.degraded", _on_health_event)
+    subscribe("brain.health.recovered", _on_recovery_event)
 
     logger.info("will alive — host=%s scan=%ds threshold=%.2f cooldown=%ds; "
                 "%d active goals loaded",
