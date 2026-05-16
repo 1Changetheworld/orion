@@ -69,41 +69,80 @@ NATS_ECHO_TIMEOUT = float(os.environ.get("ORION_CANARY_NATS_ECHO_SEC", "2.0"))
 # ─────────────────────────────────────────────────────────
 
 async def _canary_brain_write() -> dict:
-    """Try to memorize a sentinel via brain HTTP. Catches the TCC lapse class."""
+    """Non-destructive probe of the brain write path. Verifies the brain
+    server is responsive AND that the graph file is writable from the
+    SAME process context the brain uses — without polluting graph_memory.
+
+    History: an earlier version POSTed sentinels to /memorize, which
+    (a) created junk memory nodes, and (b) raced with concurrent writers
+    on the brain server's read-modify-write loop, overwriting legitimate
+    memory writes. Disastrous. Fixed 2026-05-16 by switching to a
+    read-only health probe plus a side-channel file write at a separate
+    path that tests the same TCC / disk / mount class without touching
+    graph_memory.json.
+    """
     import urllib.request
     import urllib.error
-    sentinel = f"canary-brain-write-{int(time.time())}"
-    payload = json.dumps({
-        "content": sentinel,
-        "tags": ["canary", "self-test"],
-    }).encode()
-    req = urllib.request.Request(
-        f"{BRAIN_URL}/memorize",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    # Part 1: brain HTTP responsiveness
     t0 = time.perf_counter()
     try:
+        req = urllib.request.Request(f"{BRAIN_URL}/health", method="GET")
         with urllib.request.urlopen(req, timeout=8) as resp:
-            body = resp.read(2048).decode("utf-8", errors="replace")
-            latency = (time.perf_counter() - t0) * 1000
-            data = {}
-            try:
-                data = json.loads(body)
-            except Exception:
-                pass
-            if "error" in data:
-                return {"ok": False, "latency_ms": round(latency, 1),
-                        "error": data["error"][:200]}
-            return {"ok": True, "latency_ms": round(latency, 1)}
+            resp.read(1024)
+        http_ok = True
+        http_err = ""
     except urllib.error.HTTPError as e:
-        body = e.read(512).decode("utf-8", errors="replace") if hasattr(e, "read") else ""
-        return {"ok": False, "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-                "error": f"HTTP {e.code}: {body[:160]}"}
+        # /health may not exist on older brain servers; try /recall as a
+        # GET-shape fallback that older brains accept without writing
+        if e.code in (404, 405):
+            try:
+                req2 = urllib.request.Request(
+                    f"{BRAIN_URL}/recall?query=canary-probe",
+                    method="GET",
+                )
+                with urllib.request.urlopen(req2, timeout=8) as resp:
+                    resp.read(1024)
+                http_ok = True
+                http_err = ""
+            except Exception as ee:
+                http_ok = False
+                http_err = f"{type(ee).__name__}: {ee}"
+        else:
+            http_ok = False
+            http_err = f"HTTP {e.code}"
     except Exception as e:
-        return {"ok": False, "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-                "error": f"{type(e).__name__}: {e}"}
+        http_ok = False
+        http_err = f"{type(e).__name__}: {e}"
+
+    # Part 2: graph file write-permission probe (separate file, never the graph)
+    graph_dir = Path("/Volumes/AtlasVault/.orion/brain")
+    probe_path = graph_dir / ".canary_probe"
+    fs_ok = False
+    fs_err = ""
+    try:
+        if graph_dir.exists():
+            probe_path.write_text(f"canary-{time.time()}", encoding="utf-8")
+            fs_ok = True
+        else:
+            # Brain dir not mounted — not a TCC issue, a disk issue
+            fs_ok = False
+            fs_err = f"brain dir missing: {graph_dir}"
+    except PermissionError as e:
+        fs_err = f"PermissionError (likely TCC): {e}"
+    except Exception as e:
+        fs_err = f"{type(e).__name__}: {e}"
+
+    latency = (time.perf_counter() - t0) * 1000
+    if http_ok and fs_ok:
+        return {"ok": True, "latency_ms": round(latency, 1)}
+    return {
+        "ok": False,
+        "latency_ms": round(latency, 1),
+        "error": (
+            f"http_ok={http_ok} ({http_err}); "
+            f"graph_writable={fs_ok} ({fs_err})"
+        )[:240],
+    }
 
 
 async def _canary_imessage_outbound(nc) -> dict:

@@ -59,6 +59,8 @@ PLEXUS_SERVICES=(
     "predictor:orion_predictor.py"
     "canary:orion_canary.py"
     "imessage-outbound:channels/imessage_outbound.py"
+    "autofix:orion_autofix.py"
+    "deterministic:orion_deterministic.py"
 )
 
 # Detect platform
