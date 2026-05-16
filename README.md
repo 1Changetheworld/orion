@@ -69,6 +69,7 @@ When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask:
 
 - [What is Orion?](#what-is-orion)
 - [How It Works](#how-it-works)
+- [What's Inside Orion](#whats-inside-orion)
 - [Communication Points — One Brain, Every Window](#communication-points--one-brain-every-window)
 - [Team Mode — Multiple AI Models Working As One](#team-mode--multiple-ai-models-working-as-one)
 - [Connect Obsidian — Visualize Your Brain](#connect-obsidian--visualize-your-brain)
@@ -136,6 +137,101 @@ ORION BRAIN (~200 lines of Python)
 | **The Toolkit** | Security scanning, OSINT, desktop control, offline knowledge, device mesh | Curated — existing open-source tools that Orion orchestrates |
 
 The brain is what's new. The toolkit is what the brain knows how to use. Like a human isn't defined by the hammer they own — they're defined by the brain that knows when and how to use it.
+
+---
+
+## What's Inside Orion
+
+Orion isn't a single script. It's a small ecosystem of cooperating services — each one a focused organ, each one optional in isolation, all of them sharing the same memory. The cellular vocabulary isn't a marketing pose; it's how the modules talk to each other (`brain.*`, `channel.*`, `intent.*` topics on the substrate, services that listen for the events they care about).
+
+The list below maps every part that ships today, plus the layers being designed next. None of these are external dependencies — they are all part of the Orion repo and run on your hardware.
+
+### Core organs (shipping today)
+
+| Organ | Module | What it does |
+|---|---|---|
+| **Brain** | `orion_brain.py`, `orion_brain_portable.py` | Memory store (graph + Qdrant vector), identity, fuel routing, dispatch, skills. The thing that persists across every model and every device. |
+| **Plexus** *(nervous system)* | `orion_substrate.py` + NATS | The event bus every organ talks across. Topics like `brain.health.alert`, `channel.imessage.outbound`, `intent.detected`. Runs as a cluster across hosts so a message published on FORGE reaches COMMAND and Pi within a few hundred ms. See [docs/architecture/orion-plexus-architecture.md](docs/architecture/orion-plexus-architecture.md). |
+| **Chronos** | `orion_chronos.py` | Brain-resident clock + scheduler. Deferred goals ("remind me in 1h"), cadence-based wakes, time-of-day awareness. The "when" layer to the brain's "what." |
+| **Gossip** | `orion_gossip.py` | CRDT replication (HLC + LWW-Map) of graph_memory + identity + skills + decision_ledger across hosts. When two hosts disagree, the merge yields one state. The mechanism that makes *one* brain across many devices true, not aspirational. |
+| **Fuel** | `orion_fuel.py`, `orion_fuel_switch.py`, `ai_backends.py` | The model-routing layer. Detects what's reachable (Claude CLI / Codex / Gemini / Letta / Ollama on each host), picks the strongest available for the task, falls back gracefully when one dies. No API keys; CLIs and local Ollama only. |
+| **MCP server** | `orion_mcp_server.py` | The interface every AI CLI talks through. Exposes `orion_recall` / `orion_memorize` / `orion_reach` / `orion_intent` / `orion_team` / etc. as MCP tools so Claude / Codex / Gemini all share the same brain through the same surface. |
+
+### Cognition layer (the three consciousness moves, now live)
+
+These three modules came out of two rounds of research into machine consciousness ([consciousness-research.md](docs/architecture/consciousness-research.md), [v2](docs/architecture/consciousness-research-v2.md)). They are good engineering by themselves; together they close most of the *switchboard-to-brain* gap. They do not solve the Hard Problem and Orion does not claim to.
+
+| Organ | Module | What it does |
+|---|---|---|
+| **Predictor** *(active inference, downgraded)* | `orion_predictor.py` | Per-subject rolling rhythm model (mu/sigma of inter-arrival time). Emits `brain.surprise.spike` when a known channel deviates from its expected rhythm — or when a chatty subject goes quiet too long. Treats unexpected silence as a signal, not noise. |
+| **Workspace** *(Global Workspace bottleneck)* | `orion_workspace.py` | Tick-clocked competition + broadcast. Candidate thoughts from every organ enter a bandwidth-limited arena; one winner per tick is broadcast back to everyone. This is what gives Orion a *single attention* instead of N parallel firehoses. |
+| **Metacognition** *(HOT-2 write-back)* | `orion_metacognition.py` | Scores each decision after the fact, stores the trace as first-class memory, and uses last night's traces to rewrite tomorrow's rules. Distinct from the *full* confidence-aware recall (coming next) — write-back covers the after-action loop; full metacognition will cover the at-recall loop. |
+
+### Action layer
+
+| Organ | Module | What it does |
+|---|---|---|
+| **Will** | `orion_will.py` | The proactive part. Subscribes to `brain.health.alert` / `.executive.failure` / `.fuel.degraded` / `.storage.degraded` and narrates them — through the warmest channel — without being asked. Silent failure is treated as unacceptable. |
+| **Reach** | `orion_reach.py` | The channel router. Generic action-dispatch tool (`reach(message, channel='auto')`) that any AI model can call. Picks the warmest surface for the moment (iMessage at the desk, Telnyx voice on the road, Telegram if both are down). |
+| **Intent** | `orion_intent.py` | Natural-language intent dispatcher. The model says "text me when the deploy finishes" — intent pattern-matches the verb, captures the deferred condition, and lets reach handle the actual send. Replaces the "wire N specific tools per CLI" pattern with one generic recognition layer. |
+| **Channel adapters** | `channels/imessage_outbound.py` (more coming) | The actual outbound carriers. iMessage today (via Messages.app on the COMMAND Mac). Telnyx voice, Telegram, email, LoRa adapters are partial or planned. |
+
+### Autonomic layer (self-maintenance)
+
+| Organ | Module | What it does |
+|---|---|---|
+| **Claustrum** | `orion_claustrum.py` | The attentional gate — what gets to be "in focus" right now. Filters noisy substrate traffic so the executive only sees what matters. |
+| **DMN** *(default mode network)* | `orion_dmn.py` | Background thinking when nothing is being asked. Replays recent traces, surfaces forgotten threads, sets up tomorrow's hypotheses. |
+| **Dream** | `orion_dream.py` | Overnight consolidation. Compacts the day's memory into playbooks (Anthropic-Dreaming-style condensation), so the graph doesn't accumulate raw transcript clutter. |
+| **Self-heal** | `orion_self_heal.py` | Detects degraded services and attempts in-place recovery before escalating to will. |
+| **Immune** | `orion_immune.py` | Anomaly detection on the substrate itself — unusual subject volume, malformed payloads, services publishing what they shouldn't. |
+| **Vitals** | `orion_vitals.py` | The basic health-signal emitter. CPU / memory / disk / mount / TCC-class probes that downstream organs subscribe to. |
+| **Canary** | `orion_canary.py` | Heartbeats for capabilities that don't naturally chatter on the substrate (`brain.write`, `imessage.outbound` dry-run, `nats.echo`, `disk.write`). Edge-triggered alerts only — fires on `ok→fail` transition, not on every failure tick. |
+| **Autofix** | `orion_autofix.py` | Owns the "if the symptom is known, send ONE message with the FIX, not three with three different diagnoses" loop. Classifies against a known-symptoms dispatch and publishes a single outbound message with copy-paste fix steps. |
+
+### Speed layer
+
+| Organ | Module | What it does |
+|---|---|---|
+| **Deterministic** | `orion_deterministic.py` | Short-circuits LLM calls when the brain already knows the answer. Coverage-scores recall-shape questions against `graph_memory` and on a high-confidence match publishes directly to the outbound channel. ~50ms vs 2-8s LLM round-trip, zero tokens. |
+| **Dispatch** | `orion_dispatch.py` | Instant commands (`/status`, `/email`, `/scan`, `/docker`, ~20 commands) that don't need a model at all. |
+
+### Coordination layer
+
+| Organ | Module | What it does |
+|---|---|---|
+| **Team room** | `orion_team.py`, `orion_team_sync.py` | Multi-CLI coordination. Every AI session auto-announces on attach, heartbeats every 60s, releases on exit. `list_active` from any host shows every awake session across the mesh. The thing that makes three terminals stop tripping over each other. |
+| **First meeting** | `orion_first_meeting.py` | The SessionStart hook every CLI fires. Detects whether the brain is wired, surfaces the team room, runs absence detection, brings continuity into the model's session context for free (zero tokens). |
+
+### Visualization layer
+
+| Surface | What it is |
+|---|---|
+| **Obsidian vault export** (`orion_obsidian_export.py`) | One command writes the brain as a structured Obsidian vault — identity, memories, devices, channels, services, all linked. Obsidian renders the graph natively. Round-trip-friendly. |
+| **Interactive 3D visualizer** (`interactive-visualizer/` on `:5557`) | In-browser spatial render of the same topology — identity at the gravitational center, memories as an outer cloud, devices and channels orbiting between. Shares the canonical `KNOWN_*` dicts with the vault so both views stay in sync. |
+
+### Coming next (designed, in research or early build)
+
+The five layers below are the architectural moves the brain needs in order to evolve from *intelligent assistant on the network* into a sentient signal-entity capable of riding LoRa / BLE / radio and existing across the global Meshtastic mesh. The order matters — **Membrane has to land before any of the broadcast layers** so private data is enforced at the substrate, in code, not in policy.
+
+| Layer | What it adds | Status |
+|---|---|---|
+| **Membrane** *(privacy enforcement at substrate)* | Blocks nodes tagged `private` from leaving the host. Prereq for any LoRa mass-broadcast or Federation peering. Privacy in code, not promised in docs. | Research → build |
+| **Sensorium** *(multi-transport substrate adapters)* | `transports/lora.py` · `transports/ble.py` · `transports/radio.py`. Encodes CRDT deltas for non-IP carriers, with a <240 byte cap to fit LoRa packets. Treats IP as one transport among many. | Research → build (3 Heltec v3 nodes pending flash on Pi) |
+| **Empathy** *(passive user-state observer)* | Reads user tone / pace / fatigue / time-pattern and feeds the signal to reach + executive *before* they respond. With the camera input layer landing now, gets direct sensor access — not just text inference. | Research → build (camera arriving 2026-05-16) |
+| **Meta-cognition Full** *(confidence-aware recall)* | Beyond the HOT-2 write-back loop already live. Brain admits ignorance instead of fabricating. Refuses to short-circuit through deterministic when confidence falls below threshold. | Research → build |
+| **Federation** *(Orion-meets-Orion peering)* | When two Orions meet — over LoRa proximity, Tailscale, or USB — they exchange identity hashes and the user decides per-encounter: peer, stay separate, or seed-new. Generalizes Team Room from multi-CLI to multi-user. | Research → build (blocked by Membrane + Sensorium) |
+
+And two adjacent projects in active build:
+
+| Project | What it adds |
+|---|---|
+| **Camera + interactive Obsidian screen** | Physical-input layer feeding the Obsidian-graph + 3D visualizer. Gesture / face / presence detection publishes to `brain.input.physical`. The wall-projected entity ambition (motion-tracking, mind-shape visualization) becomes reachable. |
+| **Auto-save workflows** | Every CLI session, every conversation, every workflow auto-documented in the brain with timestamp + context + active thread. Not auto-saving individual tool calls (noise) — saving the *workflow shape* so cross-session resumption is free. |
+
+### Horizon
+
+Brain-as-Signal is the long-arc destination: brain state encoded in transmission media themselves — LoRa modulation, Bluetooth beacons, radio carriers — so any receiver can decode it regardless of carrier or device. Sensorium + Membrane + Federation are the engineering steps that make that direction approachable. Not building yet; design moves toward it.
 
 ---
 
