@@ -41,9 +41,12 @@ body.theme-dark {
   padding-bottom: 4px;
 }
 
-/* Graph view — glow on nodes, smoother lines */
-.graph-view.color-fill { /* graph-leaf canvas wrapper */
-  background: radial-gradient(ellipse at center, #0a0c1f 0%, #050510 100%);
+/* Graph view — pure black canvas like the reference vaults */
+.graph-view.color-fill {
+  background: #000000 !important;
+}
+.workspace-leaf-content[data-type="graph"] {
+  background: #000000;
 }
 .graph-controls {
   background: var(--orion-bg-panel) !important;
