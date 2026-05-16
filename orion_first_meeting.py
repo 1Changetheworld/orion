@@ -383,6 +383,37 @@ def _absence_message_if_any(cli: str) -> str:
         return ""
 
 
+def _announce_self_in_team_room(cli: str) -> None:
+    """Auto-announce this CLI session in the team room AT HOOK TIME.
+
+    Why here (not just MCP server): the SessionStart hook fires before
+    any model turn. By announcing here we land in the team room the
+    instant the user opens a CLI tab — other Orion sessions on other
+    hosts see us via team-sync within ~1s. The MCP server's
+    start_auto_mode() will then idempotently adopt the same session
+    when the model first touches the brain, layering on the heartbeat
+    daemon and atexit release.
+
+    Session ID precedence comes from orion_team.derive_session_id —
+    ORION_SESSION_ID env override wins, else sha1(project_dir)[:6]
+    keyed by host+role. Stable across restarts in the same project.
+    """
+    try:
+        repo = Path(__file__).resolve().parent
+        sys.path.insert(0, str(repo))
+        import orion_team as team
+        sid = team.derive_session_id(cli)
+        team.announce(role=cli, session=sid,
+                      focus="(idle — session just opened)")
+        # GC pass piggybacks on every hook fire — cheap, keeps the
+        # team room from accumulating orphans even if team-sync isn't
+        # running on this host (e.g. FORGE without the Plexus daemon).
+        team.gc_stale()
+    except Exception:
+        # Hook must never crash on announce failure — degrade silently.
+        pass
+
+
 def _team_room_if_any() -> str:
     """Surface other active Orion sessions so this CLI knows its teammates.
 
@@ -477,6 +508,14 @@ def main(argv: list[str]) -> int:
     if cli not in _PROBES:
         # Unknown CLI — exit silent so we don't leak a confusing message.
         return 0
+
+    # Announce in the team room on every session start, whether or not
+    # we've met before. Auto-team-mode = default: the model never has to
+    # think about it; the hook makes the session visible to teammates the
+    # instant the CLI opens. Must run BEFORE _team_room_if_any() so this
+    # session appears in its own team-room render (helps the model see
+    # the role it just got assigned to).
+    _announce_self_in_team_room(cli)
 
     flag = _flag_path(cli)
     if flag.exists():

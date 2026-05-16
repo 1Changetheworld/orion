@@ -580,45 +580,28 @@ def _ensure_team_announce() -> None:
     """Auto-register this session in the Orion team room on first use.
 
     Founder rule 2026-05-15: 'team mode' should be the default. Any AI
-    model session attached to the brain announces itself so other
-    sessions see it in the team room. No manual `python orion_team.py
-    announce` needed.
+    model session attached to the brain announces itself, heartbeats on
+    cadence so it doesn't go stale, and releases on graceful exit. No
+    manual `python orion_team.py announce` needed.
 
-    Role + focus are best-effort guesses; the model can update_focus()
-    once it knows what it's doing.
+    Delegates to orion_team.start_auto_mode which is the single source
+    of truth for: cross-platform CLI-role detection (env-var first, then
+    /proc on linux), stable session-id derivation (ORION_SESSION_ID env
+    override → sha1(project_dir) discriminator keyed by host+role), the
+    60s heartbeat daemon thread, and the atexit release. Heartbeat
+    coverage is what kept dying before — sessions went stale at the
+    5-minute mark even while actively serving requests.
     """
     global _team_announced
     if _team_announced:
         return
     _team_announced = True
     try:
-        import os, sys, uuid
-        from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parent))
         import orion_team as team
-
-        # Role hint: parent process name (claude / codex / gemini) if we
-        # can detect it; else 'ai-session'.
-        parent_hint = os.environ.get("ORION_CLI_HINT", "")
-        if not parent_hint:
-            try:
-                # On unix, ppid → /proc/PID/comm tells us claude/codex/gemini.
-                ppid = os.getppid()
-                comm = Path(f"/proc/{ppid}/comm").read_text(encoding="utf-8").strip()
-                parent_hint = comm
-            except Exception:
-                parent_hint = ""
-        role = parent_hint or "ai-session"
-
-        # Session ID: stable across THIS process. Combine hostname + pid +
-        # short random so multiple tabs on one host don't collide.
-        import socket
-        host = socket.gethostname().split(".")[0]
-        sid = f"{host}-{role}-{os.getpid()}-{uuid.uuid4().hex[:4]}"
-
-        team.announce(role=role, session=sid,
-                      focus="(idle — model just attached)",
-                      host=host)
+        team.start_auto_mode()
     except Exception:
         # Auto-announce is best-effort; never block MCP startup.
         pass

@@ -57,6 +57,39 @@ async def _on_release(rec: dict):
             pass
 
 
+# GC cadence — sweep stale sessions every minute. Sessions exited via
+# SIGKILL or harness crash never fire atexit; this is what keeps them
+# from accumulating as ghosts in the team room.
+GC_INTERVAL_SEC = 60
+
+
+async def _gc_loop(stop: asyncio.Event) -> None:
+    """Periodic stale-session sweep. team-sync is already the long-lived
+    daemon on COMMAND + Pi (and the background process on FORGE), so
+    it's the natural owner for cleanup. Removed records get republished
+    on orion.team.release so other hosts mirror the reap."""
+    # Import lazily so the sync service still imports cleanly if
+    # orion_team grows new top-level deps.
+    try:
+        import orion_team
+    except Exception as e:
+        logger.warning("gc disabled — could not import orion_team: %s", e)
+        return
+    while not stop.is_set():
+        try:
+            swept = orion_team.gc_stale()
+            if swept:
+                logger.info("gc swept %d stale session(s): %s",
+                            len(swept),
+                            ", ".join(r.get("session_id", "?") for r in swept))
+        except Exception as e:
+            logger.warning("gc tick failed: %s", e)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=GC_INTERVAL_SEC)
+        except asyncio.TimeoutError:
+            continue
+
+
 async def main_async() -> int:
     try:
         import nats
@@ -95,8 +128,17 @@ async def main_async() -> int:
         loop.add_signal_handler(signal.SIGINT, stop.set)
     except NotImplementedError:
         pass
-    await stop.wait()
-    await nc.close()
+
+    gc_task = asyncio.create_task(_gc_loop(stop))
+    try:
+        await stop.wait()
+    finally:
+        gc_task.cancel()
+        try:
+            await gc_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await nc.close()
     return 0
 
 

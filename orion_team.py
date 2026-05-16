@@ -31,10 +31,13 @@ Claude doing' confusion ever again.
 """
 from __future__ import annotations
 
+import atexit
+import hashlib
 import json
 import os
 import socket
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -50,6 +53,16 @@ TEAM_DIR.mkdir(parents=True, exist_ok=True)
 # are considered offline, not actively in the team room.
 STALE_AFTER_SEC = 300  # 5 minutes
 
+# GC threshold — sweeper removes session files older than this. Two
+# stale windows so a session that briefly misses a heartbeat (network
+# blip, GC pause) isn't immediately reaped.
+GC_AFTER_SEC = STALE_AFTER_SEC * 2  # 10 minutes
+
+# Heartbeat cadence used by the background daemon thread when
+# auto-team-mode is wired up. Half the stale threshold gives one
+# full miss of headroom before STALE_AFTER_SEC bites.
+HEARTBEAT_INTERVAL_SEC = 60
+
 
 def _hostname() -> str:
     try:
@@ -61,6 +74,70 @@ def _hostname() -> str:
 def _session_file(session_id: str) -> Path:
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in session_id)
     return TEAM_DIR / f"{safe}.json"
+
+
+# ─────────────────────────────────────────────────────────
+# Cross-platform CLI role detection
+# Replaces the previous /proc-only path that silently fell back to
+# 'ai-session' on Windows and macOS (FORGE was always 'ai-session').
+# ─────────────────────────────────────────────────────────
+
+def detect_cli_role(default: str = "ai-session") -> str:
+    """Best-effort detect which AI CLI we're running under.
+
+    Order of precedence:
+      1. ORION_CLI_HINT env var (explicit override)
+      2. Known per-CLI env vars (Claude Code, Codex, Gemini)
+      3. /proc/PPID/comm on Linux
+      4. fallback to `default`
+    """
+    explicit = os.environ.get("ORION_CLI_HINT", "").strip().lower()
+    if explicit:
+        return explicit
+    env = os.environ
+    if env.get("CLAUDECODE") or env.get("CLAUDE_PROJECT_DIR") \
+       or env.get("CLAUDE_CODE_ENTRYPOINT"):
+        return "claude"
+    if env.get("CODEX_HOME") or env.get("CODEX_VERSION") \
+       or env.get("CODEX_CONFIG_PATH"):
+        return "codex"
+    if env.get("GEMINI_CLI_VERSION") or env.get("GEMINI_SDK_VERSION") \
+       or env.get("GEMINI_CONFIG_PATH"):
+        return "gemini"
+    try:
+        ppid = os.getppid()
+        comm = Path(f"/proc/{ppid}/comm").read_text(encoding="utf-8").strip()
+        if comm:
+            return comm.lower()
+    except Exception:
+        pass
+    return default
+
+
+def derive_session_id(role: str) -> str:
+    """Single source of truth for stable session IDs.
+
+    SessionStart hook AND MCP auto-announce both call this so they land
+    on the same record — heartbeat from MCP refreshes the file the hook
+    wrote, instead of orphaning it under a fresh uuid.
+
+    Precedence:
+      1. ORION_SESSION_ID env var (explicit override — set this when you
+         want a human-readable name like 'claude-forge-build-main').
+      2. sha1(project_dir)[:6] discriminator, keyed by host+role. Stable
+         across MCP restarts in the same project; distinct per project.
+         CLAUDE_PROJECT_DIR is preferred over cwd because it survives
+         shell-driven cwd changes inside the session.
+    """
+    explicit = os.environ.get("ORION_SESSION_ID", "").strip()
+    if explicit:
+        return explicit
+    host = _hostname().lower()
+    project = (os.environ.get("CLAUDE_PROJECT_DIR")
+               or os.environ.get("PWD")
+               or os.getcwd())
+    proj_hash = hashlib.sha1(project.encode("utf-8", errors="replace")).hexdigest()[:6]
+    return f"{host}-{role}-{proj_hash}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -186,6 +263,135 @@ def list_active(include_stale: bool = False) -> list[dict]:
     return out
 
 
+def gc_stale(now: Optional[float] = None,
+             older_than_sec: float = GC_AFTER_SEC) -> list[dict]:
+    """Sweep ~/.orion/team/ for sessions whose last_heartbeat is older
+    than `older_than_sec`. Removes their files and returns the records
+    that were collected (so callers can publish release events).
+
+    Two-window default (GC_AFTER_SEC = STALE_AFTER_SEC * 2) tolerates a
+    single missed heartbeat. Catches sessions that exited via SIGKILL
+    or harness shutdown, where atexit never ran.
+    """
+    now = now if now is not None else time.time()
+    swept: list[dict] = []
+    if not TEAM_DIR.exists():
+        return swept
+    for p in TEAM_DIR.glob("*.json"):
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            # Corrupt session file. Treat as garbage; remove it.
+            try:
+                p.unlink()
+            except Exception:
+                pass
+            continue
+        age = now - rec.get("last_heartbeat", 0)
+        if age > older_than_sec:
+            try:
+                p.unlink()
+                _publish_substrate("release", rec)
+                swept.append(rec)
+            except Exception:
+                pass
+    return swept
+
+
+# ─────────────────────────────────────────────────────────
+# Auto-team-mode — wire announce + heartbeat + release into a single
+# call site so AI CLIs become first-class members of the team room
+# without manual `python -c "..."` ceremony.
+# ─────────────────────────────────────────────────────────
+
+_auto_thread: Optional[threading.Thread] = None
+_auto_session: Optional[str] = None
+_auto_stop = threading.Event()
+
+
+def _heartbeat_loop(session_id: str, interval: float) -> None:
+    """Daemon-thread loop: refresh last_heartbeat on cadence so this
+    session doesn't go stale at STALE_AFTER_SEC. Stops when the
+    process exits (daemon=True) or when _auto_stop is set."""
+    while not _auto_stop.is_set():
+        # Sleep first so the immediate-post-announce write isn't
+        # immediately overwritten by a heartbeat-only refresh; gives
+        # downstream subscribers a clean first event.
+        if _auto_stop.wait(interval):
+            return
+        try:
+            heartbeat(session=session_id)
+        except Exception:
+            # Heartbeat is best-effort; transient failures (disk full,
+            # substrate down) shouldn't kill the thread. Try again next
+            # tick.
+            pass
+
+
+def _atexit_release() -> None:
+    """Best-effort release on graceful process exit. atexit doesn't fire
+    on SIGKILL; the team-sync GC sweeper handles that case."""
+    sid = _auto_session
+    if not sid:
+        return
+    try:
+        _auto_stop.set()
+        release(session=sid)
+    except Exception:
+        pass
+
+
+def start_auto_mode(role: Optional[str] = None,
+                    focus: str = "(idle — model just attached)",
+                    session: Optional[str] = None,
+                    interval: float = HEARTBEAT_INTERVAL_SEC) -> dict:
+    """Idempotent one-call wiring of announce + heartbeat + release.
+
+    Use this from any long-running Orion-attached process (MCP server,
+    SessionStart hook wrapper, custom adapter) to land in the team room
+    as a real member instead of a stale orphan.
+
+    role:    if omitted, detect_cli_role() guesses from env / parent
+    session: if omitted, derive_session_id(role) builds a stable name
+    focus:   initial focus string; update later via update_focus()
+
+    Returns the announced session record. Safe to call multiple times
+    (subsequent calls update focus and refresh heartbeat but don't
+    start a second thread).
+    """
+    global _auto_thread, _auto_session
+    role = role or detect_cli_role()
+    sid = session or derive_session_id(role)
+
+    # Idempotent: if already auto-managed under the same session, just
+    # refresh focus and return. New session ID under same auto-mode is
+    # treated as a re-announce — release the old, start fresh.
+    if _auto_session and _auto_session != sid:
+        try:
+            release(session=_auto_session)
+        except Exception:
+            pass
+        _auto_session = None
+
+    rec = announce(role=role, session=sid, focus=focus)
+    _auto_session = sid
+
+    if _auto_thread is None or not _auto_thread.is_alive():
+        _auto_stop.clear()
+        _auto_thread = threading.Thread(
+            target=_heartbeat_loop,
+            args=(sid, interval),
+            name=f"orion-team-heartbeat-{sid[:24]}",
+            daemon=True,
+        )
+        _auto_thread.start()
+        # atexit fires on graceful interpreter shutdown only. SIGKILL
+        # bypasses it — that gap is covered by the team-sync GC sweeper.
+        atexit.register(_atexit_release)
+
+    return rec
+
+
 def format_team_room(sessions: Optional[list[dict]] = None) -> str:
     """Render a human-readable team-room summary for the SessionStart hook.
 
@@ -263,6 +469,8 @@ def _cli():
     p_upd.add_argument("--session")
     p_rel = sub.add_parser("release", help="mark session offline")
     p_rel.add_argument("--session")
+    sub.add_parser("gc", help="sweep stale session files older than GC_AFTER_SEC")
+    sub.add_parser("derive", help="print the derived session ID + role for this process")
 
     args = ap.parse_args()
     if args.cmd == "list" or args.cmd is None:
@@ -283,6 +491,21 @@ def _cli():
     if args.cmd == "release":
         ok = release(session=args.session)
         print("released" if ok else "nothing to release")
+        return 0
+    if args.cmd == "gc":
+        swept = gc_stale()
+        if not swept:
+            print("(no stale sessions)")
+            return 0
+        for rec in swept:
+            print(f"reaped {rec.get('session_id')} "
+                  f"(role={rec.get('role')}, host={rec.get('host')})")
+        return 0
+    if args.cmd == "derive":
+        role = detect_cli_role()
+        sid = derive_session_id(role)
+        print(f"role={role}")
+        print(f"session_id={sid}")
         return 0
 
 
