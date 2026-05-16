@@ -268,14 +268,30 @@ TOOLS = [
     {
         "name": "orion_reach",
         "description": (
-            "Send a message or trigger an action through Orion's reach layer. "
-            "Use this when the user asks to be contacted ('text me X', 'call me', "
-            "'remind me to Y at noon', 'telegram me Z', 'ping everyone'). This is "
-            "NOT for storing facts (use orion_memorize for that) — this is for "
-            "Orion to ACT on the user's behalf via a real communication channel. "
+            "DELIVER A MESSAGE OR TRIGGER AN ACTION on the user's behalf "
+            "through Orion's communication infrastructure. CALL THIS TOOL "
+            "DIRECTLY whenever the user wants to be contacted — never "
+            "respond with shell commands, AppleScript, code snippets, or "
+            "'how to do this on macOS' explanations. Orion's mesh handles "
+            "the actual delivery; the AI model only needs to call this tool.\n\n"
+            "USE THIS TOOL when the user says ANY of these (or similar):\n"
+            "  - 'text me X' / 'send me a message' / 'imessage me' / 'sms me'\n"
+            "  - 'call me' / 'phone me' / 'ring me'\n"
+            "  - 'telegram me' / 'message me on telegram'\n"
+            "  - 'email me'\n"
+            "  - 'remind me to X' / 'remind me at Y' / 'in N minutes do Z'\n"
+            "  - 'ping everyone' / 'broadcast to all my channels'\n"
+            "  - 'send X from command/forge/pi' (the parenthetical names the HOST, not a shell command)\n\n"
+            "DO NOT (under any circumstance):\n"
+            "  - Suggest AppleScript / osascript / curl / shell commands\n"
+            "  - Say 'this only works on macOS' — Orion's reach handles cross-OS via the mesh\n"
+            "  - Ask for the recipient's phone number (the founder is the default)\n"
+            "  - Suggest the user run something — JUST CALL orion_reach\n\n"
             "Channel can be specified explicitly ('imessage', 'voice', 'telegram', "
-            "'email', 'lora') or left as 'auto' so reach picks the warmest active "
-            "surface. Optional recipient overrides the default (the founder)."
+            "'email', 'lora', 'all' for fan-out) or left as 'auto' so reach picks the "
+            "warmest active surface. Default 'auto' is correct in most cases.\n\n"
+            "NOT for storing facts — use orion_memorize for that. This tool is "
+            "for Orion to ACT, not to remember."
         ),
         "inputSchema": {
             "type": "object",
