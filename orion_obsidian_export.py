@@ -199,6 +199,146 @@ LLM_DETAILS = {
     "dolphin-mistral": "Uncensored Mistral 7B variant. Runs on FORGE. Useful for tasks where standard model safety filters get in the way of legitimate work.",
 }
 
+# Apps + projects the founder built. Each is a real directory on FORGE.
+KNOWN_APPS = [
+    {"id": "hook-studio", "label": "Hook Studio",
+     "path": "C:\\Users\\jeng1\\Desktop\\hook-studio",
+     "role": "Solo AI-UGC ad agency targeting Shopify beauty DTC. $500/mo retainer, 20 ads. ~90% margin.",
+     "status": "active revenue play"},
+    {"id": "orion-marketing-hub", "label": "Orion Marketing Hub",
+     "path": "C:\\Users\\jeng1\\Desktop\\Orion-Marketing-Hub",
+     "role": "Launch-ready taglines, FAQ, hero block draft — curated decision-locked outputs.",
+     "status": "active pre-launch"},
+    {"id": "orion-outreach", "label": "Orion Outreach",
+     "path": "C:\\Users\\jeng1\\Desktop\\orion-outreach",
+     "role": "Founder outreach materials + viral concepts (Meshtastic broadcast, etc).",
+     "status": "active"},
+    {"id": "orion-site-workshop", "label": "Orion Site Workshop",
+     "path": "C:\\Users\\jeng1\\Desktop\\orion-site-workshop",
+     "role": "Public Orion website work — landing, demos, docs.",
+     "status": "active pre-launch"},
+    {"id": "github-trending-vault", "label": "GitHub Trending Vault",
+     "path": "C:\\Users\\jeng1\\Desktop\\github-trending-vault",
+     "role": "Curated trending repos for Orion's Absorption mode.",
+     "status": "passive feed"},
+    {"id": "notegpt-vault", "label": "NoteGPT Ideas Vault",
+     "path": "C:\\Users\\jeng1\\Desktop\\notegpt-ideas-vault",
+     "role": "Scripts/notes from NoteGPT to feed Orion's arsenal.",
+     "status": "passive feed"},
+    {"id": "trending-repos-weekly", "label": "Trending Repos Weekly",
+     "path": "C:\\Users\\jeng1\\Desktop\\TRENDING_REPOS_WEEKLY",
+     "role": "Weekly snapshot of what's hot on GitHub.",
+     "status": "passive feed"},
+    {"id": "dev-research", "label": "DEV RESEARCH",
+     "path": "C:\\Users\\jeng1\\Desktop\\DEV RESEARCH (+ MASTER, + FRONTIER ADVANCE)",
+     "role": "Research materials feeding Orion's architecture decisions.",
+     "status": "archive"},
+    {"id": "ideas", "label": "IDEAS",
+     "path": "C:\\Users\\jeng1\\Desktop\\IDEAS",
+     "role": "Founder's working ideas folder.",
+     "status": "active"},
+    {"id": "myfuture", "label": "MYFUTURE",
+     "path": "C:\\Users\\jeng1\\Desktop\\MYFUTURE",
+     "role": "Long-horizon planning + vision artifacts.",
+     "status": "active"},
+    {"id": "atlas-archive", "label": "ATLAS (archive)",
+     "path": "C:\\Users\\jeng1\\Desktop\\ATLAS",
+     "role": "Pre-rename Orion artifacts (when the project was called Atlas).",
+     "status": "historical"},
+    {"id": "twitter", "label": "Twitter",
+     "path": "C:\\Users\\jeng1\\Desktop\\twitter",
+     "role": "Twitter content + threads + reference.",
+     "status": "active"},
+    {"id": "clipsprout", "label": "ClipSprout",
+     "path": "monorepo (per CLAUDE.md global)",
+     "role": "$9.99/mo SaaS product (per CLAUDE.md). Lives in the orion-apps monorepo on FORGE.",
+     "status": "shipping"},
+    {"id": "vytalhealth", "label": "VytalHealth",
+     "path": "monorepo (per CLAUDE.md global)",
+     "role": "$14.99/mo SaaS product (per CLAUDE.md). Lives in the orion-apps monorepo on FORGE.",
+     "status": "shipping"},
+    {"id": "bitduel", "label": "BitDuel",
+     "path": "FORGE — built, awaiting deployment",
+     "role": "Built game/app; per memory, needs deployment.",
+     "status": "built awaiting deploy"},
+]
+
+# Security-relevant tooling — concentrated reference for travel mode.
+# Founder ask 2026-05-15: 'I want a security node so I can open when
+# traveling — pen testing, Kali, uncensored models.'
+KNOWN_SECURITY_TOOLS = [
+    {"id": "kali-arsenal", "label": "Kali / ASUS Arsenal",
+     "where": "ASUS Kali laptop (physical) — security device per CLAUDE.md",
+     "tools": "Full Kali toolkit offline. nmap, nuclei, recon-ng, sqlmap, metasploit, burp, wireshark, etc."},
+    {"id": "nmap-dispatch", "label": "nmap (Orion dispatched)",
+     "where": "Orion brain dispatches nmap via SSH to security device",
+     "tools": "Network scanning, port discovery, service version detection."},
+    {"id": "nuclei-dispatch", "label": "nuclei (Orion dispatched)",
+     "where": "Vulnerability scanner — Orion-dispatched template-based scans",
+     "tools": "CVE detection, misconfigurations, default-creds."},
+    {"id": "ssh-guardian", "label": "agent12_ssh_guardian",
+     "where": "COMMAND ~/server_data/agents/agent12_ssh_guardian.sh",
+     "tools": "Monitors SSH access, alerts on anomalies."},
+    {"id": "network-watchdog", "label": "agent02_network_watchdog",
+     "where": "COMMAND ~/server_data/agents/agent02_network_watchdog.sh",
+     "tools": "Watches network for new devices, MAC changes, port-scan signatures."},
+    {"id": "anomaly-detector", "label": "agent09_anomaly_detector",
+     "where": "COMMAND ~/server_data/agents/agent09_anomaly_detector.sh",
+     "tools": "Watches system metrics + logs for behavioral anomalies."},
+    {"id": "dolphin-uncensored", "label": "dolphin-mistral:7b (uncensored)",
+     "where": "FORGE Ollama (also dolphin-phi:2.7b on FORGE)",
+     "tools": "Uncensored fuel for security-research / red-team / unconstrained analysis. Local, no logging."},
+    {"id": "outpost-arm", "label": "OUTPOST — Tailscale-only arm",
+     "where": "iMac 2017 at Tailscale 100.112.80.14",
+     "tools": "Remote secure shell into the mesh when traveling. Always-on heartbeat."},
+    {"id": "vaultwarden", "label": "Vaultwarden (passwords)",
+     "where": "COMMAND localhost:8888 (Docker)",
+     "tools": "Self-hosted Bitwarden-compatible password manager."},
+]
+
+# Knowledge artifacts — long-form research / articles on COMMAND.
+# Discovered at export time; only the highlights here.
+KNOWN_KNOWLEDGE = [
+    {"id": "architecture-research", "label": "Architecture Research",
+     "path": "COMMAND ~/server_data/orion-brain/knowledge/architecture-research.md",
+     "summary": "Research notes feeding the Plexus + brain architecture decisions."},
+    {"id": "code-patterns", "label": "Code Patterns",
+     "path": "COMMAND ~/server_data/orion-brain/knowledge/code-patterns.md",
+     "summary": "Reusable code patterns Orion learned to recognize."},
+]
+
+# n8n workflows on COMMAND. 11 per CLAUDE.md global; full list pulled
+# at export time when n8n is reachable.
+KNOWN_WORKFLOWS = [
+    {"id": "n8n-host", "label": "n8n (host)",
+     "where": "COMMAND :5678 (native, not Docker)",
+     "summary": "11 workflows per CLAUDE.md. Full list dynamically pulled on export "
+                "when n8n API is reachable; otherwise this stub stands."},
+]
+
+# HTMLs in docs/ — the visual reference artifacts.
+KNOWN_HTMLS = [
+    {"id": "orion-architecture-html", "label": "orion-architecture.html",
+     "path": "docs/orion-architecture.html",
+     "summary": "Visual architecture page — pre-Plexus shape. Possibly outdated by recent v1.8 changes."},
+    {"id": "orion-build-v1-html", "label": "orion-build-v1.html",
+     "path": "docs/orion-build-v1.html",
+     "summary": "Founder-grade brag page: hero + 4-phase network-brain dream + Plexus 17-service map + cell-biology vocabulary."},
+    {"id": "orion-ui-mockup-html", "label": "orion-ui-mockup.html",
+     "path": "docs/orion-ui-mockup.html",
+     "summary": "UI mockup concept for the future Orion product surface."},
+    {"id": "orion-v2-html", "label": "orion-v2.html",
+     "path": "docs/orion-v2.html",
+     "summary": "v2 vision/landing draft."},
+    {"id": "whats-next-html", "label": "whats-next.html",
+     "path": "docs/whats-next.html",
+     "summary": "Pre-launch roadmap surface."},
+    {"id": "docs-index-html", "label": "docs/index.html",
+     "path": "docs/index.html",
+     "summary": "Main public docs landing page."},
+]
+
+
 # Brain subsystems — separate from individual services. Each "system" is
 # a coherent layer of the entity (Plexus = nervous system, Memory =
 # storage layer, etc.). Used to render a 'Systems/' folder where the
@@ -475,7 +615,13 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
             "| `LLMs/` | 🩵 cyan | Local Ollama fuel models on the mesh: qwen3:14b (FORGE, strongest local) · qwen3:8b (Pi) · phi3:mini (Pi, fast/simple) · dolphin-mistral:7b (FORGE) |\n"
             "| `Channels/` | 🩷 pink | Communication points: iMessage · Voice (Telnyx) · Telegram · CLI · Webhook · LoRa — each describes its transport and host |\n"
             "| `Services/` | 🟢 turquoise | Plexus services running on whichever host the export ran from (vitals-dir-driven) |\n"
-            "| `Memories/` | neutral | 115 typed memory nodes (facts / preferences / projects / decisions / tools / identity / etc) — filtered out of default graph view to keep architecture visible; clear filter to bring them in |\n"
+            "| `Apps/` | 🟡 yellow | Projects the founder built — hook-studio, Orion-Marketing-Hub, ClipSprout, VytalHealth, BitDuel, dev research vaults, ideas + future planning. 15 apps catalogued. |\n"
+            "| `Agents/` | 🟣 lavender | COMMAND automated scripts (agent01-agent13+): auto-healer, network watchdog, nightly backup, anomaly detector, telegram commander, etc. Discovered live from `~/server_data/agents/` via SSH at export. |\n"
+            "| `Security/` | 🔴 red | Concentrated travel-mode reference: Kali Arsenal, nmap, nuclei, ssh-guardian, anomaly-detector, dolphin-mistral uncensored, OUTPOST tailscale arm, Vaultwarden. Open this folder when traveling or investigating. |\n"
+            "| `Knowledge/` | 🟢 jade | Long-form research articles on COMMAND (architecture-research.md, code-patterns.md). |\n"
+            "| `Workflows/` | 🟢 mint | n8n workflows on COMMAND :5678 (11 per CLAUDE.md). |\n"
+            "| `HTMLs/` | 🟤 rose | Visual reference HTMLs in docs/ — architecture, build-v1 brag page, UI mockup, v2, what's-next, index. Open in browser. Some may be outdated. |\n"
+            "| `Memories/` | neutral | 123 typed memory nodes (facts / preferences / projects / decisions / tools / identity / etc) — filtered out of default graph view to keep architecture visible; clear filter to bring them in |\n"
             "| `Activity/` | brown/dim | Timeline of MCP tool calls + executive decisions, grouped by day and by tool |\n\n"
             "---\n\n"
             "## How to read the vault\n\n"
@@ -737,6 +883,152 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
             _frontmatter({"kind": "hardware", "id": p["id"],
                           "host": p["host"], "aliases": [p["label"]],
                           "tags": ["hardware", p["id"], p["host"]]}) + body,
+            encoding="utf-8")
+
+    # APPS (founder-built projects) ────────────────
+    apps_dir = out_dir / "Apps"
+    apps_dir.mkdir()
+    for a in KNOWN_APPS:
+        body = (
+            f"# {a['label']}\n\n"
+            f"**Role**\n{a['role']}\n\n"
+            f"**Status**\n{a['status']}\n\n"
+            f"**Where it lives**\n`{a['path']}`\n\n"
+            f"---\n\nPart of the founder's ecosystem of built projects. "
+            f"Linked to [[Orion]] as one of the things the brain knows about + helps with.\n"
+        )
+        (apps_dir / f"{_safe_filename(a['label'])}.md").write_text(
+            _frontmatter({"kind": "app", "id": a["id"],
+                          "aliases": [a["label"]],
+                          "tags": ["app", a["status"].split()[0]]}) + body,
+            encoding="utf-8")
+
+    # AGENTS (COMMAND automated scripts) ───────────
+    agents_dir = out_dir / "Agents"
+    agents_dir.mkdir()
+    agent_list_raw = _ssh_pull("command",
+        "ls /Users/servermac/server_data/agents/ 2>/dev/null | grep -v '\\.bak' | grep -v '\\.log' | grep -E '^agent[0-9]' | sort -u")
+    seen_agent_bases = set()
+    for line in agent_list_raw.splitlines():
+        name = line.strip()
+        if not name:
+            continue
+        base = name.split(".")[0]
+        if base in seen_agent_bases:
+            continue
+        seen_agent_bases.add(base)
+        # Friendly label from agent filename
+        nice = name.replace("_", " ").replace(".sh", "").replace(".py", "")
+        body = (
+            f"# {name}\n\n"
+            f"COMMAND automated agent at "
+            f"`~/server_data/agents/{name}`.\n\n"
+            f"Part of the founder's pre-Plexus automation layer. These "
+            f"numbered agent scripts handle specific recurring tasks "
+            f"(network watchdog, anomaly detection, telegram reporting, "
+            f"backup, cost tracking, etc.). The Plexus services replaced "
+            f"many of these conceptually but they remain operational.\n\n"
+            f"## Belongs to\n- [[COMMAND]]\n"
+        )
+        (agents_dir / f"{_safe_filename(base)}.md").write_text(
+            _frontmatter({"kind": "agent", "id": base,
+                          "aliases": [base, nice],
+                          "tags": ["agent", "automation", "command"]}) + body,
+            encoding="utf-8")
+
+    # SECURITY (curated travel-mode reference) ─────
+    sec_dir = out_dir / "Security"
+    sec_dir.mkdir()
+    sec_index_body = (
+        "# Security — Travel Mode Reference\n\n"
+        "Concentrated reference for security work — pen testing, network "
+        "scanning, anomaly response, uncensored fuel access. Open this "
+        "folder when traveling, when investigating, or when responding "
+        "to a compromise.\n\n"
+        "## Quick-access tools\n\n"
+    )
+    for s in KNOWN_SECURITY_TOOLS:
+        sec_index_body += f"- [[{s['label']}]]\n"
+    sec_index_body += (
+        "\n## Where these live in the ecosystem\n\n"
+        "- **ASUS Arsenal** — physical Kali laptop; SSH from any host. Full offline toolkit.\n"
+        "- **OUTPOST** — Tailscale-only remote arm. Always reachable when traveling.\n"
+        "- **COMMAND agents/** — automated security/monitor scripts that run 24/7.\n"
+        "- **Dolphin Mistral on FORGE** — uncensored local fuel for unconstrained analysis.\n\n"
+        "## Hard rules\n\n"
+        "- Only authorized testing. Pen tests against owned/permissioned targets only.\n"
+        "- Uncensored fuel stays local (Ollama) — never leaves the host.\n"
+        "- Vaultwarden holds the secrets; don't paste credentials into chat.\n"
+        "- Suspicious activity? Trigger Orion's narrate_failure with severity=critical "
+        "so reach alerts via every active channel.\n"
+    )
+    (sec_dir / "Security.md").write_text(
+        _frontmatter({"kind": "security", "aliases": ["Security"],
+                      "tags": ["security", "travel-mode", "index"]}) + sec_index_body,
+        encoding="utf-8")
+    for s in KNOWN_SECURITY_TOOLS:
+        body = (
+            f"# {s['label']}\n\n"
+            f"**Where**\n{s['where']}\n\n"
+            f"**What it does**\n{s['tools']}\n\n"
+            f"## Part of\n- [[Security]] — travel-mode reference\n"
+        )
+        (sec_dir / f"{_safe_filename(s['label'])}.md").write_text(
+            _frontmatter({"kind": "security-tool", "id": s["id"],
+                          "aliases": [s["label"]],
+                          "tags": ["security", s["id"]]}) + body,
+            encoding="utf-8")
+
+    # KNOWLEDGE (long-form research articles) ──────
+    kn_dir = out_dir / "Knowledge"
+    kn_dir.mkdir()
+    for k in KNOWN_KNOWLEDGE:
+        body = (
+            f"# {k['label']}\n\n"
+            f"**Where**\n`{k['path']}`\n\n"
+            f"**Summary**\n{k['summary']}\n\n"
+            f"---\n\nLong-form research article living in Orion's knowledge "
+            f"layer. The brain's recall can include these as semantic context.\n"
+        )
+        (kn_dir / f"{_safe_filename(k['label'])}.md").write_text(
+            _frontmatter({"kind": "knowledge", "id": k["id"],
+                          "aliases": [k["label"]],
+                          "tags": ["knowledge", k["id"]]}) + body,
+            encoding="utf-8")
+
+    # WORKFLOWS (n8n) ──────────────────────────────
+    wf_dir = out_dir / "Workflows"
+    wf_dir.mkdir()
+    for w in KNOWN_WORKFLOWS:
+        body = (
+            f"# {w['label']}\n\n"
+            f"**Where**\n{w['where']}\n\n"
+            f"**Summary**\n{w['summary']}\n\n"
+            f"---\n\nWorkflow automation host. Orion can trigger these via "
+            f"the brain's command dispatch or via direct n8n webhook calls.\n"
+        )
+        (wf_dir / f"{_safe_filename(w['label'])}.md").write_text(
+            _frontmatter({"kind": "workflow", "id": w["id"],
+                          "aliases": [w["label"]],
+                          "tags": ["workflow", "n8n"]}) + body,
+            encoding="utf-8")
+
+    # HTMLs (docs visual references) ───────────────
+    html_dir = out_dir / "HTMLs"
+    html_dir.mkdir()
+    for h in KNOWN_HTMLS:
+        body = (
+            f"# {h['label']}\n\n"
+            f"**Path in repo**\n`{h['path']}`\n\n"
+            f"**Summary**\n{h['summary']}\n\n"
+            f"---\n\nVisual reference artifact. Open the .html file directly "
+            f"in a browser to view the rendered version. Note some HTMLs "
+            f"may be outdated relative to the live architecture.\n"
+        )
+        (html_dir / f"{_safe_filename(h['label'])}.md").write_text(
+            _frontmatter({"kind": "html-ref", "id": h["id"],
+                          "aliases": [h["label"]],
+                          "tags": ["html", "docs", "visual-ref"]}) + body,
             encoding="utf-8")
 
     # SYSTEMS (brain subsystems as nodes) ──────────

@@ -15,7 +15,13 @@
     { "query": "tag:#cli",         "color": { "a": 1, "rgb": 5959018  } },
     { "query": "tag:#llm",         "color": { "a": 1, "rgb": 5959423  } },
     { "query": "tag:#channel",     "color": { "a": 1, "rgb": 16738514 } },
-    { "query": "tag:#service",     "color": { "a": 1, "rgb": 7012296  } }
+    { "query": "tag:#service",     "color": { "a": 1, "rgb": 7012296  } },
+    { "query": "tag:#app",         "color": { "a": 1, "rgb": 16777045 } },
+    { "query": "tag:#agent",       "color": { "a": 1, "rgb": 13421823 } },
+    { "query": "tag:#security",    "color": { "a": 1, "rgb": 16728128 } },
+    { "query": "tag:#knowledge",   "color": { "a": 1, "rgb": 8978244  } },
+    { "query": "tag:#workflow",    "color": { "a": 1, "rgb": 7860350  } },
+    { "query": "tag:#html",        "color": { "a": 1, "rgb": 11393254 } }
   ],
   "collapse-display": false,
   "showArrow": false,
