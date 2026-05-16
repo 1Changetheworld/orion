@@ -61,6 +61,7 @@ PLEXUS_SERVICES=(
     "imessage-outbound:channels/imessage_outbound.py"
     "autofix:orion_autofix.py"
     "deterministic:orion_deterministic.py"
+    "empathy:orion_empathy.py"
 )
 
 # Detect platform

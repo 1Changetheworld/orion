@@ -449,6 +449,55 @@ def _drain_loop() -> None:
             ready = _q.take_due(now, allow_quiet, _choose_channel)
             for item, channel in ready:
                 msg = _format_message_for_channel(item, channel)
+
+                # Empathy Tier-0 gate (docs/architecture/empathy-research.md
+                # §4). Brake, not censor — emergency always sends; other
+                # priorities may be deferred / downgraded / reframed based
+                # on the user's current state (focus, fatigue, stress).
+                # Empathy NEVER returns 'cancel'; cancellation is a user
+                # power. Failing open here preserves existing reach
+                # behavior on any host that hasn't picked up the module.
+                empathy_action = "send"
+                try:
+                    from orion_empathy import evaluate as empathy_evaluate
+                    intent = {
+                        "kind": item.get("kind"),
+                        "priority": item.get("priority", "medium"),
+                        "text": msg,
+                    }
+                    decision = empathy_evaluate(intent, now=now)
+                    empathy_action = decision["action"]
+                    if empathy_action == "defer":
+                        # Push back into the queue with a delay; skip this
+                        # tick. Defer is the dark-room-safe alternative
+                        # to cancel — the message still fires, just later.
+                        defer_sec = decision["intent"].get("defer_sec", 300)
+                        item["__defer_until"] = now + defer_sec
+                        try:
+                            _q.add(item)  # requeue
+                        except Exception:
+                            pass
+                        logger.info("empathy deferred %s on %s: %s",
+                                    item.get("kind"), channel,
+                                    decision.get("reason"))
+                        continue
+                    if empathy_action == "reframe":
+                        # Caller-supplied softer text wins.
+                        msg = decision["intent"].get("text", msg)
+                    if empathy_action == "downgrade":
+                        # Reflect the downgrade in the outbound priority
+                        # so downstream channels (e.g. iMessage cooldown
+                        # logic) treat the message accordingly. The send
+                        # still happens this tick — downgrade just lowers
+                        # priority, never withholds.
+                        item["priority"] = decision["intent"].get(
+                            "priority", item.get("priority"))
+                        logger.info("empathy downgraded %s on %s: %s",
+                                    item.get("kind"), channel,
+                                    decision.get("reason"))
+                except Exception as e:
+                    logger.debug("empathy gate skipped (%s); sending as-is", e)
+
                 if publish:
                     publish(channel_outbound_subject(channel), {
                         "channel": channel,
@@ -458,6 +507,7 @@ def _drain_loop() -> None:
                         "fuel_used": "proactive_reach",
                         "kind": item.get("kind"),
                         "priority": item.get("priority"),
+                        "empathy_action": empathy_action,
                     })
                 # log
                 try:

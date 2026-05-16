@@ -17,8 +17,14 @@ bin/
 # Visualizer runtime logs
 interactive-visualizer/.viz.*.log
 
-# Local scratch / driver scripts (prefix _ = local only)
+# Local scratch / driver scripts (prefix _ = local only).
+# Exception: Python package markers (__init__.py) and dunder modules
+# — these are real package source, not scratch. The original intent
+# was to exclude leading-single-underscore driver scripts like
+# _research_round2.py, not the dunder marker files.
 _*.py
+!**/__init__.py
+!**/__main__.py
 
 # Selfcheck apply backups
 *.orion-bak
