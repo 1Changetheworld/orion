@@ -303,10 +303,24 @@ def _on_remote_delta(subject: str, payload: dict) -> None:
     _on_remote_heartbeat(subject, payload)
 
 
+def _filtered_for_mesh(entries: dict) -> dict:
+    """Apply Membrane Layer 2 to a manifest snapshot before it leaves
+    the host. Belt-and-suspenders over the orion_substrate.publish hook
+    (Layer 1) — even if a future bug let a private entry through the
+    publish gate, the manifest filter still drops it. See
+    docs/architecture/membrane-research.md §7. Membrane unavailable →
+    fail-open with a warning; the substrate hook is the primary gate."""
+    try:
+        from orion_membrane import filter_manifest, DEST_MESH
+        return filter_manifest(entries, dest_class=DEST_MESH)
+    except Exception:
+        return entries
+
+
 def _publish_heartbeat() -> None:
     try:
         from orion_substrate import publish
-        snap = _manifest.snapshot()
+        snap = _filtered_for_mesh(_manifest.snapshot())
         publish(f"mesh.{HOST_ID}.heartbeat", {
             "host": HOST_ID,
             "ts": time.time(),
@@ -326,7 +340,7 @@ def _publish_delta() -> None:
     try:
         from orion_substrate import publish
         snap = _manifest.snapshot()
-        delta = {k: snap[k] for k in keys if k in snap}
+        delta = _filtered_for_mesh({k: snap[k] for k in keys if k in snap})
         publish(f"mesh.{HOST_ID}.delta", {
             "host": HOST_ID,
             "ts": time.time(),

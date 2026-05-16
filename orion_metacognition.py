@@ -489,6 +489,198 @@ async def main() -> int:
     return 0
 
 
+# ═══════════════════════════════════════════════════════════════════
+# AT-RECALL CONFIDENCE LAYER — score_recall()
+# Phase 1 of META-COGNITION FULL per
+# docs/architecture/metacognition-full-research.md (filed 2026-05-16).
+#
+# Pure function. No NATS, no asyncio. Both orion_deterministic and the
+# future orion_will gating import this and consult it inline. The
+# scoring logic is single-sourced so the speed-layer short-circuit and
+# the proactive intent-promotion path agree on what 'confidence' means.
+#
+# Returns a triple — (retrieval_conf, content_conf, recency_conf) —
+# plus an action_hint in {answer, hedge, refuse} computed by the
+# decision tree from memo §3.3:
+#
+#   1. REFUSE if any candidate has non-empty contested_with
+#   2. REFUSE if recency_conf < 0.4
+#   3. REFUSE if top-2 candidates near-tied (no single best match)
+#   4. HEDGE  if min(retrieval, content, recency) < HEDGE_THRESHOLD
+#   5. ANSWER if all three signals clear the answer threshold
+#
+# Fail-closed default: when in doubt, refuse. The cost of an
+# unnecessary refusal is much lower than the cost of a confident
+# fabrication. The combined float is internal-only — callers consume
+# action_hint (ordinal), never raw probability shown to the user.
+# ═══════════════════════════════════════════════════════════════════
+
+# Tuning knobs. Static for Phase 1; nightly calibration drift against
+# the executive ledger lands in Phase 2.
+RECALL_ANSWER_THRESHOLD = 0.70
+RECALL_HEDGE_THRESHOLD = 0.45
+RECALL_NEAR_TIE_EPSILON = 0.05  # top-2 within this on combined score → refuse
+RECALL_STALE_RECENCY_FLOOR = 0.40
+
+# Recency half-life used when a node has no per-type half-life override.
+# Matches HALF_LIFE_DAYS_DEFAULT in orion_brain_portable for consistency.
+RECALL_DEFAULT_HALF_LIFE_DAYS = 365.0
+
+
+def _recency_conf(node: dict, now_ts: float = None) -> float:
+    """Decayed confidence as a recency signal — drops exponentially
+    from last_confirmed_at. Returns [0, 1]. A 14-month-old memory
+    decays to ~0.5 at default half-life; the gating layer treats
+    anything < RECALL_STALE_RECENCY_FLOOR as 'too stale to assert'."""
+    import math
+    now_ts = now_ts if now_ts is not None else time.time()
+    anchor = (node.get("last_confirmed_at")
+              or node.get("created")
+              or now_ts)
+    age_sec = max(0.0, now_ts - float(anchor))
+    half_life_sec = float(node.get("half_life_days",
+                                   RECALL_DEFAULT_HALF_LIFE_DAYS)) * 86400.0
+    if half_life_sec <= 0:
+        return 1.0
+    return float(math.exp(-math.log(2) * age_sec / half_life_sec))
+
+
+def _content_conf(node: dict) -> float:
+    """Memo §1: content confidence is source_strength × node.confidence,
+    capped at the writer's claim. New nodes carry source_strength=0.5
+    by default (fails safe); explicit writers can raise it. Older nodes
+    without the field get treated as mid-range (0.5) so the gating
+    layer doesn't false-allow unknown-provenance memories."""
+    src = float(node.get("source_strength", 0.5))
+    base = float(node.get("confidence", 0.5))
+    return max(0.0, min(1.0, src * (0.5 + 0.5 * base)))
+
+
+def _has_contestation(node: dict) -> bool:
+    contested = node.get("contested_with")
+    return bool(contested)
+
+
+def score_recall(query: str,
+                 candidates: list,
+                 now_ts: float = None) -> dict:
+    """At-recall confidence layer. Returns a structured decision the
+    caller uses to gate its own behavior.
+
+    candidates: list of (node_dict, retrieval_score) tuples sorted by
+                retrieval_score descending. Pass [] for 'no match' —
+                returns refuse / i_dont_know=True.
+
+    Returns:
+        {
+          "retrieval_conf": float,    # top match relevance, [0, 1]
+          "content_conf":   float,    # source × writer claim, [0, 1]
+          "recency_conf":   float,    # decayed-time signal, [0, 1]
+          "combined":       float,    # internal-only — never user-facing
+          "action_hint":    str,      # 'answer' | 'hedge' | 'refuse'
+          "i_dont_know":    bool,
+          "reason":         str,      # for audit / debugging
+          "best_node":      dict | None,
+        }
+    """
+    if not candidates:
+        return {
+            "retrieval_conf": 0.0,
+            "content_conf": 0.0,
+            "recency_conf": 0.0,
+            "combined": 0.0,
+            "action_hint": "refuse",
+            "i_dont_know": True,
+            "reason": "no candidates",
+            "best_node": None,
+        }
+
+    now_ts = now_ts if now_ts is not None else time.time()
+    top_node, top_score = candidates[0]
+    second_score = candidates[1][1] if len(candidates) > 1 else 0.0
+
+    retrieval_conf = max(0.0, min(1.0, float(top_score)))
+    content_conf = _content_conf(top_node)
+    recency_conf = _recency_conf(top_node, now_ts=now_ts)
+    combined = (retrieval_conf + content_conf + recency_conf) / 3.0
+
+    # Decision tree — order matters; fail-closed at every step.
+    # Step 1: contested → refuse always. Never fabricate from a
+    # contested memory.
+    if _has_contestation(top_node):
+        return {
+            "retrieval_conf": retrieval_conf,
+            "content_conf": content_conf,
+            "recency_conf": recency_conf,
+            "combined": combined,
+            "action_hint": "refuse",
+            "i_dont_know": True,
+            "reason": "top match is contested",
+            "best_node": top_node,
+        }
+    # Step 2: too stale → refuse.
+    if recency_conf < RECALL_STALE_RECENCY_FLOOR:
+        return {
+            "retrieval_conf": retrieval_conf,
+            "content_conf": content_conf,
+            "recency_conf": recency_conf,
+            "combined": combined,
+            "action_hint": "refuse",
+            "i_dont_know": True,
+            "reason": f"recency_conf {recency_conf:.2f} < floor",
+            "best_node": top_node,
+        }
+    # Step 3: near-tie on top-2 → refuse. No single best match.
+    if abs(top_score - second_score) < RECALL_NEAR_TIE_EPSILON \
+       and second_score > RECALL_HEDGE_THRESHOLD:
+        return {
+            "retrieval_conf": retrieval_conf,
+            "content_conf": content_conf,
+            "recency_conf": recency_conf,
+            "combined": combined,
+            "action_hint": "refuse",
+            "i_dont_know": True,
+            "reason": f"near-tie top-2 (Δ={abs(top_score-second_score):.3f})",
+            "best_node": top_node,
+        }
+    # Step 4: any signal weak → hedge.
+    triple_min = min(retrieval_conf, content_conf, recency_conf)
+    if triple_min < RECALL_HEDGE_THRESHOLD:
+        return {
+            "retrieval_conf": retrieval_conf,
+            "content_conf": content_conf,
+            "recency_conf": recency_conf,
+            "combined": combined,
+            "action_hint": "hedge",
+            "i_dont_know": False,
+            "reason": f"min signal {triple_min:.2f} below hedge threshold",
+            "best_node": top_node,
+        }
+    # Step 5: combined still below answer threshold → hedge.
+    if combined < RECALL_ANSWER_THRESHOLD:
+        return {
+            "retrieval_conf": retrieval_conf,
+            "content_conf": content_conf,
+            "recency_conf": recency_conf,
+            "combined": combined,
+            "action_hint": "hedge",
+            "i_dont_know": False,
+            "reason": f"combined {combined:.2f} below answer threshold",
+            "best_node": top_node,
+        }
+    # Step 6: all gates passed → answer.
+    return {
+        "retrieval_conf": retrieval_conf,
+        "content_conf": content_conf,
+        "recency_conf": recency_conf,
+        "combined": combined,
+        "action_hint": "answer",
+        "i_dont_know": False,
+        "reason": "all gates passed",
+        "best_node": top_node,
+    }
+
+
 if __name__ == "__main__":
     try:
         sys.exit(asyncio.run(main()))

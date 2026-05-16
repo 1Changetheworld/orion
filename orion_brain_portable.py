@@ -380,6 +380,20 @@ class GraphMemory:
         now = time.time()
         node_id = self._next_id
         self._next_id += 1
+
+        # Membrane Layer 0 (see orion_membrane.py + docs/architecture/
+        # membrane-research.md §2 + §7). Augment the incoming tags with
+        # the visibility:* level *before* the substrate publish reads
+        # them — this is the chokepoint where every new node enters
+        # the graph with a destination ceiling attached. Caller-supplied
+        # visibility:* tag always wins (user override). Membrane missing
+        # → degrade silently with the previous behavior.
+        try:
+            from orion_membrane import classify as _membrane_classify
+            tags = _membrane_classify(content, tags)
+        except Exception:
+            pass
+
         node = {
             "content": content,
             "type": node_type,
@@ -387,6 +401,16 @@ class GraphMemory:
             "tags": set(tags or []),
             "created": now,
             "last_confirmed_at": now,
+            # Meta-cognition Phase 1 fields (see orion_metacognition.py
+            # score_recall + docs/architecture/metacognition-full-
+            # research.md §1). Default source_strength = 0.5 fails safe
+            # toward refusal in the recall scorer; explicit writers
+            # should pass higher values when they have direct user
+            # statements. Backfilled for existing nodes via the
+            # decayed_confidence path which tolerates missing fields.
+            "source_strength": 0.5,
+            "derivation_sources": [],
+            "recall_outcomes": [],
         }
         self.nodes[node_id] = node
         self.type_index[node_type].add(node_id)

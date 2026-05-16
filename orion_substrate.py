@@ -187,10 +187,42 @@ class Substrate:
         No-op if NATS unreachable (logs at DEBUG). Safe to call from
         anywhere, including the synchronous critical path of
         GraphMemory.store() — adds < 100 µs to write latency.
+
+        Membrane gate (added 2026-05-16, see orion_membrane.py +
+        docs/architecture/membrane-research.md §7 Layer 1): every
+        outbound publish consults egress_decision before the actual
+        NATS send. Decisions: allow (proceed), redact (emit cover
+        envelope instead — memo §4d), block (drop entirely, used for
+        visibility:local). The check is O(1) on tag inspection only;
+        no regex, no I/O, no schema parsing. Membrane import is lazy
+        so this module stays importable in environments where the
+        membrane policy hasn't been initialized yet.
         """
         if not self._available and not self._connect_blocking():
             logger.debug("substrate unavailable, dropping publish: %s", subject)
             return
+
+        try:
+            from orion_membrane import egress_decision
+            decision = egress_decision(subject, payload)
+        except Exception:
+            # Membrane unavailable. Fail-open here is the right default
+            # for a new layer landing on an established substrate; once
+            # Membrane is universally deployed across the mesh, this
+            # should flip to fail-closed.
+            decision = "allow"
+
+        if decision == "block":
+            return  # Membrane refused. Audit row already written.
+        if decision == "redact":
+            # Cover-envelope: preserve the SHAPE of the publish (so
+            # observers can't infer the block from silence) but strip
+            # the payload to opaque metadata.
+            payload = {
+                "_membrane": "redacted",
+                "subject": subject,
+                "ts": __import__("time").time(),
+            }
 
         if isinstance(payload, dict):
             data = json.dumps(payload, default=str).encode("utf-8")

@@ -177,15 +177,22 @@ def _extract_recall_target(text: str) -> Optional[str]:
 
 
 def _best_match(query_tokens: set[str]) -> tuple[Optional[dict], float]:
-    """Coverage-based: what fraction of the query tokens does the node contain?
-    Jaccard fails for long nodes (memorized research/incident notes) because
-    their token-set dwarfs the query. Coverage answers the right question:
-    'does this node mention most of what I'm asking about?'"""
-    if not query_tokens or not _graph_nodes:
+    """Backward-compatible top-1 wrapper around _ranked_matches."""
+    ranked = _ranked_matches(query_tokens, k=1)
+    if not ranked:
         return None, 0.0
+    node, score = ranked[0]
+    return node, score
+
+
+def _ranked_matches(query_tokens: set[str], k: int = 2) -> list[tuple[dict, float]]:
+    """Return top-k (node, score) sorted descending. score_recall in
+    orion_metacognition consumes top-2 for the near-tie detector that
+    refuses to short-circuit when no single match dominates."""
+    if not query_tokens or not _graph_nodes:
+        return []
     qsize = len(query_tokens)
-    best_node = None
-    best_score = 0.0
+    scored: list[tuple[dict, float]] = []
     for node in _graph_nodes:
         ntok: set[str] = node.get("_tokens") or set()
         if not ntok:
@@ -198,10 +205,9 @@ def _best_match(query_tokens: set[str]) -> tuple[Optional[dict], float]:
         length_penalty = 1.0 if len(ntok) < 50 else (50.0 / len(ntok)) ** 0.25
         conf = float(node.get("confidence", 0.5))
         score = coverage * (0.5 + 0.5 * conf) * length_penalty
-        if score > best_score:
-            best_score = score
-            best_node = node
-    return best_node, best_score
+        scored.append((node, score))
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored[:k]
 
 
 def _summarize_answer(node: dict, query_target: str) -> str:
@@ -242,8 +248,11 @@ async def _on_inbound(nc, msg) -> None:
         return
 
     qtokens = _tokens(target) | _tokens(text)
-    # Drop tokens that match the user's pronouns; the question is about THEM
-    node, score = _best_match(qtokens)
+    # Drop tokens that match the user's pronouns; the question is about THEM.
+    # Take top-2 so the META-COG-FULL score_recall layer can detect near-tie
+    # cases and refuse to short-circuit when no single match dominates.
+    ranked = _ranked_matches(qtokens, k=2)
+    node, score = (ranked[0] if ranked else (None, 0.0))
 
     if node is None or score < THRESHOLD:
         await nc.publish("brain.deterministic.miss", json.dumps({
@@ -251,6 +260,47 @@ async def _on_inbound(nc, msg) -> None:
             "best_score": round(score, 3),
             "ts": time.time(),
         }).encode("utf-8"))
+        return
+
+    # META-COG-FULL Phase 1 gate (docs/architecture/metacognition-full-
+    # research.md §3.3 + §7). Even with score >= THRESHOLD, refuse to
+    # short-circuit when:
+    #   - the top candidate is contested
+    #   - it's stale beyond recency_floor
+    #   - top-2 are within near-tie epsilon
+    #   - any of (retrieval, content, recency) falls below hedge
+    # 'answer' is the only action_hint that clears the speed-layer.
+    # 'hedge' and 'refuse' both fall through to the LLM path which can
+    # render uncertainty in natural language. This is the silent-
+    # fabrication fix — coverage hits on stale or contested nodes no
+    # longer publish to the outbound channel without going through
+    # reasoning.
+    try:
+        from orion_metacognition import score_recall
+        meta = score_recall(target, ranked)
+    except Exception as e:
+        # Scorer unavailable. Phase 1 fails open to preserve existing
+        # behavior; once score_recall is universally deployed this
+        # should flip to fail-closed.
+        logger.debug("score_recall unavailable (%s); allowing short-circuit", e)
+        meta = {"action_hint": "answer", "reason": "scorer unavailable"}
+
+    if meta["action_hint"] != "answer":
+        await nc.publish("brain.deterministic.refused", json.dumps({
+            "question": text[:160],
+            "target": target,
+            "best_score": round(score, 3),
+            "action_hint": meta["action_hint"],
+            "reason": meta.get("reason", ""),
+            "retrieval_conf": meta.get("retrieval_conf"),
+            "content_conf": meta.get("content_conf"),
+            "recency_conf": meta.get("recency_conf"),
+            "node_id": node.get("id") if node else None,
+            "ts": time.time(),
+        }).encode("utf-8"))
+        logger.info("REFUSED [%s] score=%.2f hint=%s reason=%s",
+                    target, score, meta["action_hint"],
+                    meta.get("reason", ""))
         return
 
     answer = _summarize_answer(node, target)
