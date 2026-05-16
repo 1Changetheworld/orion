@@ -87,8 +87,24 @@ try:
     )
     # Override the local stubs with the canonical Obsidian-export
     # constants so a single source of truth drives both surfaces.
-    KNOWN_DEVICES = _RICH_DEVICES
-    KNOWN_CHANNELS = _RICH_CHANNELS
+    _DEFAULT_PROBES = {"command": 5555, "forge": 11434, "orions-home": 11434,
+                       "outpost": 22}
+    KNOWN_DEVICES = []
+    for _d in _RICH_DEVICES:
+        _nd = dict(_d)
+        if not _nd["id"].startswith("host:"):
+            _nd["id"] = f"host:{_nd['id']}"
+        _nd.setdefault("probe", _DEFAULT_PROBES.get(_d["id"], 22))
+        KNOWN_DEVICES.append(_nd)
+    KNOWN_CHANNELS = []
+    for _c in _RICH_CHANNELS:
+        _nc = dict(_c)
+        if not _nc["id"].startswith("chan:"):
+            _nc["id"] = f"chan:{_nc['id']}"
+        _h = _nc.get("host", "")
+        if _h and not _h.startswith("host:"):
+            _nc["host"] = "host:any" if _h == "any" else f"host:{_h}"
+        KNOWN_CHANNELS.append(_nc)
     RICH_TOPOLOGY = True
 except Exception as _e:
     KNOWN_CLIS = KNOWN_LLMS = KNOWN_PERIPHERALS = KNOWN_SYSTEMS = []

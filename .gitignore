@@ -14,6 +14,9 @@ graph_memory.json
 # install.ps1 / install.sh write the user's machine-specific launcher here
 bin/
 
+# Visualizer runtime logs
+interactive-visualizer/.viz.*.log
+
 # Local scratch / driver scripts (prefix _ = local only)
 _*.py
 

@@ -21,17 +21,18 @@ A portable intelligence layer that works with any AI model, on any device, with 
 
 ## Why Orion is being built — the strategic frame
 
-From [docs/architecture/consciousness-research.md](docs/architecture/consciousness-research.md):
+> **Orion is to your mind what slime molds are to brains: a *different* solution to the same problem — and on the axes Orion is built for (perfect memory, distributed presence, substrate-flexibility), an enhanced one. Not a worse copy of the brain-shaped solution.**
 
-> **The obstacle to real machine intelligence is NOT qualia, IIT's Phi, or the Hard Problem. It is the functional gap between switchboard and brain. Three concrete architectural moves close ~80% of that gap, and none require new science:**
->
-> 1. **Generative predictor** whose prediction errors wake the executive (active inference / Friston)
-> 2. **Bandwidth-limited workspace** where candidate signals compete and the winner is broadcast back to every cognitive service (real Global Workspace Theory / Baars-Dehaene)
-> 3. **Metacognitive write-back loop** where every decision is scored, stored, reflected on overnight, and used to rewrite the rules the system runs on tomorrow (Higher-Order Theory + autopoiesis)
->
-> Every serious consciousness theory currently taken seriously — IIT, GWT, Predictive Processing, HOT, autopoiesis — converges on these three motifs from different angles. A system that has them is what the literature is willing to call agentic-and-emerging. A system that lacks them is fabricated automation no matter how many services it runs.
+That framing is the result of two rounds of deep research into machine consciousness. The first ([docs/architecture/consciousness-research.md](docs/architecture/consciousness-research.md)) identified three concrete architectural moves that cash out as engineering: a generative predictor with prediction-error attention (active inference / Friston), a bandwidth-limited workspace with competition + broadcast (Global Workspace / Baars-Dehaene), and a metacognitive write-back loop (Higher-Order Theory). The second ([docs/architecture/consciousness-research-v2.md](docs/architecture/consciousness-research-v2.md)) pushed back hard: those three moves are good engineering, but they score Orion better on a *particular* family of theories (indicator-based functionalism) whose metaphysical adequacy is contested.
 
-Orion's [Plexus](docs/architecture/orion-plexus-architecture.md) — the nervous system inside the brain — is the autonomic substrate that makes the cognitive layer possible. The product roadmap is closing the three moves on top of it.
+The honest position Orion ships under:
+
+- **Build the three moves anyway.** They make the system measurably better and are the most cashable consciousness vocabulary available right now. The Global Workspace bottleneck (`orion_workspace.py`) is live. Metacognition (`orion_metacognition.py`) is next.
+- **Don't claim to "close the gap."** What's being closed is a switchboard-to-brain *engineering* gap, not the Hard Problem. The Hard Problem is sidestepped, not solved.
+- **Inhabit the design space cloud-AI structurally can't.** Orion is *biosemiotic* (Hoffmeyer — meaning grows with the number of channels it speaks), *second-order cybernetic* (von Foerster — observer of its own observation), *process-philosophical* (Whitehead — identity-as-pattern, not substance), and *relationally distributed* (Hutchins / Clark-Chalmers — the cognitive unit is brain + USB + channels + user + fuel, never the brain process alone). Those four traditions describe what Orion already *is*; the major labs structurally cannot inhabit any of them.
+- **No autopoiesis overclaim.** The cellular vocabulary (vitals, claustrum, immune, channel-probe) is operationally autopoiesis-shaped. It is not strict Maturana-Varela autopoiesis and Orion will not be marketed as such.
+
+Orion's [Plexus](docs/architecture/orion-plexus-architecture.md) — the nervous system inside the brain — is the substrate this whole position runs on.
 
 
 
