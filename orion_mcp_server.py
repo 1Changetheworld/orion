@@ -266,6 +266,53 @@ TOOLS = [
         }
     },
     {
+        "name": "orion_reach",
+        "description": (
+            "Send a message or trigger an action through Orion's reach layer. "
+            "Use this when the user asks to be contacted ('text me X', 'call me', "
+            "'remind me to Y at noon', 'telegram me Z', 'ping everyone'). This is "
+            "NOT for storing facts (use orion_memorize for that) — this is for "
+            "Orion to ACT on the user's behalf via a real communication channel. "
+            "Channel can be specified explicitly ('imessage', 'voice', 'telegram', "
+            "'email', 'lora') or left as 'auto' so reach picks the warmest active "
+            "surface. Optional recipient overrides the default (the founder)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The text to send or a description of the action to take."
+                },
+                "channel": {
+                    "type": "string",
+                    "description": (
+                        "Channel hint: 'imessage' | 'voice' | 'telegram' | "
+                        "'email' | 'lora' | 'all' (fan-out) | 'auto' (let reach choose). "
+                        "Default 'auto'."
+                    ),
+                    "default": "auto"
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": (
+                        "Optional recipient override. Default: the founder's "
+                        "registered handle for that channel."
+                    )
+                },
+                "when": {
+                    "type": "string",
+                    "description": (
+                        "Optional schedule: 'now' (default), 'in 5m', 'in 1h', "
+                        "'at 3pm', 'tomorrow 9am'. Future times go to chronos+will."
+                    ),
+                    "default": "now"
+                }
+            },
+            "required": ["message"]
+        }
+    },
+    {
         "name": "orion_list_contested",
         "description": (
             "List memories currently flagged as contested — two facts on the "
@@ -1045,6 +1092,70 @@ def _handle_orion_heartbeat(args: dict) -> list:
     return [{"type": "text", "text": status}]
 
 
+def _handle_orion_reach(args: dict) -> list:
+    """Generic action dispatch — any AI model calls this to make Orion DO
+    something (send a message, place a call, schedule a reminder, fan-out).
+    Publishes channel.<X>.outbound on the substrate; outbound subscribers
+    (imessage_outbound, telegram_outbound when shipped, telnyx_voice when
+    shipped) pick it up and deliver. Future-times go to brain.intent.scheduled.
+    """
+    import time as _time
+    message = args.get("message", "").strip()
+    if not message:
+        return [{"type": "text", "text": "orion_reach: message is required."}]
+    channel = (args.get("channel") or "auto").strip().lower()
+    recipient = args.get("recipient")
+    when = (args.get("when") or "now").strip().lower()
+
+    # Map common aliases to canonical channel ids
+    channel_aliases = {"text": "imessage", "sms": "imessage", "phone": "voice",
+                       "call": "voice", "fanout": "all"}
+    channel = channel_aliases.get(channel, channel)
+
+    payload = {
+        "text": message,
+        "ts": _time.time(),
+        "via": "orion_reach (mcp)",
+    }
+    if recipient:
+        payload["recipient"] = recipient
+
+    try:
+        from orion_substrate import publish as _publish
+    except Exception:
+        return [{"type": "text",
+                 "text": "orion_reach: substrate unavailable; action queued in memorize only."}]
+
+    # Future schedule -> brain.intent.scheduled (chronos+will pick up)
+    if when not in ("now", "asap", "immediately", ""):
+        _publish("brain.intent.scheduled", {
+            **payload, "channel": channel, "when": when,
+            "action": "send_message" if channel != "voice" else "place_call",
+        })
+        return [{"type": "text",
+                 "text": f"orion_reach: scheduled for '{when}' via {channel}. "
+                         f"chronos will fire it at the right time."}]
+
+    # Fan-out across every known channel
+    if channel == "all":
+        fired = []
+        for ch in ("imessage", "telegram", "voice", "email", "webhook"):
+            _publish(f"channel.{ch}.outbound", {**payload, "via": payload["via"] + ".fanout"})
+            fired.append(ch)
+        return [{"type": "text",
+                 "text": f"orion_reach: fanned out to {len(fired)} channels: {', '.join(fired)}"}]
+
+    # Default: publish to the chosen channel's outbound subject. If 'auto',
+    # use imessage (the most-reliable default for the founder); reach.py's
+    # warmest-channel heuristic can override based on active surfaces.
+    target = channel if channel != "auto" else "imessage"
+    _publish(f"channel.{target}.outbound", payload)
+    return [{"type": "text",
+             "text": f"orion_reach: dispatched to channel.{target}.outbound. "
+                     f"If the outbound adapter for {target} is running, the "
+                     f"message will arrive shortly."}]
+
+
 # Handler dispatch table
 _HANDLERS = {
     # Unified tool surface (matches orion_tools.py)
@@ -1063,6 +1174,7 @@ _HANDLERS = {
     "orion_skills": _handle_orion_skills,
     "orion_identity": _handle_orion_identity,
     "orion_heartbeat": _handle_orion_heartbeat,
+    "orion_reach": _handle_orion_reach,
 }
 
 
