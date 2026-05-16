@@ -208,6 +208,54 @@ CANARIES = [
     ("disk.write",       _canary_disk_write,      False),
 ]
 
+# Per-probe state for edge-triggered alerting + exponential backoff.
+# Spam-fix 2026-05-16: alerts fire on transitions + escalating intervals,
+# never on every-failure-tick. State: {last_state, fail_count, last_alert_ts}.
+_probe_state: dict[str, dict] = {}
+
+# Backoff schedule for SUSTAINED failures (in seconds). After a transition
+# alert fires once, the same failure re-alerts only at these multiples
+# from the FIRST failure: 5min, 30min, 2hr, 24hr. After that, silent.
+_BACKOFF_SCHEDULE_SEC = [300, 1800, 7200, 86400]
+
+
+def _should_alert(name: str, ok: bool, now: float) -> tuple[bool, str]:
+    """Returns (should_emit_alert, transition_kind).
+    transition_kind ∈ {'ok_to_fail', 'fail_to_ok', 'sustained_escalation', 'none'}."""
+    state = _probe_state.get(name, {"last_state": None, "fail_count": 0,
+                                     "first_fail_ts": 0.0, "alert_idx": 0})
+    last = state["last_state"]
+    transition = "none"
+    emit = False
+
+    if ok:
+        if last is False:
+            transition = "fail_to_ok"
+            emit = True
+            state["fail_count"] = 0
+            state["alert_idx"] = 0
+            state["first_fail_ts"] = 0.0
+    else:
+        if last is not False:
+            transition = "ok_to_fail"
+            emit = True
+            state["first_fail_ts"] = now
+            state["fail_count"] = 1
+            state["alert_idx"] = 0
+        else:
+            state["fail_count"] += 1
+            # Sustained — only emit if we've hit the next backoff threshold
+            elapsed = now - state["first_fail_ts"]
+            idx = state["alert_idx"]
+            if idx < len(_BACKOFF_SCHEDULE_SEC) and elapsed >= _BACKOFF_SCHEDULE_SEC[idx]:
+                transition = "sustained_escalation"
+                emit = True
+                state["alert_idx"] = idx + 1
+
+    state["last_state"] = ok
+    _probe_state[name] = state
+    return emit, transition
+
 
 async def _run_canary(nc, name: str, fn, needs_nc: bool) -> None:
     try:
@@ -218,27 +266,46 @@ async def _run_canary(nc, name: str, fn, needs_nc: bool) -> None:
     result["ts"] = time.time()
     result["canary"] = name
     await nc.publish(f"canary.{name}", json.dumps(result).encode("utf-8"))
-    # Failed canaries also raise a health alert directly so even if
-    # the predictor is asleep, the will / executive layer engages.
-    if not result.get("ok"):
-        # will._format_alert reads service / host / cause / kind, so
-        # populate the fields it expects rather than our own schema.
-        host = os.environ.get("ORION_HOST_ID") or os.uname().nodename if hasattr(os, "uname") else "unknown"
-        alert = {
-            "severity": "warning",
+
+    emit, transition = _should_alert(name, bool(result.get("ok")), result["ts"])
+    if not emit:
+        if result.get("ok"):
+            logger.debug("canary %s ok %.1fms (no transition)", name, result.get("latency_ms", 0))
+        else:
+            logger.debug("canary %s still failing (suppressed; next alert per backoff)", name)
+        return
+
+    host = os.environ.get("ORION_HOST_ID") or (os.uname().nodename if hasattr(os, "uname") else "unknown")
+
+    if transition == "fail_to_ok":
+        recovery = {
+            "severity": "info",
             "service": f"canary.{name}",
             "host": host,
-            "kind": "canary_fail",
-            "cause": result.get("error", "canary failed"),
-            "what_to_do": f"investigate {name} capability — canary returned ok=false",
+            "kind": "canary_recovered",
             "vitals": f"latency_ms={result.get('latency_ms', 0)}",
             "ts": result["ts"],
         }
-        await nc.publish("brain.health.alert",
-                         json.dumps(alert).encode("utf-8"))
-        logger.warning("canary %s FAILED: %s", name, result.get("error"))
-    else:
-        logger.info("canary %s ok %.1fms", name, result.get("latency_ms", 0))
+        await nc.publish("brain.health.recovered",
+                         json.dumps(recovery).encode("utf-8"))
+        logger.info("canary %s RECOVERED", name)
+        return
+
+    # Failure alert (either ok_to_fail or sustained_escalation)
+    fail_count = _probe_state[name]["fail_count"]
+    alert = {
+        "severity": "warning" if transition == "ok_to_fail" else "critical",
+        "service": f"canary.{name}",
+        "host": host,
+        "kind": transition,  # 'ok_to_fail' or 'sustained_escalation'
+        "cause": result.get("error", "canary failed"),
+        "what_to_do": f"investigate {name} capability — {fail_count} consecutive failures",
+        "vitals": f"latency_ms={result.get('latency_ms', 0)} fails={fail_count}",
+        "ts": result["ts"],
+    }
+    await nc.publish("brain.health.alert",
+                     json.dumps(alert).encode("utf-8"))
+    logger.warning("canary %s ALERT (%s) — %s", name, transition, result.get("error"))
 
 
 async def _scheduler(nc) -> None:

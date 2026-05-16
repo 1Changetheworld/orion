@@ -560,6 +560,15 @@ def _format_alert(subject: str, payload: dict, severity: str) -> str:
 
 def _on_health_event(subject: str, payload: dict) -> None:
     """Subscriber for system-health events. Classifies + reaches out."""
+    # Spam-fix 2026-05-16: skip canary-class alerts. orion_autofix owns
+    # the canary-symptom flow with copy-paste fix steps; will narrating
+    # the same alert in parallel was one of three duplicate senders
+    # behind the iMessage flood.
+    kind = (payload or {}).get("kind", "")
+    service = (payload or {}).get("service", "") or ""
+    if kind in ("canary_fail", "ok_to_fail", "sustained_escalation",
+                "canary_recovered") or service.startswith("canary."):
+        return
     severity = _classify_severity(subject, payload)
     src_key = f"{subject}::{(payload or {}).get('service','?')}::{(payload or {}).get('host','?')}"
     now = time.time()

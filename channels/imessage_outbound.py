@@ -7,23 +7,48 @@ the founder's handle via AppleScript. Plexus service candidate.
 Built 2026-05-15 to make the natural-language intent loop reach the
 user's phone. Pairs with orion_intent.py (which dispatches outbound
 events from recognized intents like 'text me X').
+
+Spam-fix 2026-05-16: dedupe identical (text, recipient) within
+DEDUPE_WINDOW_SEC. Two wills (COMMAND + Pi) both narrate the same
+substrate event → without dedupe the phone gets each message twice.
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
 import subprocess
 import sys
+import time
+from collections import OrderedDict
 
 logger = logging.getLogger("orion.imessage.outbound")
 
 NATS_URL = os.environ.get("ORION_NATS_URL", "nats://127.0.0.1:4222")
-# Founder's iMessage handles. Default to first; can be overridden per
-# event by including 'recipient' in the payload.
 DEFAULT_RECIPIENT = os.environ.get("ORION_IMESSAGE_RECIPIENT", "+12703003122")
+DEDUPE_WINDOW_SEC = float(os.environ.get("ORION_IMESSAGE_DEDUPE_SEC", "120"))
+
+# (text_hash, recipient) -> last_sent_ts. Bounded to keep memory small.
+_recent_sends: "OrderedDict[tuple[str,str], float]" = OrderedDict()
+_RECENT_MAX = 256
+
+
+def _should_send(text: str, recipient: str) -> bool:
+    now = time.time()
+    # Evict old entries
+    expired = [k for k, ts in _recent_sends.items() if now - ts > DEDUPE_WINDOW_SEC]
+    for k in expired:
+        _recent_sends.pop(k, None)
+    key = (hashlib.sha1(text.encode("utf-8")).hexdigest()[:16], recipient)
+    if key in _recent_sends:
+        return False
+    _recent_sends[key] = now
+    while len(_recent_sends) > _RECENT_MAX:
+        _recent_sends.popitem(last=False)
+    return True
 
 
 def _send_via_applescript(recipient: str, text: str) -> bool:
@@ -84,6 +109,10 @@ async def _on_outbound(msg, nc):
         logger.debug("empty text, skipping")
         return
     recipient = payload.get("recipient") or DEFAULT_RECIPIENT
+    if not _should_send(text, recipient):
+        logger.info("duplicate suppressed (within %.0fs): %s", DEDUPE_WINDOW_SEC, text[:60])
+        await _publish_status(nc, recipient, text, True, error="deduped")
+        return
     ok = _send_via_applescript(recipient, text)
     await _publish_status(nc, recipient, text, ok,
                           error="" if ok else "osascript-failed")

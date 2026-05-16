@@ -382,6 +382,17 @@ def _on_synthesis_candidate(subject: str, payload: dict) -> None:
 
 def _on_health_alert(subject: str, payload: dict) -> None:
     kind = payload.get("kind", "alert")
+    # Spam-fix 2026-05-16: skip canary-class alerts. orion_autofix
+    # handles known symptoms with the FIX in the message; orion_will
+    # handles plain-English narration for unknown ones. Reach
+    # narrating "Notice: canary_fail" was the third sender per cycle
+    # causing the iMessage flood.
+    if kind in ("canary_fail", "ok_to_fail", "sustained_escalation",
+                "canary_recovered"):
+        return
+    service = (payload or {}).get("service", "")
+    if isinstance(service, str) and service.startswith("canary."):
+        return
     item = {
         "kind": kind,
         "priority": "high" if kind == "high_error_rate" else "medium",
