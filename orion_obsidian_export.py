@@ -388,6 +388,13 @@ KNOWN_CHANNELS = [
 ]
 
 
+def _orion_footer(kind: str) -> str:
+    """Standard footer linking every node back to the identity core so the
+    Obsidian graph naturally centers on [[Orion]] (founder ask 2026-05-15:
+    'orion is the core and should be the core in the obsidian view')."""
+    return f"\n\n---\n\nPart of **[[Orion]]** — this is a `{kind}` node in the ecosystem.\n"
+
+
 def _ssh_pull(host_alias: str, command: str, timeout: int = 6) -> str:
     """Run a small shell command on a remote host via ssh alias.
     Best-effort: returns "" on any error so the vault always renders.
@@ -807,7 +814,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
                 "ip": d["ip"],
                 "service_count": len(services),
                 "tags": ["device", d["id"]]
-            }) + body,
+            }) + body + _orion_footer("device"),
             encoding="utf-8")
         stats["devices"] += 1
 
@@ -882,7 +889,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (hw_dir / f"{_safe_filename(p['label'])}.md").write_text(
             _frontmatter({"kind": "hardware", "id": p["id"],
                           "host": p["host"], "aliases": [p["label"]],
-                          "tags": ["hardware", p["id"], p["host"]]}) + body,
+                          "tags": ["hardware", p["id"], p["host"]]}) + body + _orion_footer("hardware"),
             encoding="utf-8")
 
     # APPS (founder-built projects) ────────────────
@@ -900,7 +907,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (apps_dir / f"{_safe_filename(a['label'])}.md").write_text(
             _frontmatter({"kind": "app", "id": a["id"],
                           "aliases": [a["label"]],
-                          "tags": ["app", a["status"].split()[0]]}) + body,
+                          "tags": ["app", a["status"].split()[0]]}) + body + _orion_footer("app"),
             encoding="utf-8")
 
     # AGENTS (COMMAND automated scripts) ───────────
@@ -933,7 +940,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (agents_dir / f"{_safe_filename(base)}.md").write_text(
             _frontmatter({"kind": "agent", "id": base,
                           "aliases": [base, nice],
-                          "tags": ["agent", "automation", "command"]}) + body,
+                          "tags": ["agent", "automation", "command"]}) + body + _orion_footer("agent"),
             encoding="utf-8")
 
     # SECURITY (curated travel-mode reference) ─────
@@ -976,7 +983,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (sec_dir / f"{_safe_filename(s['label'])}.md").write_text(
             _frontmatter({"kind": "security-tool", "id": s["id"],
                           "aliases": [s["label"]],
-                          "tags": ["security", s["id"]]}) + body,
+                          "tags": ["security", s["id"]]}) + body + _orion_footer("security-tool"),
             encoding="utf-8")
 
     # KNOWLEDGE (long-form research articles) ──────
@@ -993,7 +1000,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (kn_dir / f"{_safe_filename(k['label'])}.md").write_text(
             _frontmatter({"kind": "knowledge", "id": k["id"],
                           "aliases": [k["label"]],
-                          "tags": ["knowledge", k["id"]]}) + body,
+                          "tags": ["knowledge", k["id"]]}) + body + _orion_footer("knowledge"),
             encoding="utf-8")
 
     # WORKFLOWS (n8n) ──────────────────────────────
@@ -1010,7 +1017,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (wf_dir / f"{_safe_filename(w['label'])}.md").write_text(
             _frontmatter({"kind": "workflow", "id": w["id"],
                           "aliases": [w["label"]],
-                          "tags": ["workflow", "n8n"]}) + body,
+                          "tags": ["workflow", "n8n"]}) + body + _orion_footer("workflow"),
             encoding="utf-8")
 
     # HTMLs (docs visual references) ───────────────
@@ -1028,7 +1035,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (html_dir / f"{_safe_filename(h['label'])}.md").write_text(
             _frontmatter({"kind": "html-ref", "id": h["id"],
                           "aliases": [h["label"]],
-                          "tags": ["html", "docs", "visual-ref"]}) + body,
+                          "tags": ["html", "docs", "visual-ref"]}) + body + _orion_footer("html-ref"),
             encoding="utf-8")
 
     # SYSTEMS (brain subsystems as nodes) ──────────
@@ -1047,7 +1054,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (sys_dir / f"{_safe_filename(s['label'])}.md").write_text(
             _frontmatter({"kind": "system", "id": s["id"],
                           "aliases": [s["label"]],
-                          "tags": ["system", s["id"]]}) + body,
+                          "tags": ["system", s["id"]]}) + body + _orion_footer("system"),
             encoding="utf-8")
 
     # CLIs ─────────────────────────────────────────
@@ -1074,7 +1081,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
             _frontmatter({"kind": "cli", "id": c["id"],
                           "vendor": c["vendor"], "tier": c["tier"],
                           "aliases": [c["label"]],
-                          "tags": ["cli", c["id"]]}) + body,
+                          "tags": ["cli", c["id"]]}) + body + _orion_footer("cli"),
             encoding="utf-8")
 
     # LLMs ─────────────────────────────────────────
@@ -1103,7 +1110,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
             _frontmatter({"kind": "llm", "id": m["id"],
                           "model_kind": m["kind"], "tier": m["tier"],
                           "aliases": [m["label"]],
-                          "tags": ["llm", m["id"], m["kind"]]}) + body,
+                          "tags": ["llm", m["id"], m["kind"]]}) + body + _orion_footer("llm"),
             encoding="utf-8")
 
     # ARCHITECTURE (Mermaid diagrams) ──────────────
@@ -1435,7 +1442,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
         (chan_dir / f"{_safe_filename(ch['label'])}.md").write_text(
             _frontmatter({"kind": "channel", "id": ch["id"],
                           "host": ch["host"], "transport": ch["transport"],
-                          "tags": ["channel", ch["id"]]}) + body,
+                          "tags": ["channel", ch["id"]]}) + body + _orion_footer("channel"),
             encoding="utf-8")
         stats["channels"] += 1
 
@@ -1459,7 +1466,7 @@ def export_vault(out_dir: Path, profile: str = "starter") -> dict:
             )
             (svc_dir / f"{_safe_filename(svc)}.md").write_text(
                 _frontmatter({"kind": "service", "id": svc,
-                              "tags": ["service", svc]}) + body,
+                              "tags": ["service", svc]}) + body + _orion_footer("service"),
                 encoding="utf-8")
             stats["services"] += 1
 
