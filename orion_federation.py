@@ -399,6 +399,184 @@ def announce_self(claimed_user: str = "") -> dict:
 
 
 # ─────────────────────────────────────────────────────────
+# Pass-2 — full identity-doc fetch after a peering decision.
+# Per federation-research.md §1 two-pass design: the offer is the
+# minimal handshake (~400B, fits a LoRa frame); the full identity-doc
+# is only exchanged when both sides agree to talk. This keeps the
+# pre-decision protocol private about what each brain is willing to
+# share AND tiny enough for LoRa proximity.
+#
+# Doc contents are strictly the brain's PUBLIC identity (host roster,
+# capability descriptors, supported channels). Membrane filter applies
+# — nothing visibility:local ever lands in a doc. Memo §4: "Promoting
+# private → household on peering is a one-way data leak." This pass-2
+# protocol cannot promote anything; it only exposes what the brain
+# already publishes as public.
+# ─────────────────────────────────────────────────────────
+
+def identity_doc(host_roster: Optional[list[str]] = None,
+                 channels: Optional[list[str]] = None,
+                 skills_summary: Optional[list[str]] = None) -> dict:
+    """Build the full identity document — the pass-2 payload.
+
+    Larger than an offer (typically 1-3 KB) but still strictly public.
+    Signed by the same Ed25519 key as the offer so peers can verify it
+    came from the brain whose fingerprint they already accepted.
+
+    Caller supplies the public-facing bits; defaults to safe minimums
+    when the optional arguments aren't provided.
+    """
+    summary = identity_summary()
+    body = {
+        "fingerprint": summary["fingerprint"],
+        "pubkey_hex": summary["pubkey_hex"],
+        "safety_number": summary["safety_number"],
+        "protocol_version": PROTOCOL_VERSION,
+        "host_roster": list(host_roster or []),
+        "channels": list(channels or []),
+        "skills_summary": list(skills_summary or []),
+        "doc_version": 1,
+        "issued_at": time.time(),
+    }
+    body_json = json.dumps(body, sort_keys=True).encode("utf-8")
+    body["doc_hash"] = hashlib.sha256(body_json).hexdigest()[:32]
+    signed = json.dumps(body, sort_keys=True).encode("utf-8")
+    body["signature_hex"] = sign_bytes(signed).hex()
+    return body
+
+
+def verify_identity_doc(doc: dict,
+                        expected_fingerprint: str) -> tuple[bool, str]:
+    """Verify a received identity-doc is signed by the brain whose
+    fingerprint we already accepted in pass-1. expected_fingerprint
+    is the fingerprint from the offer the user said 'peer' to —
+    NOT trusting the doc's claimed fingerprint alone is the whole
+    point of two-pass."""
+    required = ("fingerprint", "pubkey_hex", "protocol_version",
+                "doc_version", "signature_hex")
+    for k in required:
+        if k not in doc:
+            return False, f"missing field: {k}"
+    if doc["fingerprint"] != expected_fingerprint:
+        return False, ("doc fingerprint does not match accepted-peer "
+                       "fingerprint — possible doc spoofing")
+    if doc["protocol_version"] != PROTOCOL_VERSION:
+        return False, f"version mismatch: {doc['protocol_version']}"
+    body = {k: v for k, v in doc.items() if k != "signature_hex"}
+    body_json = json.dumps(body, sort_keys=True).encode("utf-8")
+    sig = bytes.fromhex(doc["signature_hex"])
+    if not verify_signature(doc["pubkey_hex"], body_json, sig):
+        return False, "signature verification failed"
+    expected_fp = hashlib.sha256(
+        bytes.fromhex(doc["pubkey_hex"])).hexdigest()[:32]
+    if expected_fp != doc["fingerprint"]:
+        return False, "fingerprint does not match pubkey (forged doc)"
+    return True, "ok"
+
+
+PEER_DOCS_DIR = ORION_HOME / "federation" / "peers"
+
+
+def _peer_doc_path(fingerprint: str) -> Path:
+    safe = "".join(c for c in fingerprint if c.isalnum())[:64]
+    return PEER_DOCS_DIR / f"{safe}.json"
+
+
+def store_peer_doc(doc: dict) -> Path:
+    """Persist a verified peer doc. Caller must have already passed
+    verify_identity_doc against the expected fingerprint."""
+    PEER_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    p = _peer_doc_path(doc["fingerprint"])
+    p.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    return p
+
+
+def load_peer_doc(fingerprint: str) -> dict | None:
+    p = _peer_doc_path(fingerprint)
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def request_identity_doc(peer_fingerprint: str) -> None:
+    """Ask a peer for their full identity-doc. Caller has already
+    decided to peer (record_encounter(..., 'peer')); this is the
+    follow-up that fetches the larger payload."""
+    try:
+        from orion_substrate import publish
+        publish("brain.federation.doc_request", {
+            "from_fingerprint": identity_summary()["fingerprint"],
+            "peer_fingerprint": peer_fingerprint,
+            "ts": time.time(),
+        })
+    except Exception:
+        pass
+
+
+def _on_doc_request(subject: str, payload: dict) -> None:
+    """A peer who accepted our offer is asking for the full doc.
+    Respond with our identity_doc — strictly public information,
+    same key as the offer they already verified."""
+    requester_fp = payload.get("from_fingerprint")
+    target_fp = payload.get("peer_fingerprint")
+    if target_fp and target_fp != identity_summary()["fingerprint"]:
+        return  # not for us
+    if not requester_fp:
+        return
+    # Only respond if we previously logged a peer-accepted encounter
+    # FROM this requester — otherwise random hosts could probe our
+    # doc. Open question for v2: cache mutual-decisions both ways.
+    encounters = list_encounters(limit=200)
+    mutual = any(e.get("peer_fingerprint") == requester_fp
+                 and e.get("decision") == "peer"
+                 for e in encounters)
+    if not mutual:
+        logger.info("doc_request from unverified peer fp=%s — ignoring",
+                    requester_fp[:8] if requester_fp else "?")
+        return
+    doc = identity_doc()
+    try:
+        from orion_substrate import publish
+        publish("brain.federation.doc_response", {
+            "to_fingerprint": requester_fp,
+            "doc": doc,
+            "ts": time.time(),
+        })
+    except Exception:
+        pass
+
+
+def _on_doc_response(subject: str, payload: dict) -> None:
+    """A peer responded to our doc_request. Verify against the
+    fingerprint we accepted, then store the doc locally for future
+    capability negotiation + provenance."""
+    target_fp = payload.get("to_fingerprint")
+    if target_fp and target_fp != identity_summary()["fingerprint"]:
+        return  # not for us
+    doc = payload.get("doc")
+    if not isinstance(doc, dict):
+        return
+    expected = doc.get("fingerprint", "")
+    ok, reason = verify_identity_doc(doc, expected_fingerprint=expected)
+    if not ok:
+        logger.warning("rejected doc_response: %s", reason)
+        return
+    p = store_peer_doc(doc)
+    logger.info("stored peer doc: fp=%s file=%s", expected[:8], p.name)
+    try:
+        from orion_substrate import publish
+        publish("brain.federation.doc_stored", {
+            "peer_fingerprint": expected,
+            "ts": time.time(),
+        })
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────
 # Daemon main + CLI
 # ─────────────────────────────────────────────────────────
 
@@ -416,7 +594,10 @@ def main() -> int:
     sub._connect_blocking()
     _ensure_identity()  # generate on first run
     subscribe("brain.federation.offer", _on_offer_received)
-    logger.info("federation alive (v1 trusted-peer; seed-new deferred)")
+    subscribe("brain.federation.doc_request", _on_doc_request)
+    subscribe("brain.federation.doc_response", _on_doc_response)
+    logger.info("federation alive (v1.1 trusted-peer with pass-2 doc fetch; "
+                "seed-new deferred)")
     try:
         while True:
             time.sleep(60)

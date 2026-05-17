@@ -630,6 +630,36 @@ def _request_permission(proposal: dict, ctx: dict) -> str:
             except Exception:
                 pass
 
+        # Empathy gate (docs/architecture/empathy-research.md §4 + §7).
+        # Executive proposals are user-facing — consult Empathy before
+        # the publish so the framing matches the recipient's capacity
+        # to act. Discipline:
+        #   tier3 (destructive, needs approval) — ALWAYS sends. May
+        #     reframe text with a softer preamble under fatigue. Never
+        #     defers: the dark-room critique applies — withholding a
+        #     needed approval is worse than asking at a bad moment.
+        #   tier1 / tier2 (auto-applied or notify-after) — the action
+        #     already ran or will run regardless; the message is purely
+        #     informational. Safe to defer / downgrade / reframe.
+        empathy_action = "send"
+        try:
+            from orion_empathy import evaluate as _empathy_evaluate
+            intent = {
+                "kind": "executive_proposal",
+                "priority": ("emergency" if tier == "tier3_approve_before"
+                             else "medium"),
+                "text": user_msg,
+            }
+            decision = _empathy_evaluate(intent)
+            empathy_action = decision["action"]
+            if empathy_action == "reframe":
+                user_msg = decision["intent"].get("text", user_msg)
+            # 'defer' is honored only for non-tier3 — tier3 always asks
+            # now even at a bad moment. 'downgrade' only changes the
+            # synthesis.candidate priority; the proposal still publishes.
+        except Exception as e:
+            logger.debug("empathy gate skipped on proposal (%s)", e)
+
         publish("brain.executive.proposal", {
             "decision_id": decision_id,
             "fingerprint": fingerprint,
@@ -641,8 +671,18 @@ def _request_permission(proposal: dict, ctx: dict) -> str:
             "remedy_kind": proposal.get("remedy_kind"),
             "risk_level": proposal.get("risk_level", "medium"),
             "confidence": proposal.get("confidence", 0.5),
+            "empathy_action": empathy_action,
         })
         # Reach forwards via the user's most-active channel as high-priority.
+        # Empathy 'downgrade' lowers the candidate priority one rung so
+        # reach's queue treats it as ordinary medium rather than high.
+        # tier3 stays high regardless — never downgrade an approval ask.
+        if tier == "tier3_approve_before":
+            cand_priority = 0.9
+        elif empathy_action == "downgrade":
+            cand_priority = 0.3
+        else:
+            cand_priority = 0.5
         publish("brain.synthesis.candidate", {
             "kind": "executive_proposal",
             "evidence": {
@@ -652,7 +692,7 @@ def _request_permission(proposal: dict, ctx: dict) -> str:
                 "summary": proposal.get("summary"),
                 "user_message": user_msg,
             },
-            "priority": 0.9 if tier == "tier3_approve_before" else 0.5,
+            "priority": cand_priority,
             "ts": time.time(),
         })
     except Exception as e:
