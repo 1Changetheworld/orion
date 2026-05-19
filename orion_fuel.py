@@ -337,6 +337,82 @@ class TgptFuel(FuelAdapter):
 # ADAPTER: Remote Ollama (on another device in the mesh)
 # ═══════════════════════════════════════════════════════════════
 
+class UncensoredOllamaFuel(FuelAdapter):
+    """Dedicated fuel adapter for the uncensored tier — ARSENAL (sealed
+    ASUS Kali in the Homeland Cyberdeck) hosts dolphin-mistral:7b and
+    dolphin-phi:2.7b, which have RLHF refusal patterns stripped.
+
+    Founder direction 2026-05-19: the uncensored LLM gets brain access
+    as a NEW connection — a distinct fuel TIER, not a default. The
+    normal fuel ladder (Claude CLI → Codex → Gemini → Letta → Ollama
+    local → Remote Ollama) handles every routine intent. Uncensored
+    fuel is requested explicitly — by an intent tagged `needs-
+    uncensored` or by a caller passing prefer_tier="uncensored". This
+    keeps the moat principle: adaptive routing across many model
+    surfaces, not a flat preference for the loudest one.
+
+    Hosts read from ORION_UNCENSORED_OLLAMA_HOSTS env var (comma-
+    separated). Default points at ARSENAL on the tailnet — works from
+    any Orion host that has tailscale up.
+    """
+    name = "uncensored-ollama"
+    tier = 5            # lowest auto-priority; explicit-request only
+    tier_label = "uncensored"
+
+    # Default = ARSENAL on the tailnet. Override with env var if the
+    # uncensored-tier host moves.
+    DEFAULT_HOSTS = ["kali.tail82e0b0.ts.net:11434", "10.0.0.231:11434"]
+
+    # Models we recognize as uncensored. Adapter only "detects" if at
+    # least one is present on the chosen host.
+    UNCENSORED_MODELS = ("dolphin-mistral:7b", "dolphin-phi:2.7b",
+                         "dolphin:7b", "dolphin-llama3:8b")
+
+    def __init__(self, hosts=None):
+        import os as _os
+        env_hosts = _os.environ.get("ORION_UNCENSORED_OLLAMA_HOSTS", "")
+        if env_hosts:
+            self._hosts = [h.strip() for h in env_hosts.split(",") if h.strip()]
+        else:
+            self._hosts = hosts or list(self.DEFAULT_HOSTS)
+        self._active = None
+        self._model = None
+
+    def detect(self):
+        for host in self._hosts:
+            try:
+                req = urllib.request.Request(f"http://{host}/api/tags")
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    names = [m["name"] for m in json.loads(resp.read()).get("models", [])]
+                    # Only register as uncensored fuel if an uncensored
+                    # model is actually present. If the host runs only
+                    # qwen/mistral, the regular RemoteOllamaFuel can
+                    # pick it up — this adapter stays specifically
+                    # about uncensored tier.
+                    for preferred in self.UNCENSORED_MODELS:
+                        if preferred in names:
+                            self._active = host
+                            self._model = preferred
+                            return True
+            except Exception:
+                continue
+        return False
+
+    def query(self, prompt, max_turns=15):
+        if not self._active or not self._model:
+            return None
+        payload = json.dumps({"model": self._model, "prompt": prompt, "stream": False}).encode()
+        try:
+            req = urllib.request.Request(
+                f"http://{self._active}/api/generate",
+                data=payload, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                return json.loads(resp.read()).get("response", "")
+        except Exception:
+            return None
+
+
 class RemoteOllamaFuel(FuelAdapter):
     name = "remote-ollama"
     tier = 3
@@ -415,6 +491,7 @@ class FuelSystem:
             GeminiCLIFuel(),
             OllamaFuel(),
             RemoteOllamaFuel(),
+            UncensoredOllamaFuel(),   # uncensored tier — explicit-request only
             TgptFuel(),
         ]
         self.available = []
@@ -444,16 +521,48 @@ class FuelSystem:
             lines.append(f"{marker} [{a.tier}] {a.name}")
         return "\n".join(lines)
 
-    def query(self, prompt, max_turns=15):
+    def query(self, prompt, max_turns=15, prefer_tier=None, tags=None):
         """
         Query the best available fuel. Auto-fallback on failure.
         Returns (response, engine_name) or (None, "none").
+
+        prefer_tier (NEW 2026-05-19): explicit fuel-tier preference.
+            Accepts "uncensored" (routes to ARSENAL's dolphin-mistral
+            via UncensoredOllamaFuel) or None (default cascade).
+        tags: list of intent tags; if "needs-uncensored" is present,
+            behaves as if prefer_tier="uncensored" — lets callers
+            request the tier by intent metadata rather than explicit
+            argument. The needs-uncensored tag is what orion_intent
+            should attach when the user asks for something the
+            default Claude/Codex/Gemini ladder would refuse.
 
         Read ~/.orion/fuel_preference.json at top of routing. If a specific
         fuel is named there (not "auto"), try it first. On its failure,
         fall through the priority cascade. Escape hatch:
         ORION_FUEL_PREF_LOCKED=1 disables the preference read.
         """
+        # Tier-preference path (NEW). Honored BEFORE the file-based
+        # preference so an explicit intent flag wins over a sticky
+        # preference. Caller asks for uncensored → we send it to the
+        # uncensored adapter directly, no cascade. Falls through if
+        # the adapter isn't currently available.
+        if prefer_tier is None and tags and "needs-uncensored" in tags:
+            prefer_tier = "uncensored"
+        if prefer_tier:
+            for adapter in self.available:
+                if getattr(adapter, "tier_label", None) == prefer_tier:
+                    try:
+                        result = adapter.query(prompt, max_turns)
+                        if result:
+                            return result, adapter.name
+                    except Exception:
+                        pass
+                    # Failed the requested tier — fall through to
+                    # default cascade so the user still gets an
+                    # answer, just from a different surface. Log
+                    # the failover for audit.
+                    break
+
         if not os.environ.get("ORION_FUEL_PREF_LOCKED"):
             try:
                 pref_path = os.path.expanduser("~/.orion/fuel_preference.json")
