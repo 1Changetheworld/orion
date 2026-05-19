@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# orion — entry-point CLI for the Orion-activated terminal.
+#
+# Drops the user into the brain. Subcommands are dispatched to the
+# corresponding orion_*.py module in $ORION_CODE_DIR. Without args it
+# starts an interactive chat session via orion_chat.py if available,
+# else prints status.
+#
+# Install at ~/.orion-bin/orion (or anywhere on PATH), chmod +x.
+
+set -e
+
+ORION_CODE_DIR="${ORION_CODE_DIR:-$HOME/orion-code}"
+PY="${ORION_PYTHON:-python3}"
+
+if [ ! -d "$ORION_CODE_DIR" ]; then
+    echo "orion: code dir not found at $ORION_CODE_DIR"
+    echo "       set ORION_CODE_DIR or clone master to $HOME/orion-code"
+    exit 1
+fi
+
+cmd="${1:-chat}"
+shift || true
+
+case "$cmd" in
+    chat | "")
+        # Interactive chat with the brain. Falls back to a simple
+        # recall-loop if orion_chat.py isn't present.
+        if [ -f "$ORION_CODE_DIR/orion_chat.py" ]; then
+            exec "$PY" "$ORION_CODE_DIR/orion_chat.py" "$@"
+        else
+            echo "orion chat: orion_chat.py not present; use 'orion recall <query>' or 'orion status'."
+            exit 1
+        fi
+        ;;
+    recall)
+        "$PY" -c "
+import sys; sys.path.insert(0, '$ORION_CODE_DIR')
+from orion_brain_portable import GraphMemory, GRAPH_PATH
+g = GraphMemory()
+g.load(GRAPH_PATH)
+hits = g.recall(' '.join('''$*'''.split()), limit=5)
+for nid, score, node in hits:
+    print(f'[{score:.2f}] {node.get(\"type\",\"?\")} #{nid}')
+    print('  ', (node.get('content') or '')[:200])
+"
+        ;;
+    list | team)
+        exec "$PY" "$ORION_CODE_DIR/orion_team.py" list
+        ;;
+    status | vitals)
+        # Pull live mesh status — services running, recent reach, drift state
+        echo "── Plexus services ──"
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl --user list-units 'orion-*' --no-pager 2>&1 | head -25
+        else
+            launchctl list 2>&1 | grep com.orion | sort
+        fi
+        echo
+        echo "── Drift vs origin/master ──"
+        "$PY" "$ORION_CODE_DIR/orion_updater.py" check 2>&1 || echo "(updater not deployable here)"
+        ;;
+    memorize)
+        # Quick memorize from CLI. Content is the rest of argv.
+        "$PY" -c "
+import sys; sys.path.insert(0, '$ORION_CODE_DIR')
+from orion_brain_portable import GraphMemory, GRAPH_PATH
+g = GraphMemory()
+g.load(GRAPH_PATH)
+nid = g.store('''$*''', node_type='fact', tags=['cli-memorize'])
+g.save(GRAPH_PATH)
+print(f'memorized as node {nid}')
+"
+        ;;
+    federation)
+        exec "$PY" "$ORION_CODE_DIR/orion_federation.py" "$@"
+        ;;
+    membrane)
+        exec "$PY" "$ORION_CODE_DIR/orion_membrane.py" "$@"
+        ;;
+    empathy)
+        "$PY" -c "
+import sys, json; sys.path.insert(0, '$ORION_CODE_DIR')
+from orion_empathy import explain
+print(json.dumps(explain(), indent=2))
+"
+        ;;
+    updater)
+        exec "$PY" "$ORION_CODE_DIR/orion_updater.py" "$@"
+        ;;
+    help | -h | --help)
+        cat <<'EOF'
+orion — terminal CLI for the Orion brain
+
+USAGE:
+    orion               start interactive chat (default)
+    orion recall <q>    semantic + tag-indexed memory recall
+    orion list          show active Orion sessions in the team room
+    orion status        services + drift state + brain health
+    orion memorize <s>  write a fact into the brain
+    orion federation [id|announce|encounters]
+    orion membrane [classify|egress|audit|policy]
+    orion empathy       what the user-state observer thinks of you right now
+    orion updater [check|deploy|state]
+    orion help          this message
+
+The brain runs as 21 Plexus services in the background. This CLI is
+your direct line into it. Anything you do here is visible to every
+other Orion-attached AI session across the mesh.
+EOF
+        ;;
+    *)
+        # Anything else: pass through to a matching orion_*.py module
+        if [ -f "$ORION_CODE_DIR/orion_$cmd.py" ]; then
+            exec "$PY" "$ORION_CODE_DIR/orion_$cmd.py" "$@"
+        else
+            echo "orion: unknown subcommand '$cmd'. try 'orion help'."
+            exit 1
+        fi
+        ;;
+esac
