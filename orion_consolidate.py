@@ -22,7 +22,25 @@ import os
 import time
 
 
-def consolidate(graph_path, apply=False, decay_days=45, decay_conf=0.4):
+# Explicit throwaway-test markers. Conservative on purpose — only nodes that
+# are clearly developer/test noise, never real observations.
+_NOISE_CONTENT = ("smoke test", "smoke-test", "brain integration smoke",
+                  "integration test", "test from forge", "test message",
+                  "ping test", "diagnostic test")
+_NOISE_TAGS = ("smoke-test", "trader-smoke-test", "smoke", "test-only")
+
+
+def _is_noise(node):
+    content = (node.get("content") or "").lower()
+    tags = [str(t).lower() for t in (node.get("tags") or [])]
+    if any(m in content for m in _NOISE_CONTENT):
+        return True
+    if any(t in _NOISE_TAGS for t in tags):
+        return True
+    return False
+
+
+def consolidate(graph_path, apply=False, decay_days=45, decay_conf=0.4, prune_noise=False):
     archive_path = graph_path.replace(".json", ".archive.json")
     with open(graph_path, encoding="utf-8") as f:
         d = json.load(f)
@@ -46,6 +64,14 @@ def consolidate(graph_path, apply=False, decay_days=45, decay_conf=0.4):
             winner[key] = nid
     kept = {nid: n for nid, n in nodes.items() if nid not in archived}
 
+    # ── NOISE pruning (opt-in): archive explicit test/throwaway nodes ──
+    noise_pruned = 0
+    if prune_noise:
+        for nid in list(kept.keys()):
+            if _is_noise(kept[nid]):
+                archived[nid] = kept.pop(nid)
+                noise_pruned += 1
+
     # ── SALIENCE report (not applied): old AND low-confidence among kept ──
     now = time.time()
     cutoff = now - decay_days * 86400
@@ -57,8 +83,9 @@ def consolidate(graph_path, apply=False, decay_days=45, decay_conf=0.4):
 
     result = {
         "before": len(nodes),
-        "exact_dups_and_empty_archived": len(archived),
-        "after_safe": len(kept),
+        "exact_dups_and_empty_archived": len(archived) - noise_pruned,
+        "noise_pruned": noise_pruned,
+        "after": len(kept),
         "salience_decay_candidates": len(decay_candidates),
         "applied": False,
     }
@@ -87,10 +114,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--graph", default=os.path.expanduser("~/.orion/brain/graph_memory.json"))
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--prune-noise", action="store_true",
+                    help="also archive explicit test/throwaway nodes")
     ap.add_argument("--decay-days", type=int, default=45)
     args = ap.parse_args()
     print(json.dumps(consolidate(args.graph, apply=args.apply,
-                                 decay_days=args.decay_days), indent=2))
+                                 decay_days=args.decay_days,
+                                 prune_noise=args.prune_noise), indent=2))
 
 
 if __name__ == "__main__":

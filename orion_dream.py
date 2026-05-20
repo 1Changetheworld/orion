@@ -284,6 +284,26 @@ def _run_dream_cycle() -> dict:
         })
         new_playbooks += 1
 
+    # Memory consolidation — turn the growing graph into curated memory.
+    # Archive-not-delete: exact-duplicate + empty nodes move to the archive
+    # file so the brain learns instead of merely accumulating. Best-effort;
+    # never breaks the dream cycle. (Runs nightly when the substrate is idle,
+    # so the brain's own save() rarely races it; growth stays bounded either
+    # way since consolidation is idempotent.)
+    mem_consolidation = None
+    try:
+        import orion_consolidate
+        graph_path = os.path.expanduser(
+            os.environ.get("ORION_GRAPH_PATH") or "~/.orion/brain/graph_memory.json")
+        mem_consolidation = orion_consolidate.consolidate(graph_path, apply=True)
+        _publish_event("brain.dream.memory_consolidated", mem_consolidation)
+        logger.info("memory consolidation: %s -> %s (archived %s)",
+                    mem_consolidation.get("before"),
+                    mem_consolidation.get("after"),
+                    mem_consolidation.get("exact_dups_and_empty_archived"))
+    except Exception as e:
+        logger.warning("memory consolidation skipped: %s", e)
+
     summary = {
         "ts": time.time(),
         "duration_sec": time.time() - started,
@@ -291,6 +311,7 @@ def _run_dream_cycle() -> dict:
         "groups": len(groups),
         "new_playbooks": new_playbooks,
         "demoted": demoted,
+        "memory_consolidation": mem_consolidation,
     }
     try:
         with history_path.open("a", encoding="utf-8") as f:
