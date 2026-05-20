@@ -127,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
                             pass
 
             # ═══ FULL BRAIN ═══
-            from orion_brain_v6 import think
+            from orion_brain import think
             result = think(message, interface=interface, user_id=user_id)
             self._respond(200, result)
 

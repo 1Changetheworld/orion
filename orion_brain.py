@@ -31,7 +31,7 @@ IDENTITY = """You are ORION — a personal AI intelligence layer.
 # MEMORY — Multi-layer (Graph + Vector + Compiler)
 # ═══════════════════════════════════════════════════════════════
 
-import orion_memory_v2 as memory
+import orion_memory as memory
 
 # Initialize memory system
 _graph = memory.init()
