@@ -23,6 +23,43 @@ import time
 # Every adapter implements: detect() -> bool, query(prompt) -> str
 # ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+# FUEL-OUTPUT VALIDATION
+# A throttled/errored model often returns its error AS text with a
+# zero exit code (e.g. "API Error: Rate limit reached"). If an adapter
+# returns that string, the router treats it as a real answer and never
+# falls through. This detector makes a throttled fuel return None so the
+# brain swaps to the next fuel — Orion stays alive when one model is down.
+# The brain is the intelligence; the model is interchangeable fuel.
+# ═══════════════════════════════════════════════════════════════
+
+_FUEL_ERROR_MARKERS = (
+    "rate limit reached", "rate-limit", "rate limit",
+    "usage limit", "quota exceeded", "exceeded your",
+    "you've reached your", "you have reached your",
+    "overloaded", "too many requests", "try again later",
+    "service unavailable", "service is unavailable",
+    "temporarily unavailable", "529 ", "503 ",
+)
+
+
+def _is_error_response(text):
+    """True if a fuel's output is an error/throttle message, not an answer.
+
+    Used by every strong-CLI adapter so a throttled primary fuel cleanly
+    yields to the next one in the cascade instead of forwarding its error
+    to the user's channel.
+    """
+    if not text or not text.strip():
+        return True
+    s = text.strip()
+    low = s.lower()
+    if low.startswith(("error:", "api error", "an error occurred",
+                        "request failed", "fatal:")):
+        return True
+    return any(m in low for m in _FUEL_ERROR_MARKERS)
+
+
 class FuelAdapter:
     """Base class for all fuel sources."""
     name = "unknown"
@@ -70,7 +107,7 @@ class ClaudeCLIFuel(FuelAdapter):
             with urllib.request.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
                 output = result.get("output", "")
-                if output and not output.startswith("Error:"):
+                if output and not _is_error_response(output):
                     return output
         except Exception:
             pass
@@ -81,7 +118,7 @@ class ClaudeCLIFuel(FuelAdapter):
                     [self._path, "-p", prompt, "--max-turns", str(max_turns), "--dangerously-skip-permissions"],
                     capture_output=True, text=True, timeout=120
                 )
-                if result.returncode == 0 and result.stdout.strip():
+                if result.returncode == 0 and result.stdout.strip() and not _is_error_response(result.stdout):
                     return result.stdout.strip()
             except Exception:
                 pass
@@ -115,7 +152,7 @@ class CodexCLIFuel(FuelAdapter):
                 [self._path, "exec", "--skip-git-repo-check", prompt],
                 capture_output=True, text=True, timeout=120
             )
-            if result.returncode == 0 and result.stdout.strip():
+            if result.returncode == 0 and result.stdout.strip() and not _is_error_response(result.stdout):
                 return result.stdout.strip()
         except Exception:
             pass
@@ -145,7 +182,7 @@ class GeminiCLIFuel(FuelAdapter):
                 [self._path, "-p", prompt],
                 capture_output=True, text=True, timeout=120
             )
-            if result.returncode == 0 and result.stdout.strip():
+            if result.returncode == 0 and result.stdout.strip() and not _is_error_response(result.stdout):
                 return result.stdout.strip()
         except Exception:
             pass
@@ -326,7 +363,7 @@ class TgptFuel(FuelAdapter):
                 [self._path, "-q", prompt],
                 capture_output=True, text=True, timeout=60
             )
-            if result.returncode == 0 and result.stdout.strip():
+            if result.returncode == 0 and result.stdout.strip() and not _is_error_response(result.stdout):
                 return result.stdout.strip()
         except Exception:
             pass
