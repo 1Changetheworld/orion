@@ -16,8 +16,17 @@ import hashlib
 import os
 import urllib.request
 from collections import defaultdict
-from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import PointStruct
+    QDRANT_AVAILABLE = True
+except Exception:
+    # The vector layer is OPTIONAL. Offline/local installs — and any host
+    # without qdrant — must still run the brain. Graph memory is the core;
+    # vectors only enrich recall. Degrade to graph-only instead of failing.
+    QdrantClient = None
+    PointStruct = None
+    QDRANT_AVAILABLE = False
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -154,8 +163,13 @@ _qdrant = None
 
 def get_qdrant():
     global _qdrant
+    if not QDRANT_AVAILABLE:
+        return None
     if _qdrant is None:
-        _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        try:
+            _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        except Exception:
+            return None
     return _qdrant
 
 
@@ -172,7 +186,12 @@ def embed(text):
 
 
 def vector_search(query, collections=None, limit=5):
-    """Search Qdrant vector memory. Returns context string with fencing."""
+    """Search Qdrant vector memory. Returns context string with fencing.
+
+    Returns "" when the vector layer is unavailable (offline/local installs
+    without qdrant, or qdrant server down); graph memory still answers."""
+    if not QDRANT_AVAILABLE:
+        return ""
     if collections is None:
         collections = ["orion_brain", "server_knowledge"]
 
@@ -183,6 +202,8 @@ def vector_search(query, collections=None, limit=5):
 
     results = []
     client = get_qdrant()
+    if client is None:
+        return ""
     for collection in collections:
         try:
             hits = client.query_points(
@@ -212,7 +233,10 @@ def vector_search(query, collections=None, limit=5):
 
 
 def vector_store(text, category="conversation", interface="unknown", metadata=None):
-    """Store into Qdrant vector memory."""
+    """Store into Qdrant vector memory. No-op when the vector layer is absent
+    (offline/local installs) — graph memory remains the durable record."""
+    if not QDRANT_AVAILABLE:
+        return
     try:
         vector = embed(text)
         point_id = int(hashlib.md5(f"{time.time()}{text[:50]}".encode()).hexdigest()[:12], 16)

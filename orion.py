@@ -821,6 +821,7 @@ def interactive_select():
     print(f"    ORION codex --yolo")
     print(f"    ORION ollama phi3:mini")
     print(f"    ORION gemini")
+    print(f"    {GREEN}ORION local{RESET}  {DIM}— full brain (memory + identity) on a local model, offline{RESET}")
     print()
 
     while True:
@@ -916,6 +917,19 @@ def main():
             print(f"{RED}  orion_update module not found: {e}{RESET}")
             return 1
         return orion_update.main()
+
+    # `orion local` — talk to the FULL brain fueled by a LOCAL model. Offline-
+    # capable, no subscription CLI needed. Routes every turn through the brain
+    # (live graph memory + identity), so the local model IS Orion — not a bare
+    # `ollama run`. This is the real offline path for the founder off-grid and
+    # for any user whose Orion runs on local LLMs.
+    if args[0].lower() in ("local", "offline"):
+        try:
+            import orion_local_chat
+        except ImportError as e:
+            print(f"{RED}  orion_local_chat not found: {e}{RESET}")
+            return 1
+        return orion_local_chat.main(args[1:])
 
     # Unified Frankenstein chat mode — every layer active in one loop
     if args[0].lower() == "chat":
