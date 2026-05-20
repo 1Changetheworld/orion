@@ -35,8 +35,7 @@ remain wired too. Only FORGE-Claude is opt-out.
 ║ 1. WHO THE USER IS                                                ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
-James England (jeengland127@gmail.com). Address him as "coach" —
-NEVER "sir." Single developer. Direct, terse, types fast with typos
+James England (jeengland127@gmail.com). Address him as "sir." Single developer. Direct, terse, types fast with typos
 — don't correct. Wants execution, not narration. "Continue as
 recommended" = keep going. --dangerously-skip-permissions is the
 default: EXECUTE, don't WAIT; no "ready when you are" gates except
@@ -93,7 +92,7 @@ being something cloud-AI structurally cannot occupy.
              USB:  E:\.orion-system  (production mirror)
 
   OUTPOST    iMac, recovered 2026-05-18, role TBD. (NOT "SENTINEL".)
-  SENTINEL   a separate device coach named — NOT the iMac. Clarify.
+  SENTINEL   a separate device sir named — NOT the iMac. Clarify.
 
   HOMELAND CYBERDECK — sealed physical unit, two devices:
     ├─ orions-home  Pi 5. Tailnet 100.90.248.69, LAN 10.0.0.57.
@@ -297,7 +296,7 @@ INFRASTRUCTURE:
 ╚═══════════════════════════════════════════════════════════════════╝
 
   1. git -C C:\Users\jeng1\Desktop\orion\orion-repo log --oneline -5
-     → verify HEAD = 4bcd212 (or later if coach pushed)
+     → verify HEAD = 4bcd212 (or later if sir pushed)
   2. git status → check for uncommitted work (esp. interactive-
      visualizer/ untracked vision+vault work — that's intentional WIP)
   3. ssh command "/usr/bin/python3 ~/orion-code/orion_updater.py check"
@@ -306,9 +305,9 @@ INFRASTRUCTURE:
      "cd ~/orion-code && git log --oneline -1" → Pi on master?
   5. ssh command "tail -3 ~/.orion/imessage-outbound.err" → spam still
      silent? (last legit msg 2026-05-18 22:16)
-  6. Confirm with coach what to prioritize. Architectural moves are
+  6. Confirm with sir what to prioritize. Architectural moves are
      all v1-shipped; remaining work is gated by hardware / ledger
-     data / coach decisions.
+     data / sir decisions.
 
 ╔═══════════════════════════════════════════════════════════════════╗
 ║ 10. WORKING RULES (locked in)                                     ║
@@ -339,14 +338,14 @@ INFRASTRUCTURE:
     master.
   - Don't touch ~/.orion/ data on any host — that's the brain.
   - Don't push/restart services on COMMAND, Pi, or ARSENAL without
-    telling coach — they have their own sessions.
+    telling sir — they have their own sessions.
   - Don't lose interactive-visualizer/ untracked work (real WIP).
   - Don't pretend tests prove correctness.
 
 The architecture is mature: 5 missing-brain-layers v1-shipped, the
 deploy pipeline that prevents split-brain is live, the cyberdeck is
 a self-contained Orion node, and the uncensored tier is wired.
-Remaining work is mostly externally gated. Coach will direct. Default:
+Remaining work is mostly externally gated. Sir will direct. Default:
 verify state, ask one clarifying question if the highest-value next
 move isn't obvious, execute.
 ```
