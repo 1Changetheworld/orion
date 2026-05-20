@@ -707,6 +707,26 @@ def launch_fuel(fuel_key, extra_args):
         print(f"  Install it and try again.")
         return 1
 
+    # Ollama needs a model name. The interactive menu passes none, and a
+    # bare `ollama run` errors ("requires at least 1 arg"). Prompt for one.
+    if fuel_key == "ollama" and not extra_args:
+        models = detect_ollama_models()
+        if not models:
+            print(f"{RED}  No Ollama models installed.{RESET}")
+            print(f"  Pull one first, e.g.: ollama pull phi3:mini")
+            return 1
+        # Default to an existing Orion-branded model if present, else the first.
+        default = next((m["name"] for m in models if m["name"].startswith("orion")),
+                       models[0]["name"])
+        print(f"  {PURPLE}Ollama models:{RESET}")
+        for i, m in enumerate(models, 1):
+            print(f"    {DIM}[{i}]{RESET}  {m['name']}  {DIM}{m['size']}{RESET}")
+        sel = input(f"  Select model [1-{len(models)}, Enter={default}]: ").strip()
+        if sel.isdigit() and 1 <= int(sel) <= len(models):
+            extra_args = [models[int(sel) - 1]["name"]]
+        else:
+            extra_args = [default]
+
     # Ollama: auto-initialize Orion-branded model from any base model
     if fuel_key == "ollama" and extra_args:
         base_model = extra_args[0]
