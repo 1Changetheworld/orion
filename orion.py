@@ -937,6 +937,17 @@ def main():
             return 1
         return orion_local_chat.main(args[1:])
 
+    # `orion mesh` — location-aware device mesh: who's online, on which
+    # transport (LAN at home, Tailscale away). `orion mesh monitor` runs the
+    # offline-alert loop. One brain across every device — home or traveling.
+    if args[0].lower() == "mesh":
+        try:
+            import orion_mesh
+        except ImportError as e:
+            print(f"{RED}  orion_mesh not found: {e}{RESET}")
+            return 1
+        return orion_mesh._main(args[1:])
+
     # Unified Frankenstein chat mode — every layer active in one loop
     if args[0].lower() == "chat":
         try:

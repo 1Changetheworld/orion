@@ -8,6 +8,8 @@
 
 A portable intelligence layer that works with any AI model, on any device, with persistent memory that belongs to you. $0 per request. Zero API keys. Zero framework dependencies.
 
+**Orion is at its most powerful as a server, across a device mesh.** Run it on a home server, a Pi, a laptop, a cloud box — one brain spans them all. It monitors every device, reaches you across any of them, and stays the *same* Orion whether you're on the home LAN or across the world (it falls back from LAN to Tailscale automatically). It'll text you the moment a server device goes offline. If you have more than one machine, that mesh is where Orion shines — see **[Mesh Mode](#mesh-mode--one-brain-across-every-device)**.
+
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 ![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)
@@ -45,6 +47,18 @@ Orion's [Plexus](docs/architecture/orion-plexus-architecture.md) — the nervous
 *Fresh install on a Raspberry Pi 5. Proto-Orion speaks before any model attaches. Same brain across Claude, Codex, and Gemini. Real recording, 2026-04-23.*
 
 </div>
+
+---
+
+## Mesh Mode — one brain across every device
+
+If you run Orion on more than one machine (a home server, a Pi, a laptop, a cloud box), they form **one mesh under a single brain**:
+
+- **Location-aware reach** — Orion talks to each device over the LAN at home and **falls back to Tailscale automatically** when you're away. Same brain, any network — "as if you were home."
+- **Live monitoring** — `orion mesh` shows every device: online/offline and which transport it's reachable on right now.
+- **Proactive alerts** — Orion **texts you the moment a server device goes offline** (and again when it's back), edge-triggered so a sustained outage pings once, not endlessly.
+
+The mesh runs from `orion_mesh.py`; the device map is per-instance (`~/.orion/mesh/devices.json`, or discovered from `tailscale status`) so no addresses live in the repo. This is what makes Orion a genuine **personal-server brain across a device mesh**, not just a single-box assistant.
 
 ---
 
