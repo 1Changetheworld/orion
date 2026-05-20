@@ -107,6 +107,17 @@ def _publish_imessage(text):
         return False
 
 
+def _publish_event(subject, payload):
+    """Emit a structured mesh event on the substrate so the recovery loop
+    (orion_mesh_recovery) and other services can react. Best-effort."""
+    try:
+        from orion_substrate import publish
+        publish(subject, payload)
+        return True
+    except Exception:
+        return False
+
+
 def monitor(interval=60):
     """Probe all devices on a loop and TEXT the user on online<->offline
     transitions. Edge-triggered (state stored in mesh/state.json) so a sustained
@@ -127,8 +138,14 @@ def monitor(interval=60):
             was = prev.get(r["name"])
             if was is True and r["online"] is False:
                 _publish_imessage("Heads up, sir — %s just went OFFLINE on the mesh." % r["name"])
+                _publish_event("brain.mesh.device_offline",
+                               {"device": r["name"], "last_transport": r.get("transport"),
+                                "address": r.get("address"), "ts": __import__("time").time()})
             elif was is False and r["online"] is True:
                 _publish_imessage("%s is back ONLINE on the mesh, sir." % r["name"])
+                _publish_event("brain.mesh.device_online",
+                               {"device": r["name"], "transport": r.get("transport"),
+                                "address": r.get("address"), "ts": __import__("time").time()})
         prev = cur
         try:
             json.dump(cur, open(STATE_PATH, "w", encoding="utf-8"))

@@ -65,6 +65,7 @@ PLEXUS_SERVICES=(
     "federation:orion_federation.py"
     "updater:orion_updater.py"
     "task-gossip:orion_task_gossip.py"
+    "mesh-recovery:orion_mesh_recovery.py"
 )
 
 # Detect platform
