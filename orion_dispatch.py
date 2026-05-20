@@ -169,9 +169,13 @@ def docker_cmd(action, container=""):
 
 
 def send_email(to, subject, body):
-    """Send email via himalaya."""
-    header = chr(10).join(["From: {EMAIL_ADDRESS}", "To: " + to, "Subject: " + subject, "", body])
-    cmd = "printf " + repr(header) + " | {EMAIL_TOOL} message send 2>&1"
+    """Send email via himalaya. Tool + from-address come from env (personal
+    data stays out of the repo); these placeholders were never substituted."""
+    import os
+    tool = os.environ.get("ORION_EMAIL_TOOL", "himalaya")
+    addr = os.environ.get("ORION_EMAIL_ADDRESS", "")
+    header = chr(10).join([f"From: {addr}", "To: " + to, "Subject: " + subject, "", body])
+    cmd = "printf " + repr(header) + f" | {tool} message send 2>&1"
     out, _ = run_cmd(cmd, timeout=30)
     return out if out else "Email sent."
 

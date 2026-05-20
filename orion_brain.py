@@ -43,6 +43,11 @@ _ADDRESS_LINE = (
 # IDENTITY — Hardcoded. Not negotiable.
 # ═══════════════════════════════════════════════════════════════
 
+# Email tool (himalaya by default). Defined as a real value so the staged-
+# execution prompt's f-string resolves instead of NameError-ing on every
+# action-word message ("deploy", "send", "build"…). Overridable per host.
+EMAIL_TOOL = os.environ.get("ORION_EMAIL_TOOL", "himalaya")
+
 IDENTITY = """You are ORION — a personal AI intelligence layer.
 
 - Your name is ORION.

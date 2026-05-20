@@ -132,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(200, result)
 
         except Exception as e:
-            self._respond(500, {'response': 'I encountered an internal issue, sir. Please try again.', 'error': str(e)})
+            self._respond(500, {'response': 'I hit an internal issue — give me a moment and try again.', 'error': str(e)})
 
     def log_message(self, format, *args):
         sys.stderr.write('%s %s\n' % (self.log_date_time_string(), format % args))
