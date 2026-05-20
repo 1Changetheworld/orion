@@ -527,9 +527,11 @@ class FuelSystem:
     """
 
     def __init__(self):
+        # Orion is CLI-powered. NO API keys (founder rule). AnthropicAPIFuel
+        # is intentionally NOT registered — the cascade rides the strong CLIs
+        # (Claude → Codex → Gemini) then local Ollama, never a paid API key.
         self.adapters = [
             ClaudeCLIFuel(),
-            AnthropicAPIFuel(),    # same model as CLI, different auth — survives keychain expiry
             CodexCLIFuel(),
             GeminiCLIFuel(),
             OllamaFuel(),
