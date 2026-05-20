@@ -306,6 +306,12 @@ class OllamaFuel(FuelAdapter):
                                 break
                         if not self._model and names:
                             self._model = names[0]
+                        # Explicit override — lets the launcher / brain route a
+                        # SPECIFIC local model through the cascade (used by the
+                        # brain-backed `orion local` path and the Ollama menu).
+                        _env_model = os.environ.get("ORION_OLLAMA_MODEL")
+                        if _env_model and _env_model in names:
+                            self._model = _env_model
                         return True
             except Exception:
                 continue

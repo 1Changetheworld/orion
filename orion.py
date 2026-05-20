@@ -707,41 +707,47 @@ def launch_fuel(fuel_key, extra_args):
         print(f"  Install it and try again.")
         return 1
 
-    # Ollama needs a model name. The interactive menu passes none, and a
-    # bare `ollama run` errors ("requires at least 1 arg"). Prompt for one.
-    if fuel_key == "ollama" and not extra_args:
-        models = detect_ollama_models()
-        if not models:
-            print(f"{RED}  No Ollama models installed.{RESET}")
-            print(f"  Pull one first, e.g.: ollama pull phi3:mini")
-            return 1
-        # Default to an existing Orion-branded model if present, else the first.
-        default = next((m["name"] for m in models if m["name"].startswith("orion")),
-                       models[0]["name"])
-        print(f"  {PURPLE}Ollama models:{RESET}")
-        for i, m in enumerate(models, 1):
-            print(f"    {DIM}[{i}]{RESET}  {m['name']}  {DIM}{m['size']}{RESET}")
-        sel = input(f"  Select model [1-{len(models)}, Enter={default}]: ").strip()
-        if sel.isdigit() and 1 <= int(sel) <= len(models):
-            extra_args = [models[int(sel) - 1]["name"]]
+    # Ollama → route through the BRAIN (live memory + identity), never a bare
+    # `ollama run` (which is a brain-less model and outputs nothing Orion).
+    # Every Ollama path collapses into one brain-backed path, so the local
+    # model is plugged into the real-time brain exactly like the CLI fuels:
+    # each turn goes through orion_brain.think() and writes back to memory.
+    if fuel_key == "ollama":
+        if not extra_args:
+            models = detect_ollama_models()
+            if not models:
+                print(f"{RED}  No Ollama models installed.{RESET}")
+                print(f"  Pull one first, e.g.: ollama pull qwen3:8b")
+                return 1
+            names = [m["name"] for m in models]
+            # Default to a known-good BASE model — the auto-branded orion-* ones
+            # can be broken (a generic Modelfile corrupts reasoning models).
+            default = next((p for p in ["qwen3:14b", "qwen3:8b", "phi3:mini"] if p in names),
+                           next((n for n in names if not n.startswith("orion")), names[0]))
+            print(f"  {PURPLE}Ollama models:{RESET}")
+            for i, m in enumerate(models, 1):
+                print(f"    {DIM}[{i}]{RESET}  {m['name']}  {DIM}{m['size']}{RESET}")
+            sel = input(f"  Select model [1-{len(models)}, Enter={default}]: ").strip()
+            model = (models[int(sel) - 1]["name"]
+                     if sel.isdigit() and 1 <= int(sel) <= len(models) else default)
         else:
-            extra_args = [default]
-
-    # Ollama: auto-initialize Orion-branded model from any base model
-    if fuel_key == "ollama" and extra_args:
-        base_model = extra_args[0]
-        # If it's not already an orion- model, create one
-        if not base_model.startswith("orion"):
-            orion_model = ensure_ollama_orion_model(base_model)
-            extra_args = [orion_model] + extra_args[1:]
+            model = extra_args[0]
+        os.environ["ORION_OLLAMA_MODEL"] = model
+        show_banner(info["name"], info["color"])
+        print(f"  {DIM}Brain-backed — memory + identity live. Fuel: {model}{RESET}")
+        print()
+        try:
+            import orion_local_chat
+        except ImportError as e:
+            print(f"{RED}  orion_local_chat not found: {e}{RESET}")
+            return 1
+        return orion_local_chat.main([])
 
     cmd = [cmd_path] + info["default_args"] + extra_args
-
     show_banner(info["name"], info["color"])
     print(f"  {DIM}Launching: {' '.join(cmd)}{RESET}")
     print(f"  {DIM}Brain loaded. The model is fuel.{RESET}")
     print()
-
     return _run_fuel(cmd, fuel_key)
 
 
