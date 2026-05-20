@@ -73,12 +73,57 @@ def _task_path(task_id):
     return os.path.join(TASKS_DIR, "%s.jsonl" % task_id)
 
 
-def _append(task_id, record):
+def _append(task_id, record, emit=True):
     os.makedirs(TASKS_DIR, exist_ok=True)
     record.setdefault("hlc", _hlc())
     with open(_task_path(task_id), "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    # Best-effort cross-host mirror. Never blocks or raises — the file is the
+    # source of truth; gossip is an optional transport. emit=False for records
+    # we RECEIVED from a peer (don't echo them back into the mesh).
+    if emit:
+        try:
+            import orion_task_gossip
+            orion_task_gossip.publish(task_id, record)
+        except Exception:
+            pass
     return record
+
+
+def apply_remote(task_id, record):
+    """Append a record received from a peer, if we don't already have it.
+
+    Append-only + content-hash dedup => merging two hosts' logs is conflict-
+    free (CRDT). This is what orion_task_gossip calls on inbound records."""
+    existing = load_task(task_id)
+    if existing is not None:
+        kind = record.get("kind")
+        if kind == "step":
+            have = {s.get("hash") for s in existing["steps"]}
+            if record.get("hash") in have:
+                return False
+        # leases/releases/footers dedup by exact hlc
+        seen_hlc = {s.get("hlc") for s in existing["steps"]}
+        if record.get("hlc") in seen_hlc:
+            return False
+    _append(task_id, record, emit=False)
+    return True
+
+
+def _lease_age_sec(task):
+    """Seconds since the current owner last claimed. HLC prefix is wall-ms."""
+    hlc = task.get("lease_hlc")
+    if not hlc:
+        return 1e9
+    try:
+        return time.time() - (int(hlc.split("-")[0]) / 1000.0)
+    except Exception:
+        return 1e9
+
+
+# A lease older than this with no completion is considered abandoned, so
+# another host may take the task over (covers a dead owner host).
+LEASE_STALE_SEC = 300
 
 
 def load_task(task_id):
@@ -88,6 +133,7 @@ def load_task(task_id):
     if not os.path.exists(path):
         return None
     header, steps, status = None, [], "open"
+    owner, lease_hlc = None, None
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -97,18 +143,23 @@ def load_task(task_id):
                 rec = json.loads(line)
             except Exception:
                 continue
-            if rec.get("kind") == "task":
+            kind = rec.get("kind")
+            if kind == "task":
                 if header is None:
                     header = rec
-                # later task records are status updates (footer)
-                if rec.get("status"):
+                if rec.get("status"):  # later task records are status footers
                     status = rec["status"]
-            elif rec.get("kind") == "step":
+            elif kind == "step":
                 steps.append(rec)
+            elif kind == "lease":
+                owner, lease_hlc = rec.get("owner"), rec.get("hlc")
+            elif kind == "release":
+                owner, lease_hlc = None, None
     if header is None:
         return None
     return {"id": task_id, "goal": header.get("goal", ""),
-            "created": header.get("created"), "status": status, "steps": steps}
+            "created": header.get("created"), "status": status,
+            "owner": owner, "lease_hlc": lease_hlc, "steps": steps}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -170,6 +221,16 @@ def advance(task_id, fuel_fn=None):
         raise ValueError("no such task: %s" % task_id)
     if task["status"] in ("complete", "failed"):
         return task
+
+    # Ownership lease — when the log is gossiped across hosts, only ONE host
+    # actively advances a task; the others hold the replica ready to take over.
+    # Take over only if unowned, already ours, or the owner's lease is stale
+    # (its host likely died), so we never double-execute a step.
+    if task.get("owner") and task["owner"] != HOST and _lease_age_sec(task) < LEASE_STALE_SEC:
+        return task
+    if task.get("owner") != HOST:
+        _append(task_id, {"kind": "lease", "owner": HOST})
+        task = load_task(task_id)
 
     prompt = _build_prompt(task)
     text, engine = fuel_fn(prompt)

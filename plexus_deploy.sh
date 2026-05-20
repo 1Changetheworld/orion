@@ -64,6 +64,7 @@ PLEXUS_SERVICES=(
     "empathy:orion_empathy.py"
     "federation:orion_federation.py"
     "updater:orion_updater.py"
+    "task-gossip:orion_task_gossip.py"
 )
 
 # Detect platform
