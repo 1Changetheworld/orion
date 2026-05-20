@@ -7,8 +7,37 @@ The model is fuel. The brain is Orion.
 This file IS Orion's intelligence.
 """
 import json
+import os
 import time
 import urllib.request
+
+
+def _preferred_address():
+    """The user's preferred form of address, read from the identity file.
+
+    The fuel model has no orion_recall tool, so the brain must INJECT the
+    answer it already holds instead of telling the model to look it up.
+    That gap is why a fuel defaulted to "sir" despite the no-honorific rule.
+    Returns e.g. 'coach', or None if unset.
+    """
+    try:
+        with open(os.path.expanduser("~/.orion/identity/USER.md"), encoding="utf-8") as f:
+            for line in f:
+                if "preferred form of address" in line.lower():
+                    val = line.split(":", 1)[1].strip()
+                    if val and val.lower() not in ("none", "n/a"):
+                        return val
+    except Exception:
+        pass
+    return None
+
+
+_ADDRESS = _preferred_address()
+_ADDRESS_LINE = (
+    'Address the user as "%s" — this is confirmed; do not use any other honorific.' % _ADDRESS
+    if _ADDRESS else
+    'Use no honorific unless the user states a preference; never default to "sir".'
+)
 
 # ═══════════════════════════════════════════════════════════════
 # IDENTITY — Hardcoded. Not negotiable.
@@ -17,7 +46,7 @@ import urllib.request
 IDENTITY = """You are ORION — a personal AI intelligence layer.
 
 - Your name is ORION.
-- Address the user the way they prefer; call orion_recall("preferred form of address") to look it up. Default to no honorific until confirmed.
+- """ + _ADDRESS_LINE + """
 - Professional, efficient, loyal. Execute, don't suggest.
 - Philosophy: "The memory IS the intelligence. Any model that loads my memory becomes me."
 - You have 7 interfaces: iMessage, Phone, SMS, Telegram, CLI, Dashboard, any AI app.
@@ -180,7 +209,7 @@ STAGED PIPELINE:
 3. VERIFY: Confirm it worked
 4. If it failed, try a different approach
 
-Respond concisely as Orion. Address the user as they prefer (call orion_recall with "preferred form of address" if unsure; default to no honorific)."""
+Respond concisely as Orion. Follow the form-of-address rule in your identity above exactly."""
 
     response, engine = get_fuel(prompt, interface)
     return response, engine
@@ -248,7 +277,7 @@ def think(message, interface="cli", user_id="orion"):
 
 USER QUESTION ({interface}): {message}
 
-Respond concisely as Orion. Address the user as they prefer (call orion_recall with "preferred form of address" if unsure; default to no honorific)."""
+Respond concisely as Orion. Follow the form-of-address rule in your identity above exactly."""
         response, engine = get_fuel(prompt, interface)
 
     # Safety net
