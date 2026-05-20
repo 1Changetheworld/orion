@@ -27,8 +27,8 @@ from qdrant_client.models import PointStruct
 QDRANT_HOST = "localhost"
 QDRANT_PORT = 6333
 OLLAMA_URL = "http://localhost:11434"
-KNOWLEDGE_DIR = os.path.expanduser("~/server_data/orion-brain/knowledge")
-CONVERSATION_LOG = os.path.expanduser("~/server_data/orion-brain/conversations")
+KNOWLEDGE_DIR = os.path.expanduser("~/.orion/brain/knowledge")
+CONVERSATION_LOG = os.path.expanduser("~/.orion/brain/conversations")
 
 os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
 os.makedirs(CONVERSATION_LOG, exist_ok=True)
@@ -380,7 +380,7 @@ def save_compiled_knowledge(articles, graph, date=None):
 
 # Global graph instance
 _graph = GraphMemory()
-_graph_path = os.path.expanduser("~/server_data/orion-brain/graph_memory.json")
+_graph_path = os.path.expanduser("~/.orion/brain/graph_memory.json")
 
 def init():
     """Initialize memory system. Load graph from disk."""
@@ -431,7 +431,7 @@ def save():
 # Absorbed from: hermes-agent skill pattern
 # ═══════════════════════════════════════════════════════════════
 
-SKILLS_DIR = os.path.expanduser("~/server_data/orion-brain/skills")
+SKILLS_DIR = os.path.expanduser("~/.orion/brain/skills")
 os.makedirs(SKILLS_DIR, exist_ok=True)
 
 

@@ -115,7 +115,7 @@ async def _canary_brain_write() -> dict:
         http_err = f"{type(e).__name__}: {e}"
 
     # Part 2: graph file write-permission probe (separate file, never the graph)
-    graph_dir = Path("/Volumes/AtlasVault/.orion/brain")
+    graph_dir = Path(os.path.expanduser("~/.orion/brain"))
     probe_path = graph_dir / ".canary_probe"
     fs_ok = False
     fs_err = ""
