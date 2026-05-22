@@ -278,7 +278,11 @@ def _format_message_for_channel(item: dict, channel: str) -> str:
         return f"Fuel switched to {payload.get('fuel')} as you asked."
     if kind == "failure_narration":
         return _format_failure_narration(payload)
-    return f"Notice: {kind}"
+    # Refuse to send a meaningless "Notice: <kind>" stub for an unrecognized
+    # alert kind — that bare stub (misrouted to "primary_user") was a recurring
+    # third-sender in the iMessage spam. A kind must have a real renderer here,
+    # or reach stays silent rather than emitting noise.
+    return None
 
 
 def _active_surfaces() -> list[str]:
@@ -449,6 +453,9 @@ def _drain_loop() -> None:
             ready = _q.take_due(now, allow_quiet, _choose_channel)
             for item, channel in ready:
                 msg = _format_message_for_channel(item, channel)
+                if not msg:
+                    # No real message for this kind — never emit a stub.
+                    continue
 
                 # Empathy Tier-0 gate (docs/architecture/empathy-research.md
                 # §4). Brake, not censor — emergency always sends; other
