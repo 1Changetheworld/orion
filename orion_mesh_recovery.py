@@ -153,6 +153,12 @@ def _on_online(subject, payload):
     # Orion service is reversible + in-thesis, so it auto-applies and we NOTIFY
     # (design-law tier2). Anything riskier stays the executive's gated domain.
     summary = "%s returned via %s after %ds." % (device, transport, down_for)
+    # The action + symptom are defined ONCE and reused for both the governor
+    # query and the outcome record — the Jaccard match in metacog only fires
+    # next time if these strings are identical, so this is load-bearing.
+    action = "restart dead Orion services on %s" % device
+    symptom = "mesh_device_returned"
+    gov_conf = None
     try:
         import orion_mesh_restore
         # Phase-2 gate: the metacognition governor decides auto vs ask.
@@ -163,25 +169,43 @@ def _on_online(subject, payload):
         try:
             import orion_metacognition
             g = orion_metacognition.governor(
-                "restart dead Orion services on %s" % device,
-                reversible=True, blast_radius="single", symptom="mesh_device_returned")
+                action, reversible=True, blast_radius="single", symptom=symptom)
             allow = (g.get("decision") == "auto")
+            gov_conf = g.get("confidence")
             _task_note(task_id, "governor: %s (conf %s) %s"
-                       % (g.get("decision"), g.get("confidence"), g.get("basis")))
+                       % (g.get("decision"), gov_conf, g.get("basis")))
         except Exception:
             allow = True  # fail-open to the safe tier-2 default
         rep = orion_mesh_restore.restore(device, task_id=task_id, allow_restart=allow)
         _task_note(task_id, "restore: " + json.dumps(rep)[:300])
-        if rep.get("action") == "restarted":
-            ok = sum(1 for r in rep.get("results", []) if r.get("restarted"))
-            summary += " Restored %d/%d dead Orion services." % (ok, len(rep.get("results", [])))
-        elif rep.get("action") == "proposed":
+        act, outcome = rep.get("action"), None
+        if act == "restarted":
+            res = rep.get("results", [])
+            ok = sum(1 for r in res if r.get("restarted"))
+            summary += " Restored %d/%d dead Orion services." % (ok, len(res))
+            # Calibration signal: a clean full restart earns trust; any failure
+            # drags the governor back toward 'ask' for this device class.
+            outcome = "succeeded" if (res and ok == len(res)) else "failed"
+        elif act == "proposed":
             summary += (" %d Orion services down — holding for your OK (governor: ask)."
                         % len(rep.get("would_restart", [])))
+            # We deliberately held — no execution happened, so there's no action
+            # reliability to learn. Don't pollute the ledger.
         elif not rep.get("reachable"):
             summary += " (couldn't reach it to restore: %s)" % rep.get("error", "?")
+            outcome = "ignored"   # couldn't execute — not the action's fault
         else:
             summary += " Orion presence healthy — nothing to restore."
+            outcome = "succeeded"  # auto-decision was correct and harmless
+        # Feed the lived outcome back so the governor EARNS calibration over time.
+        if outcome is not None:
+            try:
+                import orion_metacognition
+                orion_metacognition.record_outcome(
+                    action, outcome, symptom=symptom, conf_before=gov_conf,
+                    fuel="mesh-recovery", device=device)
+            except Exception:
+                pass
     except Exception as e:
         summary += " (restore step errored: %s)" % e
     _close_task(task_id, "complete")

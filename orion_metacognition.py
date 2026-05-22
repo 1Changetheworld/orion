@@ -121,11 +121,14 @@ OUTCOME_VALUE = {"succeeded": 1.0, "failed": 0.0, "ignored": 0.3, "denied": 0.5}
 
 _ledger_cache: deque[dict] = deque(maxlen=LEDGER_CACHE_MAX)
 _pending_decisions: dict[str, dict] = {}  # decision_id → row, awaiting outcome
+_ledger_loaded = False  # idempotency guard so we read the JSONL exactly once
 
 
 def _load_ledger() -> None:
     """Read existing ledger into the in-memory cache on startup."""
+    global _ledger_loaded
     LEDGER_DIR.mkdir(parents=True, exist_ok=True)
+    _ledger_loaded = True
     if not LEDGER_PATH.exists():
         return
     count = 0
@@ -143,6 +146,54 @@ def _load_ledger() -> None:
     except OSError as e:
         logger.warning("ledger read failed: %s", e)
     logger.info("ledger loaded: %d rows", count)
+
+
+def _ensure_ledger_loaded() -> None:
+    """Lazy-load the durable ledger the first time a non-daemon process consults
+    it. The NATS daemon loads in main(); but governor()/record_outcome() are
+    called inline from OTHER processes (mesh_recovery, dispatch, self-heal) that
+    never run main(). Without this they'd read an empty cache and the governor
+    could never earn calibration from the durable JSONL. Idempotent."""
+    if not _ledger_loaded:
+        _load_ledger()
+
+
+def record_outcome(action: str, outcome: str, *, symptom: str = "",
+                   conf_before: Optional[float] = None, fuel: str = "",
+                   decision_id: Optional[str] = None, **extra) -> dict:
+    """Append a COMPLETED decision row to the ledger directly (no NATS).
+
+    This is how autonomic deciders that don't go through the executive's
+    proposal/outcome NATS dance — mesh_recovery, self-heal, dispatch — feed
+    real action outcomes back into the calibration ledger. It is the write
+    side of 'calibration as a learned skill': governor() reads what this
+    writes, so the gate EARNS trust (or loses it) from lived outcomes instead
+    of being frozen at the risk-class base. `outcome` ∈ OUTCOME_VALUE keys
+    (succeeded|failed|ignored|denied); anything else is coerced to 'ignored'.
+    Pass the SAME `action` + `symptom` strings used in the governor() call so
+    the Jaccard match in _similar_rows() actually fires next time."""
+    _ensure_ledger_loaded()
+    if outcome not in OUTCOME_VALUE:
+        outcome = "ignored"
+    ov = OUTCOME_VALUE[outcome]
+    row = {
+        "decision_id": decision_id or ("auto-%s" % uuid.uuid4().hex[:12]),
+        "symptom_class": symptom or "UNRECOGNIZED",
+        "proposed_action": action,
+        "conf_before": conf_before,
+        "basis": extra.pop("basis", []),
+        "fuel": fuel,
+        "outcome": outcome,
+        "outcome_value": ov,
+        "calibration_delta": (ov - conf_before) if conf_before is not None else None,
+        "ts_proposed": extra.pop("ts_proposed", time.time()),
+        "ts_outcome": time.time(),
+    }
+    row.update(extra)
+    _append_ledger(row)
+    logger.info("recorded outcome %s: %s -> %s (delta %s)", row["decision_id"],
+                (symptom or action)[:48], outcome, row["calibration_delta"])
+    return row
 
 
 def _append_ledger(row: dict) -> None:
@@ -183,7 +234,13 @@ def _similar_rows(symptom: str, action: str, k: int = SIMILARITY_K) -> list[dict
         sim = inter / union
         if sim > 0:
             scored.append((sim, row))
-    scored.sort(key=lambda x: x[0], reverse=True)
+    # Tie-break identical-similarity rows by RECENCY: when many past decisions
+    # share the same action+symptom tokens (the common case for a recurring
+    # autonomic fix), the K-window must reflect the device's CURRENT reliability,
+    # not its oldest history — otherwise a fixed device can never earn auto back.
+    def _row_ts(r: dict) -> float:
+        return float(r.get("ts_outcome") or r.get("ts_proposed") or 0.0)
+    scored.sort(key=lambda x: (x[0], _row_ts(x[1])), reverse=True)
     return [r for _, r in scored[:k]]
 
 
@@ -266,6 +323,7 @@ def governor(action: str, reversible: bool = True, blast_radius: str = "single",
     history + a LOWERING-ONLY fuel prior + (for risky actions) a cross-fuel
     agreement probe. Returns {confidence, decision: auto|ask, ...}. Conservative
     by construction — default ask; autonomy is earned through the ledger."""
+    _ensure_ledger_loaded()
     basis = []
     risky = (not reversible) or blast_radius in ("multi", "host", "all")
     # Base confidence by RISK CLASS (design-law tiers): a reversible single-host
@@ -274,7 +332,9 @@ def governor(action: str, reversible: bool = True, blast_radius: str = "single",
     conf = 0.40 if not reversible else (0.65 if blast_radius in ("multi", "host", "all") else 0.80)
     rows = _similar_rows(symptom, action)
     if rows:
-        ok = sum(1 for r in rows if r.get("outcome") == "success")
+        # Ledger outcomes are stored as 'succeeded' (see OUTCOME_VALUE) — match
+        # that exactly, or this learning branch silently never fires.
+        ok = sum(1 for r in rows if r.get("outcome") == "succeeded")
         conf *= 0.6 + 0.4 * (ok / len(rows))   # failures drag down; clean history neutral
         basis.append("ledger %d/%d ok" % (ok, len(rows)))
     fp = _fuel_prior(fuel)
