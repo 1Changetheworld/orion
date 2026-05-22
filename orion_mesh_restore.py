@@ -64,17 +64,28 @@ def _ssh(addr, user, cmd, key=None):
 
 def _dead_orion_services(listing):
     """Parse a `launchctl list` (macOS) or `systemctl --user` (Linux) listing
-    for Orion services that are NOT healthy."""
+    for Orion services that are NOT healthy. Returns unit/label names."""
     dead = []
     for line in listing.splitlines():
-        p = line.split()
-        if "com.orion." in line and len(p) >= 3:
-            # launchctl: col0=PID col1=last-exit col2=label. Dead = no PID ('-')
-            # or a nonzero last-exit that isn't a clean SIGTERM restart.
-            label = p[2]
-            if p[0] == "-" and p[1] not in ("0",):
-                dead.append(label)
-        elif "orion-" in line and ("failed" in line.lower() or "dead" in line.lower()):
+        s = line.strip()
+        if not s:
+            continue
+        # systemctl marks failed/bad units with a leading status glyph — strip it
+        # so the unit name (not the dot) is parsed.
+        if s[0] in "●×*•x":
+            s = s[1:].strip()
+        p = s.split()
+        if not p:
+            continue
+        if "com.orion." in s and len(p) >= 3:
+            # macOS launchctl: col0=PID col1=last-exit col2=label.
+            # Dead = no PID ("-"). (A nonzero exit on a running PID is just a
+            # prior SIGTERM restart, not a current failure.)
+            if p[0] == "-":
+                dead.append(p[2])
+        elif p[0].startswith("orion-") and (
+                "failed" in s.lower() or "dead" in s.lower() or "inactive" in s.lower()):
+            # Linux systemctl: "orion-X.service loaded failed failed ..."
             dead.append(p[0])
     return dead
 
