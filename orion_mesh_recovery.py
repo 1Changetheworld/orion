@@ -155,11 +155,29 @@ def _on_online(subject, payload):
     summary = "%s returned via %s after %ds." % (device, transport, down_for)
     try:
         import orion_mesh_restore
-        rep = orion_mesh_restore.restore(device, task_id=task_id, allow_restart=True)
+        # Phase-2 gate: the metacognition governor decides auto vs ask.
+        # Restarting crashed Orion services is reversible + single-host (tier-2),
+        # so the governor returns "auto" by default; it would hold for approval
+        # on a risky action (and the cross-fuel sensor would weigh in).
+        allow = True
+        try:
+            import orion_metacognition
+            g = orion_metacognition.governor(
+                "restart dead Orion services on %s" % device,
+                reversible=True, blast_radius="single", symptom="mesh_device_returned")
+            allow = (g.get("decision") == "auto")
+            _task_note(task_id, "governor: %s (conf %s) %s"
+                       % (g.get("decision"), g.get("confidence"), g.get("basis")))
+        except Exception:
+            allow = True  # fail-open to the safe tier-2 default
+        rep = orion_mesh_restore.restore(device, task_id=task_id, allow_restart=allow)
         _task_note(task_id, "restore: " + json.dumps(rep)[:300])
         if rep.get("action") == "restarted":
             ok = sum(1 for r in rep.get("results", []) if r.get("restarted"))
             summary += " Restored %d/%d dead Orion services." % (ok, len(rep.get("results", [])))
+        elif rep.get("action") == "proposed":
+            summary += (" %d Orion services down — holding for your OK (governor: ask)."
+                        % len(rep.get("would_restart", [])))
         elif not rep.get("reachable"):
             summary += " (couldn't reach it to restore: %s)" % rep.get("error", "?")
         else:

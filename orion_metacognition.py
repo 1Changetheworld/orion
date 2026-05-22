@@ -266,17 +266,21 @@ def governor(action: str, reversible: bool = True, blast_radius: str = "single",
     history + a LOWERING-ONLY fuel prior + (for risky actions) a cross-fuel
     agreement probe. Returns {confidence, decision: auto|ask, ...}. Conservative
     by construction — default ask; autonomy is earned through the ledger."""
-    basis, conf = [], 0.55
+    basis = []
+    risky = (not reversible) or blast_radius in ("multi", "host", "all")
+    # Base confidence by RISK CLASS (design-law tiers): a reversible single-host
+    # action is inherently tier-2 safe (auto+notify); irreversible or wide-blast
+    # starts low and must EARN the gate via cross-fuel agreement + the ledger.
+    conf = 0.40 if not reversible else (0.65 if blast_radius in ("multi", "host", "all") else 0.80)
     rows = _similar_rows(symptom, action)
     if rows:
         ok = sum(1 for r in rows if r.get("outcome") == "success")
-        conf = 0.35 + 0.55 * (ok / len(rows))
+        conf *= 0.6 + 0.4 * (ok / len(rows))   # failures drag down; clean history neutral
         basis.append("ledger %d/%d ok" % (ok, len(rows)))
     fp = _fuel_prior(fuel)
     if fp < 0.6:                       # weak fuel lowers; never raises the floor
         conf = min(conf, 0.5 + (fp - 0.5))
         basis.append("weak-fuel %.2f" % fp)
-    risky = (not reversible) or blast_radius in ("multi", "host", "all")
     if risky:
         agree, detail = _cross_fuel_agreement(
             "Is this action both safe and correct to perform right now? Action: " + action)
