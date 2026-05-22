@@ -219,6 +219,74 @@ def _fuel_prior(fuel: str) -> float:
     return 0.6
 
 
+# ═══════════════════════════════════════════════════════════════
+# PHASE 2 — THE CONFIDENCE GOVERNOR (cross-fuel, lowering-only)
+# ═══════════════════════════════════════════════════════════════
+# Phase 1 scored a fuel's self-reported confidence — overconfident by RLHF
+# construction. Phase 2 measures confidence BETWEEN fuels: route a risky
+# decision through two distinct fuels — their DISAGREEMENT is an external
+# uncertainty estimate no single-model assistant can produce. A fuel's own
+# opinion may only LOWER a gate, never raise it. Default is ASK; autonomy is
+# earned via the ledger. This is the gate the executive + mesh_restore consult.
+
+AUTO_THRESHOLD = 0.75   # auto-apply only at/above this AND reversible
+
+
+def _cross_fuel_agreement(question: str) -> tuple[float, str]:
+    """Ask two DISTINCT available fuels the same yes/no question; agreement is
+    the epistemic signal. <2 fuels → can't cross-check → low (forces Ask)."""
+    try:
+        import orion_fuel
+        adapters = list(getattr(orion_fuel.init(), "available", []))[:2]
+        if len(adapters) < 2:
+            return 0.4, "no cross-check (only %d fuel)" % len(adapters)
+        verdicts = []
+        for a in adapters:
+            try:
+                r = (a.query(question + "\nAnswer with exactly YES or NO.") or "").strip().upper()
+            except Exception:
+                r = ""
+            verdicts.append((a.name, "YES" if r.startswith("YES")
+                             else "NO" if r.startswith("NO") else "?"))
+        votes = [v for _, v in verdicts]
+        if "?" in votes:
+            return 0.4, "ambiguous %s" % verdicts
+        if all(v == "YES" for v in votes):
+            return 1.0, "both endorse %s" % verdicts          # agreed safe
+        if all(v == "NO" for v in votes):
+            return 0.1, "both reject %s" % verdicts           # agreed: don't
+        return 0.3, "split %s" % verdicts                     # disagree → unsure
+    except Exception as e:
+        return 0.4, "cross-fuel error: %s" % e
+
+
+def governor(action: str, reversible: bool = True, blast_radius: str = "single",
+             symptom: str = "", fuel: str = "") -> dict:
+    """Phase-2 gate: decide auto vs ask for a proposed action. Combines ledger
+    history + a LOWERING-ONLY fuel prior + (for risky actions) a cross-fuel
+    agreement probe. Returns {confidence, decision: auto|ask, ...}. Conservative
+    by construction — default ask; autonomy is earned through the ledger."""
+    basis, conf = [], 0.55
+    rows = _similar_rows(symptom, action)
+    if rows:
+        ok = sum(1 for r in rows if r.get("outcome") == "success")
+        conf = 0.35 + 0.55 * (ok / len(rows))
+        basis.append("ledger %d/%d ok" % (ok, len(rows)))
+    fp = _fuel_prior(fuel)
+    if fp < 0.6:                       # weak fuel lowers; never raises the floor
+        conf = min(conf, 0.5 + (fp - 0.5))
+        basis.append("weak-fuel %.2f" % fp)
+    risky = (not reversible) or blast_radius in ("multi", "host", "all")
+    if risky:
+        agree, detail = _cross_fuel_agreement(
+            "Is this action both safe and correct to perform right now? Action: " + action)
+        conf = min(conf, agree)       # cross-fuel disagreement caps confidence
+        basis.append("cross-fuel %.2f %s" % (agree, detail[:80]))
+    decision = "auto" if (reversible and conf >= AUTO_THRESHOLD) else "ask"
+    return {"confidence": round(conf, 2), "decision": decision,
+            "reversible": reversible, "blast_radius": blast_radius, "basis": basis}
+
+
 def _score_confidence(proposal: dict) -> tuple[float, list[str]]:
     """Return (conf_in_[0,1], basis_lines[])."""
     symptom = proposal.get("symptom_class", "UNRECOGNIZED")
