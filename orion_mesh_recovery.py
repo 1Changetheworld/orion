@@ -147,18 +147,29 @@ def _on_online(subject, payload):
     down_for = int(time.time() - info.get("offline_since", time.time()))
     task_id = info.get("task_id")
     _task_note(task_id, "%s returned via %s after %ds offline." % (device, transport, down_for))
+    # The recoverable moment: make the device whole again. orion_mesh_restore
+    # health-checks it and restarts any dead Orion services over THIS task
+    # (checkpointed, so a flaky-network restore resumes). Restarting a crashed
+    # Orion service is reversible + in-thesis, so it auto-applies and we NOTIFY
+    # (design-law tier2). Anything riskier stays the executive's gated domain.
+    summary = "%s returned via %s after %ds." % (device, transport, down_for)
+    try:
+        import orion_mesh_restore
+        rep = orion_mesh_restore.restore(device, task_id=task_id, allow_restart=True)
+        _task_note(task_id, "restore: " + json.dumps(rep)[:300])
+        if rep.get("action") == "restarted":
+            ok = sum(1 for r in rep.get("results", []) if r.get("restarted"))
+            summary += " Restored %d/%d dead Orion services." % (ok, len(rep.get("results", [])))
+        elif not rep.get("reachable"):
+            summary += " (couldn't reach it to restore: %s)" % rep.get("error", "?")
+        else:
+            summary += " Orion presence healthy — nothing to restore."
+    except Exception as e:
+        summary += " (restore step errored: %s)" % e
     _close_task(task_id, "complete")
-    # The recoverable moment: ask the executive to make the returned device whole
-    # again — verify its Orion services / MCP / gossip and restore what's missing.
-    # Permission-gated; the executive owns the proposal + approval + ledger.
-    _publish("brain.health.alert", {
-        "symptom_class": "NETWORK_PARTITION",
-        "host": device, "source": "mesh-return",
-        "detail": ("%s rejoined the mesh via %s after %ds offline. Verify its Orion "
-                   "presence is healthy (services up, MCP connected, gossip rejoined) "
-                   "and restore anything missing." % (device, transport, down_for)),
-        "ts": time.time(),
-    })
+    # One outcome message — the result of the recoverable moment.
+    _publish("channel.imessage.outbound",
+             {"text": "Mesh recovery — " + summary, "channel": "imessage"})
 
 
 def main():
