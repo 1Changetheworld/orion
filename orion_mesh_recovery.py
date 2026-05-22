@@ -128,17 +128,12 @@ def _on_offline(subject, payload):
     state[device] = {"task_id": task_id, "offline_since": time.time(),
                      "last_transport": payload.get("last_transport")}
     _save_state(state)
-    # Hand the executive the symptom. An unreachable host is investigate-only
-    # (nothing to safely auto-do) — the executive deliberates + logs, gated.
-    _publish("brain.health.alert", {
-        "symptom_class": "NETWORK_PARTITION",
-        "host": device, "source": "mesh",
-        "detail": ("%s is unreachable on both LAN and Tailscale (mesh monitor). "
-                   "If powered off it is not remotely recoverable; recovery task "
-                   "open, watching for its return to auto-restore Orion presence."
-                   % device),
-        "ts": time.time(),
-    })
+    # NOTE: we deliberately do NOT alert the executive on offline. An unreachable
+    # host has nothing the executive can safely act on (you can't restart a
+    # powered-off machine), and the mesh monitor already told the user. Feeding a
+    # symptom here only produced duplicate, malformed "self-heal will attempt"
+    # noise. The recoverable moment is the RETURN — see _on_online. (Design law:
+    # act at the recoverable moment, not the dramatic one.)
 
 
 def _on_online(subject, payload):

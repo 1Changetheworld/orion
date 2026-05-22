@@ -118,37 +118,52 @@ def _publish_event(subject, payload):
         return False
 
 
-def monitor(interval=60):
-    """Probe all devices on a loop and TEXT the user on online<->offline
-    transitions. Edge-triggered (state stored in mesh/state.json) so a sustained
-    outage alerts ONCE, not every cycle — and announces recovery."""
+OFFLINE_THRESHOLD = int(os.environ.get("ORION_MESH_OFFLINE_THRESHOLD", "3"))
+
+
+def monitor(interval=60, offline_threshold=OFFLINE_THRESHOLD):
+    """Probe all devices on a loop and TEXT the user on REAL transitions only.
+
+    Debounced: a device must miss `offline_threshold` consecutive probes before
+    we call it offline (so a 1-minute Tailscale/WiFi blip alerts NOTHING). We
+    alert ONCE when the outage is confirmed, and announce recovery only for a
+    device we actually alerted on. This is the law: confirm before acting."""
     import time
-    prev = {}
+    state, streak, alerted = {}, {}, set()
     if os.path.exists(STATE_PATH):
         try:
-            prev = json.load(open(STATE_PATH, encoding="utf-8"))
+            state = json.load(open(STATE_PATH, encoding="utf-8"))
+            streak = state.get("streak", {})
+            alerted = set(state.get("alerted", []))
         except Exception:
-            prev = {}
+            pass
     os.makedirs(MESH_DIR, exist_ok=True)
-    print("orion-mesh monitor alive — %d devices, every %ds" % (len(load_devices()), interval))
+    print("orion-mesh monitor alive — %d devices, every %ds, debounce=%d misses"
+          % (len(load_devices()), interval, offline_threshold))
     while True:
-        cur = {}
         for r in status():
-            cur[r["name"]] = r["online"]
-            was = prev.get(r["name"])
-            if was is True and r["online"] is False:
-                _publish_imessage("Heads up, sir — %s just went OFFLINE on the mesh." % r["name"])
-                _publish_event("brain.mesh.device_offline",
-                               {"device": r["name"], "last_transport": r.get("transport"),
-                                "address": r.get("address"), "ts": __import__("time").time()})
-            elif was is False and r["online"] is True:
-                _publish_imessage("%s is back ONLINE on the mesh, sir." % r["name"])
-                _publish_event("brain.mesh.device_online",
-                               {"device": r["name"], "transport": r.get("transport"),
-                                "address": r.get("address"), "ts": __import__("time").time()})
-        prev = cur
+            name, online = r["name"], r["online"]
+            if not online:
+                streak[name] = streak.get(name, 0) + 1
+                # Confirmed outage: crossed the threshold and not already alerted.
+                if streak[name] == offline_threshold and name not in alerted:
+                    alerted.add(name)
+                    _publish_imessage("Heads up, sir — %s is OFFLINE on the mesh "
+                                      "(%d consecutive misses)." % (name, streak[name]))
+                    _publish_event("brain.mesh.device_offline",
+                                   {"device": name, "last_transport": r.get("transport"),
+                                    "address": r.get("address"), "ts": time.time()})
+            else:
+                streak[name] = 0
+                if name in alerted:   # only announce return for a real prior outage
+                    alerted.discard(name)
+                    _publish_imessage("%s is back ONLINE on the mesh, sir." % name)
+                    _publish_event("brain.mesh.device_online",
+                                   {"device": name, "transport": r.get("transport"),
+                                    "address": r.get("address"), "ts": time.time()})
         try:
-            json.dump(cur, open(STATE_PATH, "w", encoding="utf-8"))
+            json.dump({"streak": streak, "alerted": sorted(alerted)},
+                      open(STATE_PATH, "w", encoding="utf-8"))
         except Exception:
             pass
         time.sleep(interval)
