@@ -337,16 +337,21 @@ def _on_remote_heartbeat(subject: str, payload: dict) -> None:
     entries = payload.get("entries") or {}
     if not isinstance(entries, dict):
         return
-    # Snapshot learned.skill.* before merge so we can diff what the remote
-    # actually CONTRIBUTED, then emit per-skill adoption events for the
-    # cross-host sync layer to apply. Cheap — the learned-set is bounded
-    # (~50 active skills × 12-byte hash; sub-millisecond on real loads).
-    before = {k: dict(v) for k, v in _manifest.entries.items()
-              if k.startswith("learned.skill.")}
+    # Snapshot the two learned.* spaces (skill + calibration) before merge,
+    # so we can diff what the remote actually CONTRIBUTED. Both spaces are
+    # bounded (~50 skills, ~dozens of symptom×host calibration aggregates) —
+    # sub-millisecond on real loads.
+    before_skill = {k: dict(v) for k, v in _manifest.entries.items()
+                    if k.startswith("learned.skill.")}
+    before_calib = {k: dict(v) for k, v in _manifest.entries.items()
+                    if k.startswith("learned.calibration.")}
     adopted, ignored, conflicts = _manifest.merge(entries)
-    after = {k: v for k, v in _manifest.entries.items()
-             if k.startswith("learned.skill.")}
-    _emit_remote_skill_adoptions(before, after, remote_host)
+    after_skill = {k: v for k, v in _manifest.entries.items()
+                   if k.startswith("learned.skill.")}
+    after_calib = {k: v for k, v in _manifest.entries.items()
+                   if k.startswith("learned.calibration.")}
+    _emit_remote_skill_adoptions(before_skill, after_skill, remote_host)
+    _emit_remote_calibration_adoptions(before_calib, after_calib, remote_host)
     if adopted or conflicts:
         logger.info(
             "merged %s: adopted=%d ignored=%d conflicts=%d",
@@ -374,15 +379,44 @@ def _on_remote_delta(subject: str, payload: dict) -> None:
 def _filtered_for_mesh(entries: dict) -> dict:
     """Apply Membrane Layer 2 to a manifest snapshot before it leaves
     the host. Belt-and-suspenders over the orion_substrate.publish hook
-    (Layer 1) — even if a future bug let a private entry through the
-    publish gate, the manifest filter still drops it. See
-    docs/architecture/membrane-research.md §7. Membrane unavailable →
-    fail-open with a warning; the substrate hook is the primary gate."""
+    (Layer 1). See docs/architecture/membrane-research.md §7.
+
+    FAIL-CLOSED on the mesh path. Per membrane-research §4e the
+    cross-host transport is strict: if the Membrane module is unavailable
+    or its filter raises, we drop the entire manifest rather than ship
+    untyped state. A noisy "membrane down → mesh quiet" outage is
+    recoverable; a private node escaping the host once is not.
+
+    Second-layer hash blacklist: any entry whose content_hash is in
+    ~/.orion/membrane/blacklist.txt is dropped regardless of tags. The
+    user can paste a hash there to revoke a specific node after the
+    fact (best-effort — peers that already saw it keep their copy)."""
     try:
         from orion_membrane import filter_manifest, DEST_MESH
-        return filter_manifest(entries, dest_class=DEST_MESH)
+    except Exception as e:
+        logger.error("membrane unavailable — dropping manifest (fail-closed): %s", e)
+        return {}
+    try:
+        filtered = filter_manifest(entries, dest_class=DEST_MESH)
+    except Exception as e:
+        logger.error("membrane filter raised — dropping manifest (fail-closed): %s", e)
+        return {}
+    # Hash blacklist — additive filter, last line of defense.
+    try:
+        from orion_membrane import egress_hash_blocked
+        out = {}
+        for k, v in filtered.items():
+            h = None
+            if isinstance(v, dict):
+                h = v.get("content_hash") or (v.get("payload") or {}).get("content_hash")
+            if h and egress_hash_blocked(h):
+                continue
+            out[k] = v
+        return out
     except Exception:
-        return entries
+        # Blacklist is an optional defense layer — its failure must not
+        # weaken the primary filter, which already ran above.
+        return filtered
 
 
 def _publish_heartbeat() -> None:
@@ -466,6 +500,9 @@ def main() -> int:
     subscribe(memory_recalled_subject(), _on_memory_recalled)
     # C4: local skill mutations ride the same gossip path as memory
     subscribe("brain.learned.skill", _on_learned_skill)
+    # C4 follow-up: per-symptom calibration aggregates from the nightly
+    # dream cycle ride the same path; the governor reads them at gate time.
+    subscribe("brain.learned.calibration", _on_learned_calibration)
     # Remote hosts' state → merge into local view
     subscribe("mesh.*.heartbeat", _on_remote_heartbeat)
     subscribe("mesh.*.delta", _on_remote_delta)

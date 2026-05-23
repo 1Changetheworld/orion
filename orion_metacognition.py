@@ -88,6 +88,8 @@ Design for unreliability.
 from __future__ import annotations
 
 import asyncio
+import glob
+import hashlib
 import json
 import logging
 import math
@@ -156,6 +158,100 @@ def _ensure_ledger_loaded() -> None:
     could never earn calibration from the durable JSONL. Idempotent."""
     if not _ledger_loaded:
         _load_ledger()
+
+
+# ─────────────────────────────────────────────────────────
+# C4 follow-up — CROSS-HOST CALIBRATION AGGREGATES
+# Raw ledger rows are too high-volume for the LWWMap (one key per
+# decision = thousands over time). Aggregates are bounded by distinct
+# symptom_class values (~dozens), and the governor's _similar_rows()
+# math is count-based — so aggregates are information-preserving for
+# the gate. Per synthesis-continual-learning.md C4.
+# ─────────────────────────────────────────────────────────
+
+
+def aggregate_local_ledger() -> dict:
+    """Compute per-symptom calibration aggregates from the local ledger.
+    Returns {symptom_class: {count, succeeded, failed, mean_outcome,
+    last_updated, content_hash}}. The content_hash collapses identical
+    aggregates so the LWWMap's same-HLC branch correctly treats two
+    hosts publishing the same numbers as duplicates rather than as
+    conflicts."""
+    _ensure_ledger_loaded()
+    buckets: dict = {}
+    for row in _ledger_cache:
+        sym = row.get("symptom_class")
+        if not sym or "outcome" not in row:
+            continue
+        b = buckets.setdefault(sym, {
+            "symptom_class": sym, "count": 0,
+            "succeeded": 0, "failed": 0,
+            "outcome_sum": 0.0, "last_updated": 0.0,
+        })
+        b["count"] += 1
+        if row.get("outcome") == "succeeded":
+            b["succeeded"] += 1
+        elif row.get("outcome") == "failed":
+            b["failed"] += 1
+        b["outcome_sum"] += float(row.get("outcome_value", 0.0))
+        ts = float(row.get("ts_outcome") or row.get("ts_proposed") or 0.0)
+        if ts > b["last_updated"]:
+            b["last_updated"] = ts
+    out: dict = {}
+    for sym, b in buckets.items():
+        b["mean_outcome"] = round(b["outcome_sum"] / max(1, b["count"]), 4)
+        del b["outcome_sum"]
+        b["content_hash"] = hashlib.sha256(
+            ("%s|%d|%d|%d|%.4f" % (sym, b["count"], b["succeeded"],
+                                    b["failed"], b["mean_outcome"])).encode()
+        ).hexdigest()[:12]
+        out[sym] = b
+    return out
+
+
+def publish_aggregates() -> int:
+    """Publish each per-symptom aggregate on brain.learned.calibration so
+    orion_gossip puts them into the LWWMap. Called by orion_dream nightly.
+    Best-effort — substrate outage never breaks the local ledger."""
+    aggs = aggregate_local_ledger()
+    try:
+        from orion_substrate import publish
+    except Exception:
+        return 0
+    n = 0
+    for sym, body in aggs.items():
+        try:
+            publish("brain.learned.calibration", {
+                "symptom_class": sym, "payload": body,
+                "ts": time.time(),
+            })
+            n += 1
+        except Exception:
+            continue
+    return n
+
+
+def _load_remote_aggregates() -> dict:
+    """Read remote calibration aggregates the learning_sync wrote out.
+    One file per peer host (~/.orion/metacog/remote_<host>.json). Returns
+    {symptom_class: [{host, count, succeeded, failed, ...}, ...]} so the
+    governor can audit which peer contributed which evidence."""
+    out: dict = {}
+    for path in glob.glob(str(LEDGER_DIR / "remote_*.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f) or {}
+            host = os.path.basename(path)[len("remote_"):-len(".json")]
+            if not isinstance(data, dict):
+                continue
+            for sym, agg in data.items():
+                if not isinstance(agg, dict):
+                    continue
+                row = dict(agg); row["host"] = host
+                out.setdefault(sym, []).append(row)
+        except Exception:
+            continue
+    return out
 
 
 def record_outcome(action: str, outcome: str, *, symptom: str = "",
@@ -331,12 +427,25 @@ def governor(action: str, reversible: bool = True, blast_radius: str = "single",
     # starts low and must EARN the gate via cross-fuel agreement + the ledger.
     conf = 0.40 if not reversible else (0.65 if blast_radius in ("multi", "host", "all") else 0.80)
     rows = _similar_rows(symptom, action)
-    if rows:
-        # Ledger outcomes are stored as 'succeeded' (see OUTCOME_VALUE) — match
-        # that exactly, or this learning branch silently never fires.
-        ok = sum(1 for r in rows if r.get("outcome") == "succeeded")
-        conf *= 0.6 + 0.4 * (ok / len(rows))   # failures drag down; clean history neutral
-        basis.append("ledger %d/%d ok" % (ok, len(rows)))
+    # Local rows full weight; cross-host aggregates 0.5× weight (cross-host
+    # generalization is weaker evidence than local ground truth). Failures
+    # still drag autonomy away. C4 follow-up per synthesis-continual-learning.md.
+    local_ok = sum(1 for r in rows if r.get("outcome") == "succeeded")
+    local_total = len(rows)
+    remote_aggs = _load_remote_aggregates().get(symptom or "", []) if symptom else []
+    remote_ok = sum(int(a.get("succeeded", 0)) for a in remote_aggs)
+    remote_total = sum(int(a.get("count", 0)) for a in remote_aggs)
+    combined_ok = local_ok + 0.5 * remote_ok
+    combined_total = local_total + 0.5 * remote_total
+    if combined_total >= 1:
+        conf *= 0.6 + 0.4 * (combined_ok / combined_total)
+        parts = []
+        if local_total:
+            parts.append("local %d/%d" % (local_ok, local_total))
+        if remote_total:
+            parts.append("remote %d/%d×0.5 (%d peers)"
+                         % (remote_ok, remote_total, len(remote_aggs)))
+        basis.append("ledger " + " + ".join(parts))
     fp = _fuel_prior(fuel)
     if fp < 0.6:                       # weak fuel lowers; never raises the floor
         conf = min(conf, 0.5 + (fp - 0.5))

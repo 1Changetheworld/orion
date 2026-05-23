@@ -135,6 +135,61 @@ def _on_from_peer(subject: str, payload: dict) -> None:
         pass
 
 
+def apply_remote_calibration(payload: dict) -> dict:
+    """Write a remote per-shape calibration aggregate to the local store so
+    orion_metacognition.governor() can factor it as cross-host evidence at
+    the next gate consult. One file per peer host:
+    ~/.orion/metacog/remote_<source_host>.json, a dict of {symptom: agg}.
+    Idempotent by content_hash — repeated identical aggregates are no-ops."""
+    sym = payload.get("symptom_class")
+    agg = payload.get("aggregate") or {}
+    source = payload.get("source_host")
+    if not sym or not agg or not source:
+        return {"applied": False, "reason": "empty payload"}
+    try:
+        import orion_metacognition
+        target_dir = str(orion_metacognition.LEDGER_DIR)
+    except Exception:
+        target_dir = os.path.expanduser("~/.orion/metacog")
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, "remote_%s.json" % source)
+        existing: dict = {}
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    existing = json.load(f) or {}
+            except Exception:
+                existing = {}
+        prev = existing.get(sym, {})
+        if prev.get("content_hash") and prev.get("content_hash") == agg.get("content_hash"):
+            return {"applied": False, "reason": "same content_hash (no-op)"}
+        existing[sym] = agg
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2)
+        return {"applied": True, "symptom_class": sym, "source_host": source,
+                "count": agg.get("count"), "succeeded": agg.get("succeeded")}
+    except Exception as e:
+        return {"applied": False, "reason": "write failed: %s" % e}
+
+
+def _on_calibration_from_peer(subject: str, payload: dict) -> None:
+    rep = apply_remote_calibration(payload)
+    logger.info("calibration from_peer sym=%s source=%s -> %s",
+                payload.get("symptom_class"), payload.get("source_host"), rep)
+    try:
+        from orion_substrate import publish
+        publish("brain.learned.calibration.applied", {
+            "source_host": payload.get("source_host"),
+            "symptom_class": payload.get("symptom_class"),
+            "applied": rep.get("applied"),
+            "reason": rep.get("reason"),
+            "ts": time.time(),
+        })
+    except Exception:
+        pass
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -148,7 +203,8 @@ def main() -> int:
     sub = get_substrate()
     sub._connect_blocking()
     subscribe("brain.learned.skill.from_peer", _on_from_peer)
-    logger.info("learning-sync alive — applying remote learned skills to local disk")
+    subscribe("brain.learned.calibration.from_peer", _on_calibration_from_peer)
+    logger.info("learning-sync alive — applying remote learned skills + calibration to local disk")
     stop = False
 
     def _sigterm(_sig, _frame):
