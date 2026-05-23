@@ -267,6 +267,65 @@ def _on_memory_recalled(subject: str, payload: dict) -> None:
             _dirty_keys.add(nid_s)
 
 
+def _on_learned_skill(subject: str, payload: dict) -> None:
+    """Local skill mutation — put into LWWMap so peers receive it via the
+    existing delta path. C4 cross-host learning gossip: a skill the dream
+    consolidated on FORGE appears on COMMAND the next gossip round, without
+    a sync protocol, conflict resolution, or a server."""
+    fname = payload.get("fname")
+    if not fname:
+        return
+    body = payload.get("payload") or {}
+    entry = {
+        "host": HOST_ID,
+        "kind": "learned.skill",
+        "op": payload.get("op", "fired"),
+        "skill": body,
+        "fname": fname,
+        # content_hash collapses identical writes so the merge's same-HLC
+        # branch correctly treats them as duplicates, not as conflicts.
+        "content_hash": _content_hash(json.dumps(body, sort_keys=True, default=str)),
+        "ts": float(payload.get("ts", time.time())),
+    }
+    key = "learned.skill." + str(fname)
+    _manifest.put(key, entry)
+    with _dirty_lock:
+        _dirty_keys.add(key)
+
+
+def _emit_remote_skill_adoptions(before: dict, after: dict, remote_host: str) -> None:
+    """After a remote merge, walk the manifest's learned.skill.* keys and
+    emit brain.learned.skill.from_peer for anything newly-adopted or
+    content-changed. orion_learning_sync subscribes to that and applies the
+    remote skill to local disk (idempotent by content_hash, contribution-
+    aware tiebreak per synthesis-continual-learning.md C4)."""
+    try:
+        from orion_substrate import publish
+    except Exception:
+        return
+    for key, entry in after.items():
+        if not key.startswith("learned.skill."):
+            continue
+        prev = before.get(key)
+        prev_hash = (prev or {}).get("payload", {}).get("content_hash") if prev else None
+        cur_payload = entry.get("payload") or {}
+        cur_hash = cur_payload.get("content_hash")
+        if prev_hash == cur_hash:
+            continue  # no real change; suppress duplicate noise
+        if cur_payload.get("host") == HOST_ID:
+            continue  # don't echo our own writes back to ourselves
+        try:
+            publish("brain.learned.skill.from_peer", {
+                "fname": cur_payload.get("fname"),
+                "op": cur_payload.get("op", "fired"),
+                "skill": cur_payload.get("skill") or {},
+                "source_host": cur_payload.get("host") or remote_host,
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+
+
 def _on_remote_heartbeat(subject: str, payload: dict) -> None:
     """Another host published its full manifest. Merge it."""
     parts = subject.split(".")
@@ -278,7 +337,16 @@ def _on_remote_heartbeat(subject: str, payload: dict) -> None:
     entries = payload.get("entries") or {}
     if not isinstance(entries, dict):
         return
+    # Snapshot learned.skill.* before merge so we can diff what the remote
+    # actually CONTRIBUTED, then emit per-skill adoption events for the
+    # cross-host sync layer to apply. Cheap — the learned-set is bounded
+    # (~50 active skills × 12-byte hash; sub-millisecond on real loads).
+    before = {k: dict(v) for k, v in _manifest.entries.items()
+              if k.startswith("learned.skill.")}
     adopted, ignored, conflicts = _manifest.merge(entries)
+    after = {k: v for k, v in _manifest.entries.items()
+             if k.startswith("learned.skill.")}
+    _emit_remote_skill_adoptions(before, after, remote_host)
     if adopted or conflicts:
         logger.info(
             "merged %s: adopted=%d ignored=%d conflicts=%d",
@@ -396,6 +464,8 @@ def main() -> int:
     # Local brain events → manifest updates
     subscribe(memory_stored_subject(), _on_memory_stored)
     subscribe(memory_recalled_subject(), _on_memory_recalled)
+    # C4: local skill mutations ride the same gossip path as memory
+    subscribe("brain.learned.skill", _on_learned_skill)
     # Remote hosts' state → merge into local view
     subscribe("mesh.*.heartbeat", _on_remote_heartbeat)
     subscribe("mesh.*.delta", _on_remote_delta)

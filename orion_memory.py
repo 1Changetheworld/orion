@@ -466,6 +466,26 @@ SKILLS_ARCHIVE_DIR = os.path.join(SKILLS_DIR, "archive")
 os.makedirs(SKILLS_DIR, exist_ok=True)
 os.makedirs(SKILLS_ARCHIVE_DIR, exist_ok=True)
 
+
+def _publish_skill_change(fname: str, skill: dict, op: str) -> None:
+    """Cross-host learning gossip (synthesis-continual-learning.md C4): every
+    skill mutation publishes here so orion_gossip can put it into the LWWMap
+    under `learned.skill.<fname>`. Peers receive the delta via the existing
+    gossip path and apply it locally through orion_learning_sync. The brain
+    learns on one host and IS smarter on all of them — without a sync
+    protocol, conflict resolution, or a server. Best-effort: a substrate
+    outage must never break the local skill write."""
+    try:
+        from orion_substrate import publish
+        # Drop the in-memory _fname helper; gossip carries fname at top level.
+        body = {k: v for k, v in skill.items() if k != "_fname"}
+        publish("brain.learned.skill", {
+            "fname": fname, "op": op, "payload": body,
+            "ts": time.time(),
+        })
+    except Exception:
+        pass
+
 # Verdict vocabulary — the synthesis memo's one-field schema extension.
 # 'helped' / 'hurt' / 'neutral' is the minimum signal that produces an
 # honest contribution score; richer outcome shapes can be derived later.
@@ -608,7 +628,10 @@ def learn_skill(task_description, approach, result, tags=None):
         "content_hash": hashlib.md5(((approach or "") + (task_description or "")).encode()).hexdigest()[:12],
     }
     fname = hashlib.md5(task_description.encode()).hexdigest()[:8] + ".json"
-    return _write_skill(os.path.join(SKILLS_DIR, fname), skill)
+    ok = _write_skill(os.path.join(SKILLS_DIR, fname), skill)
+    if ok:
+        _publish_skill_change(fname, skill, "learned")  # C4 — gossip the birth
+    return ok
 
 
 def on_skill_fired(skill_name_or_fname: str, verdict: str) -> dict | None:
@@ -634,6 +657,7 @@ def on_skill_fired(skill_name_or_fname: str, verdict: str) -> dict | None:
     skill["contribution"] = round(sum(weights) / max(1, len(weights)), 4)
     skill["last_fired"] = time.time()
     _write_skill(path, skill)
+    _publish_skill_change(os.path.basename(path), skill, "fired")  # C4 — gossip the verdict
     return skill
 
 
@@ -654,6 +678,7 @@ def archive_skill(skill_name_or_fname: str, reason: str = "") -> bool:
     try:
         _write_skill(dest, skill)
         os.remove(path)
+        _publish_skill_change(os.path.basename(path), skill, "archived")  # C4
         return True
     except Exception:
         return False
@@ -674,6 +699,7 @@ def restore_skill(fname: str) -> bool:
     try:
         _write_skill(dest, skill)
         os.remove(src)
+        _publish_skill_change(fname, skill, "restored")  # C4 — gossip un-archive
         return True
     except Exception:
         return False
