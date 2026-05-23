@@ -239,6 +239,135 @@ def _publish_event(subject: str, payload: dict) -> None:
         pass
 
 
+# ─────────────────────────────────────────────────────────
+# Lateral diffusion — CA-style supplement to the calibration ledger.
+# Each row gets a small contribution from its token-neighbors' outcomes
+# so learning on one shape can generalize laterally to similar shapes
+# *within the same host*. Per the T4 cognition brief:
+#   - alpha small (~0.1) — diffusion supplements, never replaces
+#   - reversible — original outcome_value untouched; diffused values live
+#     in a separate JSON file the governor mixes in at half-weight
+#   - neighbors found via Jaccard > LATERAL_NEIGHBOR_SIM on the same token
+#     bag used by _similar_rows, so the neighbor relation is consistent
+# ─────────────────────────────────────────────────────────
+
+LATERAL_ALPHA = float(os.environ.get("ORION_DREAM_LATERAL_ALPHA", "0.1"))
+LATERAL_NEIGHBOR_SIM = float(os.environ.get("ORION_DREAM_LATERAL_SIM", "0.3"))
+LATERAL_MIN_NEIGHBORS = int(os.environ.get("ORION_DREAM_LATERAL_MIN_N", "2"))
+
+
+def _tokens_lower(s: str) -> set[str]:
+    """Same token shape orion_metacognition._tokens uses, kept inline so
+    the dream cycle doesn't need to import the daemon for one set-builder."""
+    return {t for t in (s or "").lower().replace("/", " ").replace("_", " ").split()
+            if len(t) > 2}
+
+
+def _lateral_diffuse() -> dict:
+    """One CA-style diffusion pass over the metacognition decision ledger.
+
+    For each closed ledger row, find token-neighbors (Jaccard ≥
+    LATERAL_NEIGHBOR_SIM on symptom+action tokens), compute
+    diffused_value = alpha * mean(neighbors.outcome_value) + (1-alpha) * own,
+    and write the result to ~/.orion/metacog/diffused.json. Original
+    ledger untouched — this is supplementary signal the governor mixes in
+    at half-weight against own outcome_value. Skipped silently when the
+    ledger is absent or under-populated.
+
+    Returns a summary dict with the row counts + the mean absolute shift
+    so the dream history captures whether diffusion is actually doing
+    work (high mean shift) vs. spinning (~0)."""
+    ledger_path = Path(os.path.expanduser(
+        os.environ.get("ORION_METACOG_LEDGER")
+        or "~/.orion/metacog/decisions.jsonl"))
+    out_path = ledger_path.parent / "diffused.json"
+    if not ledger_path.exists():
+        return {"skipped": "no ledger yet"}
+    rows: list[dict] = []
+    try:
+        with ledger_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if "outcome" not in r or "outcome_value" not in r:
+                    continue
+                if not r.get("decision_id"):
+                    continue
+                rows.append(r)
+    except OSError:
+        return {"skipped": "ledger read failed"}
+    if len(rows) < LATERAL_MIN_NEIGHBORS + 1:
+        return {"skipped": "ledger too small (%d rows)" % len(rows)}
+    # Pre-tokenize once so the N^2 neighbor search is cheap. Bound the
+    # search at LATERAL_CAP rows from the tail so a megaledger doesn't
+    # turn diffusion into a multi-second pass.
+    cap = int(os.environ.get("ORION_DREAM_LATERAL_CAP", "1000"))
+    rows = rows[-cap:]
+    toks = [_tokens_lower(r.get("symptom_class", "") + " "
+                          + (r.get("proposed_action") or ""))
+            for r in rows]
+    diffused: dict = {}
+    rows_with_neighbors = 0
+    total_abs_shift = 0.0
+    for i, r in enumerate(rows):
+        if not toks[i]:
+            continue
+        neighbor_vals: list[float] = []
+        for j in range(len(rows)):
+            if j == i:
+                continue
+            if not toks[j]:
+                continue
+            inter = len(toks[i] & toks[j])
+            union = len(toks[i] | toks[j])
+            if union == 0:
+                continue
+            if inter / union < LATERAL_NEIGHBOR_SIM:
+                continue
+            neighbor_vals.append(float(rows[j]["outcome_value"]))
+        if len(neighbor_vals) < LATERAL_MIN_NEIGHBORS:
+            continue
+        own = float(r["outcome_value"])
+        neighbor_mean = sum(neighbor_vals) / len(neighbor_vals)
+        diffused_val = LATERAL_ALPHA * neighbor_mean + (1.0 - LATERAL_ALPHA) * own
+        diffused[r["decision_id"]] = {
+            "outcome_value": round(own, 4),
+            "diffused_value": round(diffused_val, 4),
+            "neighbors_n": len(neighbor_vals),
+        }
+        rows_with_neighbors += 1
+        total_abs_shift += abs(diffused_val - own)
+    # Atomic write so a partial diffusion pass never corrupts the file
+    # the governor reads. Empty diffused → still write {"rows": {}} so
+    # the governor sees "diffusion ran, no neighbors found" not "no diff
+    # file at all" (which is harmless but ambiguous).
+    summary = {
+        "ts": time.time(),
+        "alpha": LATERAL_ALPHA,
+        "neighbor_sim_threshold": LATERAL_NEIGHBOR_SIM,
+        "min_neighbors": LATERAL_MIN_NEIGHBORS,
+        "rows_scanned": len(rows),
+        "rows_with_neighbors": rows_with_neighbors,
+        "mean_abs_shift": round(
+            total_abs_shift / max(1, rows_with_neighbors), 4),
+    }
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = out_path.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump({"summary": summary, "rows": diffused},
+                      f, default=str, indent=2)
+        tmp.replace(out_path)
+    except OSError as e:
+        return {"skipped": "write failed: %s" % e}
+    return summary
+
+
 def _run_dream_cycle() -> dict:
     """One dream cycle: read recent decisions, consolidate into playbooks."""
     started = time.time()
@@ -321,6 +450,59 @@ def _run_dream_cycle() -> dict:
     except Exception as e:
         logger.warning("skill curation skipped: %s", e)
 
+    # Dream-replay — hippocampal-replay analogue. Sample plausible scenarios
+    # weighted by ledger marginals (plus a novelty injector for shapes we've
+    # never seen) and play them through the LIVE governor so the brain
+    # accumulates calibration BEFORE the next real event. Outcomes land in a
+    # SEPARATE sim ledger that orion_metacognition.governor weights at
+    # SIM_LEDGER_WEIGHT — and caps at the real-only baseline (honesty floor).
+    # brain.sim.drift is the launch tripwire: rising = the world model is
+    # hallucinating, caught before it can corrupt learning.
+    sim_cycle = None
+    try:
+        import orion_simulate
+        sim_cycle = orion_simulate.run_scenarios()
+        logger.info("sim cycle: %d plays (%d novelty), drift=%.3f over %d shapes",
+                    sim_cycle.get("plays", 0),
+                    sim_cycle.get("novelty_plays", 0),
+                    sim_cycle.get("drift", {}).get("mean_drift", 0.0),
+                    sim_cycle.get("drift", {}).get("shapes_compared", 0))
+    except Exception as e:
+        logger.warning("sim cycle skipped: %s", e)
+
+    # Lateral diffusion (CA-style) — supplement each decision's lived outcome
+    # with a small contribution from its token-neighbors' outcomes. Per the
+    # T4 cognition brief: alpha small (~0.1), original outcome_value NEVER
+    # changes, diffused values live in a separate file the governor mixes
+    # in at half-weight. Reversible by construction: deleting diffused.json
+    # restores the pre-diffusion behavior exactly.
+    diffusion = None
+    try:
+        diffusion = _lateral_diffuse()
+        if diffusion:
+            logger.info("lateral diffusion: %d rows w/ neighbors (alpha=%.2f, "
+                        "mean shift=%.3f)",
+                        diffusion.get("rows_with_neighbors", 0),
+                        diffusion.get("alpha", 0.0),
+                        diffusion.get("mean_abs_shift", 0.0))
+            _publish_event("brain.dream.lateral_diffusion", diffusion)
+    except Exception as e:
+        logger.warning("lateral diffusion skipped: %s", e)
+
+    # HOT-3 refresh — recompute the (symptom, fuel) calibration error map
+    # right after the dream changed ledger marginals. Without this, the
+    # governor's HOT-3 correction stays stale until the next periodic
+    # daemon refresh (~20 min); doing it here closes the loop on the
+    # dream's own pass so the next morning's governor() reads the new
+    # numbers immediately.
+    hot3 = None
+    try:
+        import orion_metacognition
+        hot3 = orion_metacognition.publish_miscalibration()
+        logger.info("hot3 refreshed: %d buckets", hot3)
+    except Exception as e:
+        logger.warning("hot3 refresh skipped: %s", e)
+
     summary = {
         "ts": time.time(),
         "duration_sec": time.time() - started,
@@ -330,6 +512,9 @@ def _run_dream_cycle() -> dict:
         "demoted": demoted,
         "memory_consolidation": mem_consolidation,
         "skill_curation": skill_curation,
+        "sim_cycle": sim_cycle,
+        "lateral_diffusion": diffusion,
+        "hot3_buckets": hot3,
     }
     try:
         with history_path.open("a", encoding="utf-8") as f:
