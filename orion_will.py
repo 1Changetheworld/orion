@@ -84,17 +84,35 @@ OOB code if needed.
 WHAT THIS LAYER DOESN'T DO (yet)
 ================================
 
-- Plan multi-step actions (single-shot proposals only)
-- Manage long-running goals across days (basic timestamp tracking
-  only, no rich scheduling)
 - Self-modify its scoring weights (uses fixed defaults; outcome
   learning is the door to that, not yet built)
-- Compete goals against each other in real-time (utility threshold
-  filter is a coarse proxy; ACT-R-style continuous matching is
-  next round)
 
-Each of these is a known-future-frontier piece. The first version
-is observable, predictable, and conservative.
+Build #4 (2026-05-23) closed four of the original five gaps: it
+extends the build #3 will→taskspine seam in service of the founder's
+2026-05-10 articulation (volunteered as Atlas's own AGI definition:
+"a system that can learn, act, reason across any domain without
+being explicitly programmed for it"). The four closures:
+
+1. HIERARCHICAL GOALS — for kinds in WILL_SUBGOAL_KINDS, a promoted
+   goal decomposes (fuel-assisted, cached on the spine) into ordered
+   sub-goals; each sub-goal is a first-class goal that re-enters the
+   pipeline and earns its own governor consult. Plan lives in the
+   taskspine, so it survives host death AND fuel timeout.
+2. META-CALIBRATION (will_user_receptivity) — cross-kind aggregate
+   of engaged/deferred in the last 24h; below tau, the promotion
+   gate is capped to 'ask' for any kind. Build #3 calibrated per
+   kind; this is the broad "user is in quiet mode" override.
+3. INTENT V2 — regex stays for cheap cases; a fuel-assisted pass
+   (cached by content hash, rate-limited per scan window) catches
+   implicit intents the regex misses. The cache is what makes it
+   affordable.
+4. EVIDENCE-WEIGHTED DECAY — half-life is per-kind, priced by the
+   kind's lived engagement rate. Reliably-engaged kinds decay slow;
+   chronically-deferred kinds decay fast.
+5. IMPACT-WEIGHTED INTERPLAY — selection sorts by utility × (1 −
+   impact_cost). On tied utility, a small reminder beats a multi-
+   step blast (corrigibility low-impact head expressed at the
+   selection stage; utility ≠ alignment).
 
 PUBLISHED SUBJECTS
 ==================
@@ -135,6 +153,51 @@ UTILITY_THRESHOLD = float(os.environ.get("ORION_WILL_THRESHOLD", "0.5"))
 MAX_ACTIVE_GOALS = int(os.environ.get("ORION_WILL_MAX_GOALS", "20"))
 GOAL_DECAY_HALF_LIFE_DAYS = float(os.environ.get("ORION_WILL_DECAY_DAYS", "14"))
 
+# ─── Build #4 — Volition & Goals (2026-05-23) ─────────────────────
+# Hierarchical decomposition: only kinds that genuinely need multi-step
+# pursuit get decomposed; reminders / notes stay single-shot. Shallow by
+# default per [r-horizon] (planning horizon is data-dependent).
+WILL_SUBGOAL_KINDS = {"long_term", "self_action"}
+WILL_SUBGOAL_MAX = int(os.environ.get("ORION_WILL_SUBGOAL_MAX", "5"))
+WILL_SUBGOAL_MIN_DESC = 12
+
+# Cross-kind receptivity cap (the "user in quiet mode" override). Tau is
+# intentionally low so the cap only fires when the evidence is loud —
+# build #3 already does per-kind calibration, this is the broader gate.
+WILL_RECEPTIVITY_WINDOW_SEC = float(os.environ.get("ORION_WILL_RECEPTIVITY_WINDOW", str(86400)))
+WILL_RECEPTIVITY_TAU = float(os.environ.get("ORION_WILL_RECEPTIVITY_TAU", "0.30"))
+WILL_RECEPTIVITY_MIN_OBS = int(os.environ.get("ORION_WILL_RECEPTIVITY_MIN_OBS", "3"))
+
+# Per-kind half-life. The single constant GOAL_DECAY_HALF_LIFE_DAYS now
+# acts as the no-evidence default; bounded between FAST (chronically-
+# ignored kind decays fast) and SLOW (reliably-engaged kind sticks around).
+WILL_KIND_DECAY_FAST_DAYS = float(os.environ.get("ORION_WILL_DECAY_FAST", "3.0"))
+WILL_KIND_DECAY_SLOW_DAYS = float(os.environ.get("ORION_WILL_DECAY_SLOW", "30.0"))
+WILL_KIND_DECAY_MIN_OBS = int(os.environ.get("ORION_WILL_DECAY_MIN_OBS", "4"))
+WILL_KIND_DECAY_WINDOW_SEC = float(os.environ.get("ORION_WILL_DECAY_WINDOW",
+                                                   str(14 * 86400)))
+
+# Impact cost per kind — heuristic chunk values from the volition memo's
+# impact-tier mapping. Used at SELECTION time so a tiny harmless nudge
+# beats a multi-step blast on tied utility (corrigibility low-impact head).
+WILL_KIND_IMPACT = {
+    "reminder":      0.05,
+    "memory_anchor": 0.05,
+    "self_note":     0.05,
+    "lapsed":        0.25,
+    "self_action":   0.35,
+    "long_term":     0.40,
+}
+WILL_KIND_IMPACT_DEFAULT = 0.20
+
+# Intent v2 fuel-assisted extraction. The cache is what makes it
+# affordable; the rate limit is what keeps a flood of new chunks
+# (transcript ingest, replay) from burning the fuel budget.
+WILL_INTENT_FUEL_MIN_CHARS = int(os.environ.get("ORION_WILL_INTENT_FUEL_MIN", "40"))
+WILL_INTENT_FUEL_CACHE_MAX = int(os.environ.get("ORION_WILL_INTENT_FUEL_CACHE_MAX", "500"))
+WILL_INTENT_FUEL_ALWAYS = os.environ.get("ORION_WILL_INTENT_FUEL_ALWAYS", "0") == "1"
+WILL_INTENT_FUEL_RATE_PER_MIN = int(os.environ.get("ORION_WILL_INTENT_FUEL_RATE", "6"))
+
 
 # ─────────────────────────────────────────────────────────
 # 1. INTENT EXTRACTION — generalized regex over recent text events
@@ -156,7 +219,12 @@ INTENT_REGEXES = [(re.compile(p, re.IGNORECASE), kind, base_imp) for p, kind, ba
 
 
 def _extract_intents(text: str) -> list[dict]:
-    """Run patterns over a text event. Return zero or more intent records."""
+    """Run regex patterns over a text event. Return zero or more intent records.
+
+    The regex pass is the cheap-and-obvious half of Build #4 intent v2. The
+    fuel-assisted half lives in _extract_intents_fuel; _extract_intents_v2
+    composes both. Keeping this function pure-regex preserves the v1 contract
+    for tests and any consumer that wants regex-only behavior."""
     if not text:
         return []
     out = []
@@ -173,6 +241,183 @@ def _extract_intents(text: str) -> list[dict]:
                 "ts": time.time(),
             })
     return out
+
+
+# ─────────────────────────────────────────────────────────
+# Build #4 — INTENT v2: hybrid regex + fuel-assisted extraction
+# Grounded in the founder's 2026-05-10 articulation. Regex catches the
+# cheap-and-obvious phrasings; the fuel pass catches implicit intents
+# ("I might want to look into X someday") that the patterns miss. The
+# content-hash cache + per-window rate limit are what make it affordable.
+# ─────────────────────────────────────────────────────────
+
+_intent_fuel_cache: dict[str, dict] = {}
+_intent_fuel_cache_loaded = False
+_intent_fuel_calls: deque = deque(maxlen=64)  # rolling timestamps for rate limit
+
+
+def _intent_cache_path() -> Path:
+    return WILL_DIR / "intent_cache.json"
+
+
+def _load_intent_cache() -> None:
+    """Read the persisted cache so a fresh process inherits prior fuel
+    verdicts — important on restart, replay, and host-resume so we don't
+    re-burn fuel on the first wave of substrate events."""
+    global _intent_fuel_cache_loaded
+    _intent_fuel_cache_loaded = True
+    p = _intent_cache_path()
+    if not p.exists():
+        return
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            _intent_fuel_cache.update(data)
+    except Exception:
+        pass
+
+
+def _persist_intent_cache() -> None:
+    WILL_DIR.mkdir(parents=True, exist_ok=True)
+    # Evict oldest entries by ts when over cap.
+    if len(_intent_fuel_cache) > WILL_INTENT_FUEL_CACHE_MAX:
+        items = sorted(_intent_fuel_cache.items(),
+                       key=lambda kv: float(kv[1].get("ts", 0)))
+        for k, _ in items[: len(_intent_fuel_cache) - WILL_INTENT_FUEL_CACHE_MAX]:
+            _intent_fuel_cache.pop(k, None)
+    try:
+        _intent_cache_path().write_text(
+            json.dumps(_intent_fuel_cache, default=str), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _intent_text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:24]
+
+
+def _rate_limit_intent_fuel(now: float | None = None) -> bool:
+    """Return True if we're under the per-minute rate; record the call."""
+    now = now if now is not None else time.time()
+    while _intent_fuel_calls and now - _intent_fuel_calls[0] > 60.0:
+        _intent_fuel_calls.popleft()
+    if len(_intent_fuel_calls) >= WILL_INTENT_FUEL_RATE_PER_MIN:
+        return False
+    _intent_fuel_calls.append(now)
+    return True
+
+
+_FUEL_INTENT_KINDS = {"reminder", "memory_anchor", "self_note", "self_action",
+                      "long_term", "lapsed"}
+
+
+def _parse_fuel_intents(raw: str, source_text: str) -> list[dict]:
+    """Parse a fuel reply that we asked to return JSON. Tolerant: scan for
+    the first JSON array in the reply, drop anything else. Each item must
+    be {kind, description, importance?}; bad items dropped silently."""
+    if not raw:
+        return []
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    chunk = raw[start:end + 1]
+    try:
+        data = json.loads(chunk)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    now = time.time()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind", "")).lower().strip()
+        desc = str(item.get("description", "")).strip()
+        if kind not in _FUEL_INTENT_KINDS or len(desc) < 4:
+            continue
+        imp = item.get("importance", 0.5)
+        try:
+            imp = max(0.05, min(0.95, float(imp)))
+        except Exception:
+            imp = 0.5
+        out.append({
+            "kind": kind,
+            "description": desc[:240],
+            "base_importance": imp,
+            "raw_text": source_text[:300],
+            "ts": now,
+            "source": "fuel_v2",
+        })
+    return out
+
+
+def _extract_intents_fuel(text: str) -> list[dict]:
+    """Best-effort fuel-assisted pass. Caches by content hash; rate-limited.
+    Returns [] silently on missing fuel, garbage reply, or rate cap — never
+    raises, so the regex path always wins on any failure."""
+    if not _intent_fuel_cache_loaded:
+        _load_intent_cache()
+    if len(text) < WILL_INTENT_FUEL_MIN_CHARS:
+        return []
+    h = _intent_text_hash(text)
+    if h in _intent_fuel_cache:
+        cached = _intent_fuel_cache[h].get("intents") or []
+        # Refresh ts on raw_text/timestamps so newly-cached calls produce
+        # goal records with current ts (importance learning still works).
+        now = time.time()
+        return [{**c, "ts": now, "raw_text": text[:300]} for c in cached]
+    if not _rate_limit_intent_fuel():
+        return []
+    try:
+        import orion_fuel
+    except Exception:
+        return []
+    prompt = (
+        "Extract any explicit or implicit personal intents from the text below.\n"
+        "Return ONLY a JSON array; no preamble, no commentary, no code fences.\n"
+        "Each item: {\"kind\": <one of "
+        "reminder|memory_anchor|self_note|self_action|long_term|lapsed>, "
+        "\"description\": <short imperative ≤120 chars>, "
+        "\"importance\": <0.0–1.0>}.\n"
+        "Skip rhetorical phrases. If none, return [].\n\n"
+        "TEXT:\n%s"
+    ) % text[:1200]
+    try:
+        reply, _engine = orion_fuel.get_fuel(prompt, interface="will-intent-v2")
+    except Exception:
+        reply = ""
+    intents = _parse_fuel_intents(reply or "", text)
+    _intent_fuel_cache[h] = {"intents": intents, "ts": time.time(),
+                              "len": len(text)}
+    _persist_intent_cache()
+    return intents
+
+
+def _extract_intents_v2(text: str) -> list[dict]:
+    """Hybrid: regex first (cheap), then fuel-assisted ONLY if regex found
+    nothing substantive in the chunk — unless WILL_INTENT_FUEL_ALWAYS is on,
+    in which case we always supplement. Deduplicates on (kind, description)
+    so a regex hit and a fuel hit on the same phrasing don't both ingest."""
+    if not text:
+        return []
+    regex_intents = _extract_intents(text)
+    do_fuel = WILL_INTENT_FUEL_ALWAYS or not regex_intents
+    if not do_fuel:
+        return regex_intents
+    fuel_intents = _extract_intents_fuel(text)
+    if not fuel_intents:
+        return regex_intents
+    seen = {(i["kind"], i["description"].lower()) for i in regex_intents}
+    merged = list(regex_intents)
+    for fi in fuel_intents:
+        key = (fi["kind"], fi["description"].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(fi)
+    return merged
 
 
 # ─────────────────────────────────────────────────────────
@@ -219,6 +464,116 @@ def _append_ledger(record: dict) -> None:
         pass
 
 
+# ─────────────────────────────────────────────────────────
+# Build #4 — outcome-evidence helpers
+# Three consumers read these: per-kind half-life, cross-kind receptivity,
+# and the impact-aware selector. Single source of truth so all three
+# agree on what "user actually engaged" means.
+# ─────────────────────────────────────────────────────────
+
+def _iter_outcome_rows(since_ts: float) -> list[dict]:
+    """Stream phase=outcome rows from goals.jsonl since since_ts. The
+    durable ledger is the source of truth so a fresh process inherits
+    the same engagement memory the long-running daemon had."""
+    path = WILL_DIR / "goals.jsonl"
+    if not path.exists():
+        return []
+    out: list[dict] = []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if row.get("phase") != "outcome":
+                    continue
+                try:
+                    ts = float(row.get("ts", 0))
+                except Exception:
+                    continue
+                if ts >= since_ts:
+                    out.append(row)
+    except OSError:
+        pass
+    return out
+
+
+def _outcome_kind(row: dict) -> str:
+    """Best-effort recover the goal's kind from an outcome row. Outcome
+    rows store goal_id only, so we look it up in the active set; goals
+    already evicted return UNKNOWN (acceptable — they won't influence
+    per-kind metrics anyway)."""
+    gid = row.get("goal_id")
+    if gid and gid in _active_goals:
+        return _active_goals[gid].get("kind", "UNKNOWN")
+    return row.get("kind", "UNKNOWN")
+
+
+def _kind_engagement_rate(kind: str, now: float,
+                          window_sec: float = WILL_KIND_DECAY_WINDOW_SEC,
+                          ) -> tuple[float | None, int]:
+    """Fraction of outcomes for this kind that are 'engaged', over the
+    lookback window. Returns (rate, count); rate=None when no evidence
+    (caller must use the default, NOT treat as zero — otherwise every
+    new kind decays fastest by construction)."""
+    rows = [r for r in _iter_outcome_rows(now - window_sec)
+            if _outcome_kind(r) == kind]
+    n = len(rows)
+    if n == 0:
+        return None, 0
+    engaged = sum(1 for r in rows if r.get("outcome") == "engaged")
+    return engaged / n, n
+
+
+def _kind_half_life_days(kind: str, now: float | None = None) -> float:
+    """Per-kind decay derived from engagement evidence:
+        rate=0.0 -> FAST  (decay aggressively, stop pestering)
+        rate=1.0 -> SLOW  (user reliably engages — keep alive)
+    Below WILL_KIND_DECAY_MIN_OBS observations, fall back to the
+    historical default so new kinds get the same treatment v1 gave."""
+    now = now if now is not None else time.time()
+    rate, n = _kind_engagement_rate(kind, now)
+    if rate is None or n < WILL_KIND_DECAY_MIN_OBS:
+        return GOAL_DECAY_HALF_LIFE_DAYS
+    fast = WILL_KIND_DECAY_FAST_DAYS
+    slow = WILL_KIND_DECAY_SLOW_DAYS
+    return fast + (slow - fast) * rate
+
+
+def will_user_receptivity(now: float | None = None) -> dict:
+    """Cross-kind aggregate over the last WILL_RECEPTIVITY_WINDOW_SEC:
+    engaged / (engaged + deferred). Ignores 'expired' (neutral — the
+    user never saw it). Returns {rate, count, applied_cap, ...} where
+    applied_cap=True means the cross-kind cap should override the
+    governor's auto verdict on the current promotion."""
+    now = now if now is not None else time.time()
+    rows = _iter_outcome_rows(now - WILL_RECEPTIVITY_WINDOW_SEC)
+    engaged = sum(1 for r in rows if r.get("outcome") == "engaged")
+    deferred = sum(1 for r in rows if r.get("outcome") == "deferred")
+    total = engaged + deferred
+    if total == 0:
+        return {"rate": None, "count": 0, "applied_cap": False,
+                "engaged": 0, "deferred": 0}
+    rate = engaged / total
+    cap = (total >= WILL_RECEPTIVITY_MIN_OBS and rate < WILL_RECEPTIVITY_TAU)
+    return {"rate": round(rate, 3), "count": total, "applied_cap": cap,
+            "engaged": engaged, "deferred": deferred}
+
+
+def _impact_cost(g: dict) -> float:
+    """Per-goal impact cost in [0, 1]. Subgoals carry a small bump
+    because they're part of a larger plan whose total blast is bigger
+    than a one-shot nudge."""
+    base = WILL_KIND_IMPACT.get(g.get("kind", ""), WILL_KIND_IMPACT_DEFAULT)
+    if g.get("parent_goal_id"):
+        base = min(0.6, base + 0.05)
+    return base
+
+
 def _ingest_intent(intent: dict, source_subject: str) -> None:
     gid = _goal_id(intent)
     now = time.time()
@@ -262,13 +617,14 @@ def _utility(g: dict, now: float) -> float:
     importance = float(g.get("importance", 0.5))
     age_days = (now - float(g.get("formed_at", now))) / 86400.0
     # time_pressure curve: starts at 0.3 (fresh, low pressure), peaks ~3 days,
-    # then decays via half-life (older goals get less urgent unless re-seen)
+    # then decays via per-kind half-life (Build #4 evidence-weighted decay).
+    kind_half_life = _kind_half_life_days(g.get("kind", ""), now=now)
     if age_days < 0.5:
         time_pressure = 0.3
     elif age_days < 3.0:
         time_pressure = 0.3 + (age_days - 0.5) * 0.28  # rises to ~1.0 at 3d
     else:
-        decay = 0.5 ** ((age_days - 3.0) / GOAL_DECAY_HALF_LIFE_DAYS)
+        decay = 0.5 ** ((age_days - 3.0) / max(0.5, kind_half_life))
         time_pressure = max(0.05, 1.0 * decay)
 
     # context_fit: prefer Empathy's live state vector (memo §7) — it
@@ -379,7 +735,11 @@ def _select_and_initiate() -> None:
     if not candidates:
         return
 
-    candidates.sort(key=lambda x: -x[0])
+    # Build #4 — impact-weighted selection. Raw utility says "how much
+    # do I want to act?"; (1 − impact_cost) says "and how cheap is being
+    # wrong here?". The product is the safer-greedy selection: on tied
+    # utility the smaller-blast goal wins. utility ≠ alignment.
+    candidates.sort(key=lambda x: -(x[0] * (1.0 - _impact_cost(x[1]))))
     utility, goal = candidates[0]
 
     # Compose user-facing text describing the goal
@@ -459,8 +819,30 @@ def _promote_to_spine(goal: dict, utility: float, user_msg: str) -> str | None:
     for that goal kind. Today the base for reversible+single is 0.80 (auto),
     so this is a calibration sensor that only revokes autonomy on bad track
     records. New goal kinds always promote; chronically-ignored kinds stop.
+
+    Build #4 — wrap the governor verdict with a cross-kind RECEPTIVITY cap:
+    if the user has been deferring broadly in the last 24h (rate < tau),
+    don't promote ANY kind regardless of per-kind history. Build #3's
+    per-kind calibration silos this signal; this is the broad override
+    that catches "user is in quiet mode" before nagging cross-contaminates
+    every silo.
     """
     action, symptom = _will_action_key(goal)
+    recept = will_user_receptivity()
+    if recept.get("applied_cap"):
+        # Cross-kind quiet-mode override. Skip the governor entirely — we
+        # know we're nagging across the board, so don't even ask. Log the
+        # hold and the receptivity so a dashboard / dream pass can see WHY
+        # promotion was suppressed (not a per-kind calibration miss).
+        _append_ledger({"phase": "promotion_held", "goal_id": goal["goal_id"],
+                        "reason": "receptivity_cap",
+                        "receptivity": recept, "ts": time.time()})
+        logger.info("will held promotion (receptivity cap): %s/%s engaged "
+                    "(rate=%.2f tau=%.2f)",
+                    recept["engaged"], recept["count"],
+                    recept["rate"], WILL_RECEPTIVITY_TAU)
+        return None
+
     try:
         import orion_metacognition
         g = orion_metacognition.governor(
@@ -469,7 +851,8 @@ def _promote_to_spine(goal: dict, utility: float, user_msg: str) -> str | None:
         if g.get("decision") != "auto":
             _append_ledger({"phase": "promotion_held", "goal_id": goal["goal_id"],
                             "governor_conf": g.get("confidence"),
-                            "basis": g.get("basis"), "ts": time.time()})
+                            "basis": g.get("basis"),
+                            "receptivity": recept, "ts": time.time()})
             return None
     except Exception as e:
         # Fail-open at the tier-2 default: a will-goal is reversible+single
@@ -497,10 +880,153 @@ def _promote_to_spine(goal: dict, utility: float, user_msg: str) -> str | None:
         })
         logger.info("will promoted goal %s to spine task %s",
                     goal["goal_id"][:8], task_id)
+        # Build #4 — for kinds that genuinely need multi-step pursuit, decompose
+        # into ordered sub-goals on the spine. Each sub-goal becomes a first-
+        # class active goal that re-enters the pipeline; the spine carries the
+        # plan so it survives host death AND fuel timeout. Decomposition is
+        # best-effort: a missing fuel leaves the parent as a single-shot reach
+        # (no regression from Build #3 behavior).
+        if goal.get("kind") in WILL_SUBGOAL_KINDS \
+                and not goal.get("parent_goal_id") \
+                and len(goal.get("description", "")) >= WILL_SUBGOAL_MIN_DESC:
+            try:
+                _decompose_and_seed_subgoals(goal, task_id)
+            except Exception as e:
+                logger.debug("subgoal decomposition skipped (%s)", e)
         return task_id
     except Exception as e:
         logger.warning("spine promotion failed (goal stays live): %s", e)
         return None
+
+
+# ─────────────────────────────────────────────────────────
+# Build #4 — HIERARCHICAL SUBGOAL DECOMPOSITION
+# Long-horizon kinds become a tree on the spine. The plan is cached
+# on the spine as a single "plan" step so a fresh process / resumed
+# host doesn't re-burn fuel to re-decompose. Each sub-goal is itself
+# an active goal that consults the governor on its own promotion.
+# ─────────────────────────────────────────────────────────
+
+def _subgoal_kind_for(parent_kind: str) -> str:
+    """Sub-goals inherit a slimmer kind so they don't recursively
+    decompose into sub-sub-goals on the next promotion. Parent kept
+    as long_term/self_action; children execute as 'self_action' (the
+    smallest action-y kind that still surfaces as a step prompt)."""
+    return "self_action"
+
+
+def _subgoal_id(parent_gid: str, idx: int) -> str:
+    """Deterministic so re-decomposition (host resume) doesn't dup."""
+    payload = ("subgoal|%s|%d" % (parent_gid, idx)).encode()
+    return "g_" + hashlib.sha256(payload).hexdigest()[:10]
+
+
+def _fuel_decompose(goal: dict) -> list[str] | None:
+    """Best-effort fuel call to break a parent goal into ordered steps.
+    Returns a list of short step descriptions, or None if fuel was
+    unavailable. The prompt is intentionally tight — shallow plans
+    only (≤ WILL_SUBGOAL_MAX), one line each, no commentary."""
+    try:
+        import orion_fuel
+    except Exception:
+        return None
+    prompt = (
+        "Decompose this goal into between 2 and %d ordered, concrete sub-steps.\n"
+        "Rules: one step per line, no numbering, no commentary, no preamble.\n"
+        "Each step is a short imperative phrase (≤120 chars).\n"
+        "Stop after the last step — do NOT output anything else.\n\n"
+        "GOAL (%s): %s"
+    ) % (WILL_SUBGOAL_MAX, goal.get("kind", "self_action"),
+         goal.get("description", "")[:300])
+    try:
+        text, _engine = orion_fuel.get_fuel(prompt, interface="will-decompose")
+    except Exception:
+        return None
+    if not text:
+        return None
+    lines = []
+    for raw in text.splitlines():
+        s = raw.strip().lstrip("-*•0123456789.) \t").strip()
+        if not s:
+            continue
+        if len(s) < 4 or len(s) > 200:
+            continue
+        # Drop common preamble lines a sloppy fuel still emits.
+        low = s.lower()
+        if low.startswith(("here are", "sure,", "okay,", "step ", "decomposition")):
+            continue
+        lines.append(s)
+        if len(lines) >= WILL_SUBGOAL_MAX:
+            break
+    return lines or None
+
+
+def _decompose_and_seed_subgoals(parent_goal: dict, task_id: str) -> int:
+    """Decompose parent_goal via the fuel; seed sub-goals as first-class
+    active goals AND record the plan as a structured step on the spine
+    task so a resuming host has the full plan. Returns the count of
+    sub-goals created (0 if the fuel was unavailable or returned junk)."""
+    import orion_taskspine
+    # Idempotency: if we already seeded sub-goals for this parent, don't
+    # re-decompose. Check the spine task for a prior plan step.
+    existing = orion_taskspine.load_task(task_id) or {}
+    for s in existing.get("steps", []):
+        if s.get("role") == "will-plan":
+            return 0  # already decomposed; resume path
+    steps = _fuel_decompose(parent_goal)
+    if not steps:
+        return 0
+    parent_gid = parent_goal["goal_id"]
+    now = time.time()
+    orion_taskspine._append(task_id, {
+        "kind": "step", "idx": 1, "role": "will-plan",
+        "content": "decomposed parent=%s into %d sub-goals: %s"
+                   % (parent_gid, len(steps),
+                      json.dumps([s[:120] for s in steps], ensure_ascii=False)),
+        "status": "done", "fuel": "will",
+        "hash": "will-plan-%s" % parent_gid[:8],
+    })
+    sub_kind = _subgoal_kind_for(parent_goal.get("kind", ""))
+    created = 0
+    with _lock:
+        for i, desc in enumerate(steps):
+            sgid = _subgoal_id(parent_gid, i)
+            if sgid in _active_goals:
+                continue
+            # Sub-goals inherit a slight importance bump so they actually
+            # clear UTILITY_THRESHOLD when the parent's been deemed worth
+            # acting on — without this, a 0.4-importance long-term parent
+            # produces 0.4-importance sub-goals that never fire.
+            sub_imp = min(1.0, float(parent_goal.get("importance", 0.5)) + 0.10)
+            # Earlier sub-goals get a small extra bump so they tend to
+            # surface in order without needing per-goal sequencing logic.
+            sub_imp = min(1.0, sub_imp + max(0.0, 0.05 * (len(steps) - i)))
+            _active_goals[sgid] = {
+                "goal_id": sgid,
+                "kind": sub_kind,
+                "description": desc[:240],
+                "source_subject": "will.subgoal_decomposition",
+                "raw_text": parent_goal.get("description", "")[:300],
+                "importance": sub_imp,
+                "formed_at": now,
+                "last_seen_ts": now,
+                "seen_count": 1,
+                "status": "active",
+                "parent_goal_id": parent_gid,
+                "parent_task_id": task_id,
+                "subgoal_idx": i,
+            }
+            _append_ledger({"phase": "subgoal_formed", **_active_goals[sgid]})
+            _publish("brain.will.goal_formed", _active_goals[sgid])
+            created += 1
+    _persist_active()
+    logger.info("decomposed parent %s into %d sub-goals via spine task %s",
+                parent_gid[:8], created, task_id)
+    _publish("brain.will.decomposed", {
+        "parent_goal_id": parent_gid, "task_id": task_id,
+        "subgoal_count": created, "ts": now,
+    })
+    return created
 
 
 # Map will-outcomes to metacog ledger keys. 'engaged' (user replied
@@ -627,12 +1153,12 @@ def _publish(subject: str, payload: dict) -> None:
 
 def _on_text_event(subject: str, payload: dict) -> None:
     """Catch text from channel.*.inbound and brain.memory.stored events.
-    Run intent extraction over the text."""
+    Run hybrid intent extraction over the text (regex + cached fuel)."""
     text = payload.get("text") or payload.get("content") or ""
     if not text:
         return
     _recent_events.append({"subject": subject, "text": text, "ts": time.time()})
-    intents = _extract_intents(text)
+    intents = _extract_intents_v2(text)
     for intent in intents:
         _publish("brain.will.intent_extracted", intent)
         _ingest_intent(intent, subject)
