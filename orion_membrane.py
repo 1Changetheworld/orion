@@ -340,6 +340,79 @@ def filter_manifest(entries: dict, dest_class: str = DEST_MESH) -> dict:
 
 
 # ─────────────────────────────────────────────────────────
+# Content-hash blacklist — out-of-band revocation. The user (or a
+# higher layer) writes a content_hash to BLACKLIST_PATH; any outbound
+# entry carrying that hash is dropped before publish, regardless of
+# tags. Used as belt-and-suspenders by orion_gossip._filtered_for_mesh.
+#
+# This is best-effort: peers that already received the entry keep their
+# copy. The honest semantic is "stop the bleeding," not "unring the
+# bell" (memo §4b demotion is best-effort by design).
+# ─────────────────────────────────────────────────────────
+
+BLACKLIST_PATH = MEMBRANE_DIR / "blacklist.txt"
+_blacklist_lock = threading.Lock()
+_blacklist_cache: tuple[float, set[str]] = (0.0, set())  # (mtime, hashes)
+
+
+def _load_blacklist() -> set[str]:
+    """Read content-hash blacklist, cached against file mtime so the
+    hot path stays O(1) on hits and only re-reads when the file
+    actually changes."""
+    global _blacklist_cache
+    try:
+        st = BLACKLIST_PATH.stat()
+    except FileNotFoundError:
+        with _blacklist_lock:
+            _blacklist_cache = (0.0, set())
+        return set()
+    except Exception:
+        return _blacklist_cache[1]
+    cached_mtime, cached = _blacklist_cache
+    if st.st_mtime == cached_mtime:
+        return cached
+    with _blacklist_lock:
+        try:
+            hashes = set()
+            for line in BLACKLIST_PATH.read_text(encoding="utf-8").splitlines():
+                # Strip inline "  # reason" comments so the hash stored
+                # alongside a justification still matches lookups.
+                bare = line.split("#", 1)[0].strip()
+                if bare:
+                    hashes.add(bare)
+            _blacklist_cache = (st.st_mtime, hashes)
+            return hashes
+        except Exception:
+            return cached
+
+
+def egress_hash_blocked(content_hash: str) -> bool:
+    """True if this content_hash has been revoked. Empty/falsy hash → False
+    (no metadata, no decision; classifier should have caught it upstream)."""
+    if not content_hash:
+        return False
+    return content_hash in _load_blacklist()
+
+
+def blacklist_hash(content_hash: str, reason: str = "") -> None:
+    """Append a hash to the blacklist file. Idempotent; caller is the
+    user (CLI), the dashboard, or a higher policy module."""
+    if not content_hash:
+        return
+    MEMBRANE_DIR.mkdir(parents=True, exist_ok=True)
+    if egress_hash_blocked(content_hash):
+        return
+    with BLACKLIST_PATH.open("a", encoding="utf-8") as f:
+        line = content_hash
+        if reason:
+            line = f"{content_hash}  # {reason.strip().replace(chr(10), ' ')}"
+        f.write(line + "\n")
+    # Invalidate cache so the next egress_hash_blocked re-reads.
+    global _blacklist_cache
+    _blacklist_cache = (0.0, set())
+
+
+# ─────────────────────────────────────────────────────────
 # Policy + audit
 # ─────────────────────────────────────────────────────────
 

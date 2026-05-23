@@ -205,11 +205,18 @@ class Substrate:
         try:
             from orion_membrane import egress_decision
             decision = egress_decision(subject, payload)
-        except Exception:
-            # Membrane unavailable. Fail-open here is the right default
-            # for a new layer landing on an established substrate; once
-            # Membrane is universally deployed across the mesh, this
-            # should flip to fail-closed.
+        except Exception as e:
+            # Membrane unavailable. Per membrane-research §4e: cross-host
+            # subjects fail-CLOSED (we do NOT ship state without the
+            # privacy lattice), localhost-only subjects fail-open so
+            # cognition-internal publishes survive a membrane outage.
+            if (subject.startswith("mesh.")
+                    or subject.startswith("brain.federation.")
+                    or subject.startswith("transport.")
+                    or subject.startswith("channel.")):
+                logger.warning("membrane unavailable — blocking %s (fail-closed): %s",
+                               subject, e)
+                return
             decision = "allow"
 
         if decision == "block":
