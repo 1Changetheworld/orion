@@ -304,6 +304,23 @@ def _run_dream_cycle() -> dict:
     except Exception as e:
         logger.warning("memory consolidation skipped: %s", e)
 
+    # Skill curation — the Library-Drift ratchet (synthesis-continual-learning.md
+    # C2). Retires low-contribution skills past N_MIN firings, bounds the active
+    # set at ACTIVE_CAP, and publishes brain.skills.mean_contribution — the
+    # single tripwire that tells us the library is learning (rising/flat) vs
+    # rotting (falling). Conservative by construction: untested skills survive.
+    skill_curation = None
+    try:
+        import orion_skill_curator
+        skill_curation = orion_skill_curator.curate()
+        logger.info("skill curation: %s active (retired %d, evicted %d, mean %s)",
+                    skill_curation.get("active_after"),
+                    len(skill_curation.get("retired", [])),
+                    len(skill_curation.get("evicted_over_cap", [])),
+                    skill_curation.get("mean_contribution"))
+    except Exception as e:
+        logger.warning("skill curation skipped: %s", e)
+
     summary = {
         "ts": time.time(),
         "duration_sec": time.time() - started,
@@ -312,6 +329,7 @@ def _run_dream_cycle() -> dict:
         "new_playbooks": new_playbooks,
         "demoted": demoted,
         "memory_consolidation": mem_consolidation,
+        "skill_curation": skill_curation,
     }
     try:
         with history_path.open("a", encoding="utf-8") as f:
