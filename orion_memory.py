@@ -461,7 +461,13 @@ def save():
 #     orion_skill_curator.py and rides the dream cycle
 # ═══════════════════════════════════════════════════════════════
 
-SKILLS_DIR = os.path.expanduser("~/.orion/brain/skills")
+# Skill paths honor ORION_BRAIN_DIR like the rest of the brain, so a tempdir
+# test (or a relocated install) reads + writes coherently with metacog,
+# intelligence, and procedures — all of which already respect this env var.
+# Default ~/.orion preserves prior behavior; the alignment was flagged in
+# the intelligence layer's commit message (d8c7c4a).
+_ORION_HOME = os.environ.get("ORION_BRAIN_DIR") or os.path.expanduser("~/.orion")
+SKILLS_DIR = os.path.join(_ORION_HOME, "brain", "skills")
 SKILLS_ARCHIVE_DIR = os.path.join(SKILLS_DIR, "archive")
 os.makedirs(SKILLS_DIR, exist_ok=True)
 os.makedirs(SKILLS_ARCHIVE_DIR, exist_ok=True)
