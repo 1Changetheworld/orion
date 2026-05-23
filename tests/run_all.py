@@ -16,6 +16,7 @@ from tests.test_identity_continuity import SCENARIOS as IDENTITY_SCENARIOS
 from tests.test_coherence_probe import SCENARIOS as COHERENCE_SCENARIOS
 from tests.test_federation_v2 import SCENARIOS as FEDERATION_V2_SCENARIOS
 from tests.test_cognition_t4 import SCENARIOS as COGNITION_T4_SCENARIOS
+from tests.test_simulate import SCENARIOS as SIMULATE_SCENARIOS
 from tests._harness import run_suite
 
 
@@ -29,6 +30,7 @@ def main():
     failures += run_suite("COHERENCE PROBE v2", COHERENCE_SCENARIOS)
     failures += run_suite("FEDERATION v2", FEDERATION_V2_SCENARIOS)
     failures += run_suite("COGNITION T4", COGNITION_T4_SCENARIOS)
+    failures += run_suite("DREAM-REPLAY SIMULATOR", SIMULATE_SCENARIOS)
     print()
     if failures == 0:
         print("ALL GREEN — safe to push")
