@@ -27,8 +27,11 @@ prediction it can be wrong about.
 WHAT THIS LAYER DOES
 ====================
 
-For each observed subject:
+Two complementary signals — TEMPORAL (does the rhythm match?) and
+CONTENT (does this event match what recent events looked like?). They
+fire on different failure modes and are computed independently.
 
+Temporal — per subject:
   1. Track inter-arrival time (IAT) — gap between consecutive events.
   2. Maintain rolling mean (mu) + stddev (sigma) of IAT in a window of
      last N=128 events.
@@ -43,16 +46,34 @@ For each observed subject:
      MISSING_GRACE_MULTIPLIER × mu seconds, treat as surprise spike
      with cause=missing.
 
+Content — per subject (this is the active-inference-in-token-space layer
+from synthesis-continual-learning §C5 + frontier-self-model Signal C):
+  1. Keep a rolling deque of the last N=16 payload feature-hash vectors
+     (orion_hash_embed — stdlib only, no Ollama dependency).
+  2. The "prediction" of the next payload is the L2-normalized mean of
+     that deque.
+  3. On each new event, surprise = 1 - cos(predicted, actual) ∈ [0, 1].
+     0 = exactly what we expected; 1 = orthogonal to expectation.
+  4. Publish brain.predictor.surprise {subject, surprise, ts} per event
+     once we have enough history (≥ CONTENT_MIN_SAMPLES). Workspace
+     listens to that subject directly as a continuous gain channel —
+     this is the prediction-error gain modulation cortical analogue.
+  5. Also push workspace.feedback at high content-surprise so the spike
+     gets attention on the NEXT tick, not after the gain decays in.
+
 WHY THIS IS NOT ACTIVE INFERENCE (per v2 research)
 ==================================================
 
 Friston's free energy principle is unfalsifiable as written and falls
 into the dark-room trap (a perfect-predictor agent would seek a
-dark room and stop). We're not minimizing free energy. We're just
-maintaining a per-subject rhythm model and emitting events when
-reality diverges. Active-inference-flavored. Engineering, not
-metaphysics. Per the v2 verdict: "use it as a thin prefetch layer
-that tells reach what's most surprising right now."
+dark room and stop). We're not minimizing free energy and we're not
+acting to reduce expected free energy. We maintain two per-subject
+rolling models — rhythm and content — and emit a divergence number
+when reality doesn't match. Active-inference-flavored, not the full
+theory. Per the v2 verdict: "use it as a thin prefetch layer that
+tells reach what's most surprising right now." The content layer
+inherits the same discipline: it only LIGHTS UP attention; it never
+proposes action, never gates a decision, never narrates.
 
 WHAT IT SUBSCRIBES TO
 =====================
@@ -102,6 +123,12 @@ MIN_SAMPLES = int(os.environ.get("ORION_PREDICTOR_MIN_SAMPLES", "6"))
 MISSING_GRACE_MULT = float(os.environ.get("ORION_PREDICTOR_MISSING_MULT", "3.0"))
 ABSENCE_CHECK_SEC = float(os.environ.get("ORION_PREDICTOR_ABSENCE_SEC", "30"))
 MIN_SIGMA = float(os.environ.get("ORION_PREDICTOR_MIN_SIGMA", "0.5"))
+
+# Content-prediction tunables (active inference in token space).
+CONTENT_WINDOW = int(os.environ.get("ORION_PREDICTOR_CONTENT_WIN", "16"))
+CONTENT_MIN_SAMPLES = int(os.environ.get("ORION_PREDICTOR_CONTENT_MIN", "3"))
+CONTENT_FEEDBACK_THRESHOLD = float(
+    os.environ.get("ORION_PREDICTOR_CONTENT_FB", "0.65"))
 
 DEFAULT_SUBJECTS = [
     "brain.health.alert",
@@ -197,12 +224,78 @@ def _model_for(subject: str) -> RhythmModel:
 
 
 # ─────────────────────────────────────────────────────────
+# Content model — per-subject rolling payload vectors.
+# Surprise = 1 - cos(EMA-of-recent-payload-vectors, this-payload-vector).
+# This is the active-inference-in-token-space half of the predictor.
+# ─────────────────────────────────────────────────────────
+
+class ContentModel:
+    """Rolling deque of payload feature-hash vectors per subject. The
+    'prediction' of the next payload is the L2-normalized mean of the
+    deque; surprise is 1 - cosine to that prediction.
+
+    Deliberately stateless beyond the deque — no model fit, no learning
+    rate, no theta. Per the v2 research, the predictor LIGHTS UP
+    attention; it does not learn a world model. Keeping it dumb keeps
+    the dark-room problem from biting."""
+    __slots__ = ("subject", "vectors")
+
+    def __init__(self, subject: str):
+        self.subject = subject
+        self.vectors: deque[list[float]] = deque(maxlen=CONTENT_WINDOW)
+
+    def observe(self, payload) -> Optional[float]:
+        """Returns surprise ∈ [0, 1] for this payload, or None if not
+        enough history yet. ALWAYS appends the new vector — even when
+        we returned None — so the rolling window fills."""
+        try:
+            from orion_hash_embed import hash_embed, cosine, mean_vector
+        except Exception:
+            return None  # stdlib-only utility; missing == bug, not runtime fault
+        new_vec = hash_embed(payload)
+        if not new_vec or all(x == 0.0 for x in new_vec):
+            return None  # empty payload — no signal to score
+        if len(self.vectors) < CONTENT_MIN_SAMPLES:
+            self.vectors.append(new_vec)
+            return None
+        # Score BEFORE adding to history so we don't self-anchor.
+        pred = mean_vector(list(self.vectors))
+        sim = cosine(pred, new_vec) if pred else 0.0
+        self.vectors.append(new_vec)
+        # 1 - sim ∈ [0, 2] mathematically but practically [0, 1] for
+        # non-negatively-correlated content. Clamp to [0, 1] so the
+        # downstream workspace gain stays bounded and interpretable.
+        return max(0.0, min(1.0, 1.0 - sim))
+
+
+_content_models: dict[str, ContentModel] = {}
+
+
+def _content_for(subject: str) -> ContentModel:
+    if subject not in _content_models:
+        _content_models[subject] = ContentModel(subject)
+    return _content_models[subject]
+
+
+# ─────────────────────────────────────────────────────────
 # Event handling
 # ─────────────────────────────────────────────────────────
 
 async def _on_event(nc, msg) -> None:
     subject = msg.subject
     now = time.time()
+    # ── Content-prediction surprise (active inference in token space).
+    # Computed BEFORE rhythm so a content-spike still emits even if the
+    # rhythm model is in its warm-up phase.
+    try:
+        payload = json.loads(msg.data.decode("utf-8"))
+    except Exception:
+        payload = msg.data.decode("utf-8", errors="replace")[:512]
+    cmodel = _content_for(subject)
+    content_surprise = cmodel.observe(payload)
+    if content_surprise is not None:
+        await _emit_content_surprise(nc, subject, content_surprise, now)
+    # ── Temporal rhythm surprise.
     model = _model_for(subject)
     z = model.observe(now)
     if z is None:
@@ -233,6 +326,31 @@ async def _absence_loop(nc) -> None:
             await _emit_spike(nc, model, kind="missing", z=z,
                               last_seen_ago=now - (model.last_ts or now))
             model.last_spike_ts = now
+
+
+async def _emit_content_surprise(nc, subject: str, surprise: float,
+                                 ts: float) -> None:
+    """Publish brain.predictor.surprise per event so the workspace can
+    use it as a continuous gain channel (prediction-error gain
+    modulation). Above CONTENT_FEEDBACK_THRESHOLD we ALSO push
+    workspace.feedback so the spike gets attention NEXT tick rather
+    than waiting for the natural gain channel to integrate."""
+    payload = {"subject": subject,
+               "surprise": round(surprise, 4),
+               "ts": ts}
+    try:
+        await nc.publish("brain.predictor.surprise",
+                         json.dumps(payload).encode("utf-8"))
+    except Exception as e:
+        logger.debug("content-surprise publish failed: %s", e)
+    if surprise >= CONTENT_FEEDBACK_THRESHOLD:
+        fb = {"subject": subject, "surprise": float(surprise),
+              "reason": f"predictor:content:{surprise:.2f}"}
+        try:
+            await nc.publish("workspace.feedback",
+                             json.dumps(fb).encode("utf-8"))
+        except Exception:
+            pass
 
 
 async def _emit_spike(nc, model: RhythmModel, kind: str, z: float,
