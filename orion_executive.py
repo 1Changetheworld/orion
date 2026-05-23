@@ -794,6 +794,63 @@ def _on_health_alert(subject: str, payload: dict) -> None:
     ctx = _build_context(symptom_class, payload)
     logger.info("executive engaging: service=%s class=%s", service, symptom_class)
 
+    # C3 fast-path-first — if a compiled procedure exists for this symptom
+    # AND its calibration floor + impact ceiling both clear, run it
+    # deterministically and skip the fuel call entirely. Zero fuel, constant
+    # latency, ledger-derived from real outcomes. The procedure store's
+    # safety envelope (impact ≤ ceiling, governor conf ≥ floor) is enforced
+    # INSIDE orion_compiled_procedures.execute() — we cannot bypass it from
+    # here even if we tried. Per synthesis-continual-learning.md §C3.
+    try:
+        import orion_compiled_procedures as _cp
+        proc = _cp.lookup_fast_path(symptom_class)
+        if proc is not None:
+            gov_conf = None
+            try:
+                import orion_metacognition as _meta
+                _g = _meta.governor(
+                    "executive fast-path: " + symptom_class,
+                    reversible=True, blast_radius="single",
+                    symptom=symptom_class, fuel="compiled_procedure")
+                gov_conf = _g.get("confidence")
+            except Exception:
+                gov_conf = None  # missing metacog → procedure's floor check refuses
+            rep = _cp.execute(proc, payload=payload, governor_conf=gov_conf)
+            if rep.get("executed") and rep.get("all_ok"):
+                _log_decision({
+                    "ts": time.time(),
+                    "service": service,
+                    "symptom_class": symptom_class,
+                    "phase": "compiled_fast_path",
+                    "procedure_hash": proc.get("content_hash"),
+                    "governor_conf": gov_conf,
+                    "outcome": "succeeded",
+                })
+                try:
+                    from orion_substrate import publish
+                    publish("brain.executive.applied", {
+                        "service": service,
+                        "symptom_class": symptom_class,
+                        "outcome": "succeeded",
+                        "via": "compiled_procedure",
+                        "procedure_hash": proc.get("content_hash"),
+                        "ts": time.time(),
+                    })
+                except Exception:
+                    pass
+                logger.info("executive fast-path applied: %s (conf %s)",
+                            symptom_class, gov_conf)
+                return  # skip the fuel call — we resolved this without re-reasoning
+            # Fast path REFUSED (impact/floor guard) or step FAILED — fall
+            # through to the deliberative path. The refusal reason is in
+            # rep['reason']; log it so the dream's curator notices misfires.
+            logger.info("fast-path declined for %s: %s",
+                        symptom_class, rep.get("reason") or "step failed")
+    except Exception as e:
+        # Procedure module unavailable or any unexpected error — the executive
+        # is a critical service, never let the fast-path machinery break it.
+        logger.debug("fast-path check skipped: %s", e)
+
     try:
         from orion_substrate import publish
         publish("brain.executive.deliberating", {
