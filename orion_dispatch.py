@@ -196,8 +196,24 @@ def ip():
 # DISPATCH ROUTER — called by the brain when it detects an action
 # ═══════════════════════════════════════════════════════════════
 
+def orion_status(args=""):
+    """Print Orion's intelligence snapshot (composite + ledger + skills +
+    procedures + mesh) in human-readable form. The one-command 'how's the
+    brain?' introspector — useful from any channel that routes through
+    dispatch, and load-bearing for the fresh-install acceptance test.
+    Best-effort: if the intelligence layer isn't importable, returns a
+    plain message rather than raising."""
+    try:
+        import orion_intelligence as _intel
+        return _intel.format_human(_intel.compute_snapshot())
+    except Exception as e:
+        return "orion_status unavailable: %s" % e
+
+
 DISPATCH_MAP = {
     "status": lambda args: status(),
+    "orion_status": lambda args: orion_status(args),
+    "intelligence": lambda args: orion_status(args),
     "mesh": lambda args: mesh(),
     "services": lambda args: services(),
     "agents": lambda args: agents(),

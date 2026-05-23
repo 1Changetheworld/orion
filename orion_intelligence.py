@@ -319,10 +319,67 @@ def main() -> int:
         time.sleep(HEARTBEAT_INTERVAL_SEC)
 
 
+def format_human(snap: dict) -> str:
+    """Render a snapshot as plain text for a human reading a terminal. JSON
+    is for scripts; this is for the founder asking 'how's the brain doing?'."""
+    def _f(v, default="—"):
+        if v is None:
+            return default
+        if isinstance(v, float):
+            return ("%.3f" % v).rstrip("0").rstrip(".")
+        return str(v)
+    L = snap.get("ledger", {})
+    S = snap.get("skills", {})
+    P = snap.get("procedures", {})
+    M = snap.get("mesh", {})
+    composite = snap.get("composite", 0.5)
+    bar_len = int(round(composite * 30))
+    bar = "█" * bar_len + "·" * (30 - bar_len)
+    lines = [
+        "═" * 56,
+        "  ORION — INTELLIGENCE SNAPSHOT",
+        "═" * 56,
+        "  host           : " + _f(snap.get("host")),
+        "  composite      : %.4f  [%s]" % (composite, bar),
+        "",
+        "  ── Calibration ledger ──",
+        "  decisions      : " + _f(L.get("decisions")) + " (24h: " + _f(L.get("decisions_24h")) + ")",
+        "  succeeded rate : " + _f(L.get("succeeded_rate")),
+        "  mean cal-delta : " + _f(L.get("mean_calibration_delta")),
+        "  distinct shapes: " + _f(L.get("distinct_symptoms")),
+        "",
+        "  ── Skill library (Library-Drift ratchet) ──",
+        "  active         : " + _f(S.get("active")) + " (archived: " + _f(S.get("archived")) + ")",
+        "  experienced    : " + _f(S.get("experienced_count")),
+        "  mean contribution: " + _f(S.get("mean_contribution")),
+        "",
+        "  ── Compiled procedures (C3 zero-fuel) ──",
+        "  active         : " + _f(P.get("active")) + " (archived: " + _f(P.get("archived")) + ")",
+        "  total fires    : " + _f(P.get("total_fires")),
+        "  success rate   : " + _f(P.get("success_rate")),
+        "",
+        "  ── Mesh (cross-host learning) ──",
+        "  peers known    : " + _f(M.get("peers_known")),
+        "  remote shapes  : " + _f(M.get("remote_symptoms")),
+        "  evidence rows  : " + _f(M.get("cross_host_evidence_rows")),
+    ]
+    peers = M.get("peer_hosts") or []
+    if peers:
+        lines.append("  peer hosts     : " + ", ".join(peers))
+    lines.append("═" * 56)
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "--once":
-        # CLI mode: one snapshot to stdout, no loop. Useful for cron + ad-hoc.
+    argv = sys.argv[1:]
+    if "--once" in argv:
+        # JSON mode: one snapshot to stdout, no loop. For scripts + cron.
         print(json.dumps(publish_snapshot(), indent=2, default=str))
+        sys.exit(0)
+    if "--human" in argv or "--orion-status" in argv:
+        # Human mode: formatted snapshot — the founder-asking-how-the-brain-is-doing path.
+        snap = compute_snapshot()
+        print(format_human(snap))
         sys.exit(0)
     sys.exit(main() or 0)
