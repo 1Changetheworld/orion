@@ -11,6 +11,7 @@ import sys
 from tests.test_extraction_resistance import SCENARIOS as EXTRACTION_SCENARIOS
 from tests.test_brain_functionality import SCENARIOS as BRAIN_SCENARIOS
 from tests.test_membrane_fail_closed import SCENARIOS as MEMBRANE_SCENARIOS
+from tests.test_source_attribution import SCENARIOS as PROVENANCE_SCENARIOS
 from tests._harness import run_suite
 
 
@@ -19,6 +20,7 @@ def main():
     failures += run_suite("EXTRACTION RESISTANCE", EXTRACTION_SCENARIOS)
     failures += run_suite("BRAIN FUNCTIONALITY", BRAIN_SCENARIOS)
     failures += run_suite("MEMBRANE FAIL-CLOSED", MEMBRANE_SCENARIOS)
+    failures += run_suite("SOURCE ATTRIBUTION", PROVENANCE_SCENARIOS)
     print()
     if failures == 0:
         print("ALL GREEN — safe to push")

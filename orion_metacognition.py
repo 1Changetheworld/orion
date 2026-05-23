@@ -822,8 +822,38 @@ def score_recall(query: str,
           "i_dont_know":    bool,
           "reason":         str,      # for audit / debugging
           "best_node":      dict | None,
+          "provenance":     list,     # node_ids consulted, top→bottom by
+                                      # retrieval_score. Source attribution
+                                      # contract (frontier-self-model §O1):
+                                      # every claim must trace to records,
+                                      # not to model introspection.
         }
+
+    Provenance is the data contract behind source attribution. A claim
+    with an empty provenance list is, by definition, unsupported by
+    memory — the caller MUST treat it as a hallucination. Refuse
+    decisions still include the consulted node_ids so the user can
+    audit "what did Orion look at when it decided not to answer?"
     """
+    # Derive provenance from candidates BEFORE any early-return so every
+    # exit point carries the trace. Falls back to content-hash digest
+    # when an upstream path keys the node dict externally rather than
+    # storing an "id" on the body — provenance stays attributable
+    # rather than silently dropping the entry.
+    provenance = []
+    for cand in candidates:
+        if not cand:
+            continue
+        node = cand[0] if isinstance(cand, (tuple, list)) else cand
+        if not isinstance(node, dict):
+            continue
+        nid = node.get("id")
+        if nid is None:
+            content = str(node.get("content", ""))[:200]
+            if content:
+                nid = "ch:" + hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
+        provenance.append(nid)
+
     if not candidates:
         return {
             "retrieval_conf": 0.0,
@@ -834,6 +864,7 @@ def score_recall(query: str,
             "i_dont_know": True,
             "reason": "no candidates",
             "best_node": None,
+            "provenance": [],
         }
 
     now_ts = now_ts if now_ts is not None else time.time()
@@ -858,6 +889,7 @@ def score_recall(query: str,
             "i_dont_know": True,
             "reason": "top match is contested",
             "best_node": top_node,
+            "provenance": provenance,
         }
     # Step 2: too stale → refuse.
     if recency_conf < RECALL_STALE_RECENCY_FLOOR:
@@ -870,6 +902,7 @@ def score_recall(query: str,
             "i_dont_know": True,
             "reason": f"recency_conf {recency_conf:.2f} < floor",
             "best_node": top_node,
+            "provenance": provenance,
         }
     # Step 3: near-tie on top-2 → refuse. No single best match.
     if abs(top_score - second_score) < RECALL_NEAR_TIE_EPSILON \
@@ -883,6 +916,7 @@ def score_recall(query: str,
             "i_dont_know": True,
             "reason": f"near-tie top-2 (Δ={abs(top_score-second_score):.3f})",
             "best_node": top_node,
+            "provenance": provenance,
         }
     # Step 4: any signal weak → hedge.
     triple_min = min(retrieval_conf, content_conf, recency_conf)
@@ -896,6 +930,7 @@ def score_recall(query: str,
             "i_dont_know": False,
             "reason": f"min signal {triple_min:.2f} below hedge threshold",
             "best_node": top_node,
+            "provenance": provenance,
         }
     # Step 5: combined still below answer threshold → hedge.
     if combined < RECALL_ANSWER_THRESHOLD:
@@ -908,6 +943,7 @@ def score_recall(query: str,
             "i_dont_know": False,
             "reason": f"combined {combined:.2f} below answer threshold",
             "best_node": top_node,
+            "provenance": provenance,
         }
     # Step 6: all gates passed → answer.
     return {
@@ -919,6 +955,7 @@ def score_recall(query: str,
         "i_dont_know": False,
         "reason": "all gates passed",
         "best_node": top_node,
+        "provenance": provenance,
     }
 
 

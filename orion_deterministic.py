@@ -296,6 +296,10 @@ async def _on_inbound(nc, msg) -> None:
             "content_conf": meta.get("content_conf"),
             "recency_conf": meta.get("recency_conf"),
             "node_id": node.get("id") if node else None,
+            # Source-attribution contract (frontier-self-model §O1):
+            # even refusals carry the consulted node_ids so the user
+            # can audit what the gate looked at when it declined.
+            "provenance": meta.get("provenance", []),
             "ts": time.time(),
         }).encode("utf-8"))
         logger.info("REFUSED [%s] score=%.2f hint=%s reason=%s",
@@ -322,6 +326,10 @@ async def _on_inbound(nc, msg) -> None:
         "source": "orion.deterministic",
         "via_node": node.get("id"),
         "match_score": round(score, 3),
+        # Source-attribution contract: every answer carries the node_ids
+        # it derived from. A reply with no provenance is a hallucination
+        # by definition (frontier-self-model §O1).
+        "provenance": meta.get("provenance", [node.get("id")] if node else []),
     }
     # Drop None recipient — outbound adapters fall back to default
     outbound = {k: v for k, v in outbound.items() if v is not None}
