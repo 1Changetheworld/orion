@@ -322,6 +322,192 @@ def list_encounters(limit: int = 50) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────
+# Reputation v2 — accumulator over the encounter ledger.
+#
+# v1 deferred (c) reputation-receipts entirely (memo §1). v2 lands the
+# *first-party* slice: this brain's own reputation view of each peer
+# fingerprint, derived from its own encounter history. Cross-brain
+# attested reputation (ERC-8004 / Sybil-resistant) stays deferred —
+# Douceur 2002 still applies, and the personal-AI scale doesn't justify
+# the trust-bootstrap problem.
+#
+# What v2 gives us:
+#   - stranger_score()  — 0.0 (unknown) → 1.0 (well-known peer).
+#   - is_stranger()     — boolean classification at a tunable threshold.
+#   - reputation()      — full breakdown for audit/UI.
+#
+# The score informs the per-encounter prompt friction: a stranger gets
+# the warmest possible "are you SURE this is who you think?" treatment;
+# a long-known peer barely needs to confirm. This is the
+# identity-continuity §4 principle ("default to recognizing, not
+# asking") brought to the federation layer.
+# ─────────────────────────────────────────────────────────
+
+# Tunable. A peer becomes "known" after this many accepted peer-
+# decisions in their history. Lower = friendlier; higher = more
+# paranoid. 1 is the right floor — a single explicit "peer" decision is
+# a strong human-vetted signal.
+KNOWN_PEER_FLOOR = 1
+
+
+def reputation(fingerprint: str) -> dict:
+    """Compute this brain's first-party reputation view of a peer.
+
+    Returns a dict:
+      {
+        fingerprint: <hex>,
+        score: 0.0–1.0,
+        peers_count: int,            # accepted "peer" decisions
+        separate_count: int,         # explicit "stay separate" decisions
+        defer_count: int,            # deferred decisions
+        first_seen: float | None,
+        last_seen: float | None,
+        days_known: float,           # 0 if never seen
+        is_stranger: bool,           # below KNOWN_PEER_FLOOR
+      }
+
+    Scoring (intentionally simple — calibration earns refinement):
+      - +0.5 base per accepted "peer" decision, capped at 0.8
+      - +0.1 per week of relationship (capped at 1.0 total)
+      - −0.4 if there is any "separate" decision (the user actively
+        declined; remember it)
+      - 0.0 floor.
+    """
+    if not fingerprint:
+        return {
+            "fingerprint": "",
+            "score": 0.0,
+            "peers_count": 0,
+            "separate_count": 0,
+            "defer_count": 0,
+            "first_seen": None,
+            "last_seen": None,
+            "days_known": 0.0,
+            "is_stranger": True,
+        }
+    rows = list_encounters(limit=1000)
+    peers = [r for r in rows
+             if r.get("peer_fingerprint") == fingerprint
+             and r.get("decision") == "peer"]
+    separates = [r for r in rows
+                 if r.get("peer_fingerprint") == fingerprint
+                 and r.get("decision") == "separate"]
+    defers = [r for r in rows
+              if r.get("peer_fingerprint") == fingerprint
+              and r.get("decision") == "defer"]
+    matching = peers + separates + defers
+    first_seen = min((float(r.get("ts") or 0.0) for r in matching),
+                     default=None)
+    last_seen = max((float(r.get("ts") or 0.0) for r in matching),
+                    default=None)
+    days_known = 0.0
+    if first_seen and last_seen:
+        days_known = max(0.0, (last_seen - first_seen) / 86400.0)
+    score = 0.0
+    if peers:
+        score = min(0.8, 0.5 * len(peers))
+    score = min(1.0, score + 0.1 * (days_known / 7.0))
+    if separates:
+        score = max(0.0, score - 0.4)
+    is_stranger = len(peers) < KNOWN_PEER_FLOOR
+    return {
+        "fingerprint": fingerprint,
+        "score": round(score, 3),
+        "peers_count": len(peers),
+        "separate_count": len(separates),
+        "defer_count": len(defers),
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "days_known": round(days_known, 2),
+        "is_stranger": is_stranger,
+    }
+
+
+def is_stranger(fingerprint: str) -> bool:
+    """Convenience: True if the peer has fewer than KNOWN_PEER_FLOOR
+    accepted peer decisions. Used by _on_offer_received to choose
+    prompt friction and by the gossip privacy gate."""
+    return reputation(fingerprint)["is_stranger"]
+
+
+def stranger_score(fingerprint: str) -> float:
+    """Convenience: the bare 0.0–1.0 score. 0.0 means stranger or
+    user-rejected; ≥0.5 means warmly known. Used by upstream UI
+    that wants a single number."""
+    return reputation(fingerprint)["score"]
+
+
+# ─────────────────────────────────────────────────────────
+# Per-host privacy guard for skill-gossip across federation.
+#
+# v1 of cross-host learning gossip (orion_gossip._on_learned_skill +
+# _emit_remote_skill_adoptions) was MESH-scoped — only this user's own
+# trusted devices. Federation v2 changes the picture: when peering with
+# another user's Orion, the same learning gossip path could (if wired
+# in) ship skills across the federation membrane. Some skills should
+# NEVER cross that boundary: ones tagged visibility:host, visibility:
+# local, or carrying a per-skill "private" flag in their body.
+#
+# This function is the single guard the federation-aware emitters MUST
+# consult before re-publishing a learned skill to a federated peer.
+# Treats absence of metadata as "permissive" only when peer is a known
+# peer (≥KNOWN_PEER_FLOOR); strangers get fail-closed (drop on missing
+# visibility). Defense-in-depth alongside the membrane filter.
+# ─────────────────────────────────────────────────────────
+
+def skill_crosses_federation(skill_entry: dict,
+                             peer_fingerprint: Optional[str]) -> bool:
+    """Should this learned-skill entry cross the federation membrane?
+
+    Returns False (do not gossip) when:
+      - skill body carries visibility:local or visibility:host
+      - skill body has private=True
+      - peer is a STRANGER and the skill has no visibility metadata
+
+    Returns True only when the skill has explicit permission to cross
+    (visibility:federation, visibility:public, or a known peer +
+    visibility:mesh and no per-skill private flag).
+    """
+    if not skill_entry:
+        return False
+    body = skill_entry
+    # The skill body may be nested under "skill" or "payload" depending
+    # on the emitter version — check both shapes.
+    inner = body.get("skill") or body.get("payload") or body
+    if not isinstance(inner, dict):
+        inner = body
+    if inner.get("private") is True:
+        return False
+    tags = inner.get("tags") or body.get("tags") or []
+    if isinstance(tags, dict):
+        tags = list(tags.keys())
+    has_visibility = False
+    for t in tags:
+        if not isinstance(t, str):
+            continue
+        if t == "visibility:local" or t == "visibility:host":
+            return False
+        if t == "visibility:federation" or t == "visibility:public":
+            has_visibility = True
+            break
+        if t == "visibility:mesh":
+            has_visibility = True
+            # mesh-tagged skills only cross to KNOWN peers; strangers
+            # get fail-closed below.
+            if peer_fingerprint and is_stranger(peer_fingerprint):
+                return False
+            break
+    if not has_visibility:
+        # No visibility metadata. Permissive to known peers; strict to
+        # strangers. The honest semantics: the user explicitly opted in
+        # by peering, but a stranger encounter is a different trust
+        # surface (memo §1: TOFU + safety-number).
+        if peer_fingerprint and is_stranger(peer_fingerprint):
+            return False
+    return True
+
+
+# ─────────────────────────────────────────────────────────
 # Substrate handlers — wired by the optional daemon main().
 # Other modules (orion_will) can also import and consume the
 # offer-received event directly without running the daemon.
@@ -345,24 +531,54 @@ def _on_offer_received(subject: str, payload: dict) -> None:
         return
 
     fp = payload["fingerprint"]
-    logger.info("federation offer accepted (pending decision): fp=%s name=%s",
-                fp, payload.get("claimed_name"))
+    rep = reputation(fp)
+    logger.info("federation offer accepted (pending decision): fp=%s name=%s "
+                "stranger=%s score=%.2f peers=%d separates=%d",
+                fp, payload.get("claimed_name"), rep["is_stranger"],
+                rep["score"], rep["peers_count"], rep["separate_count"])
     try:
         from orion_substrate import publish
         # Surface to will — will renders the per-encounter prompt to
         # the user via reach (warmest channel). Decision UX flows
         # back through orion_federation.respond_to_offer().
+        #
+        # Reputation v2: prompt friction scales with stranger-ness.
+        # Stranger → "I've never seen this peer; safety number is X;
+        # are you sure?" Known peer → "Met X again, safety number
+        # matches your prior record; peer?" The user is the final
+        # authority either way — we just shape the question.
+        claimed_user = payload.get("claimed_user", "unknown")
+        if rep["is_stranger"]:
+            prompt = (
+                f"STRANGER ORION encounter — never peered before. "
+                f"Claims to be {claimed_user}. "
+                f"Safety number: {_safety_number(fp)}. "
+                f"Confirm OUT-OF-BAND with the other side before peering. "
+                f"Peer / Stay separate / Defer?"
+            )
+        elif rep["separate_count"] > 0:
+            prompt = (
+                f"Known peer ({rep['peers_count']} prior peer decisions, "
+                f"{rep['separate_count']} prior separates). "
+                f"Safety number: {_safety_number(fp)}. "
+                f"You've declined this peer before. Peer / Stay separate / Defer?"
+            )
+        else:
+            prompt = (
+                f"Known peer — {rep['peers_count']} prior peer decisions over "
+                f"{rep['days_known']:.0f} days. "
+                f"Safety number: {_safety_number(fp)}. "
+                f"Peer / Stay separate / Defer?"
+            )
         publish("brain.federation.encounter", {
             "peer_fingerprint": fp,
             "peer_safety_number": _safety_number(fp),
             "peer_claimed_name": payload.get("claimed_name"),
-            "peer_claimed_user": payload.get("claimed_user"),
+            "peer_claimed_user": claimed_user,
             "peer_capabilities": payload.get("capabilities", []),
-            "prompt": (
-                f"Met another Orion claiming to be {payload.get('claimed_user', 'unknown')}. "
-                f"Safety number {_safety_number(fp)}. "
-                f"Peer / Stay separate / Defer?"
-            ),
+            "reputation": rep,
+            "is_stranger": rep["is_stranger"],
+            "prompt": prompt,
             "ts": time.time(),
         })
     except Exception:
@@ -614,6 +830,9 @@ def _cli() -> int:
     p_off.add_argument("--user", default="", help="claimed_user for the offer")
     p_enc = sub.add_parser("encounters", help="list recorded encounters")
     p_enc.add_argument("--limit", type=int, default=20)
+    p_rep = sub.add_parser("reputation",
+                           help="show first-party reputation view of a peer")
+    p_rep.add_argument("fingerprint", help="peer fingerprint hex")
 
     args = ap.parse_args()
     if args.cmd == "id":
@@ -627,6 +846,9 @@ def _cli() -> int:
     if args.cmd == "encounters":
         for r in list_encounters(args.limit):
             print(json.dumps(r))
+        return 0
+    if args.cmd == "reputation":
+        print(json.dumps(reputation(args.fingerprint), indent=2))
         return 0
     return main()
 
