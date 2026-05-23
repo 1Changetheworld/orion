@@ -59,6 +59,16 @@ Every TICK (default 1 second):
      back into salience scoring (high-surprise items get more weight
      next tick).
 
+  7. The predictor publishes brain.predictor.surprise per event with
+     surprise ∈ [0, 1]. This is the prediction-error gain channel
+     (cortical analogue: prediction-error neurons increase salience
+     of the surprising sensor). We track it as a SEPARATE field from
+     general workspace.feedback so the attribution stays clean:
+     feedback = "any subscriber's complaint," predictor surprise =
+     "the active-inference layer says this is unexpected." Both feed
+     _salience through the same multiplicative gain term, and both
+     decay each tick.
+
 This is faithful to Baars/Dehaene's selection-broadcast cycle and
 gives Orion the missing 'ignition' moment that real GWT requires.
 
@@ -136,7 +146,14 @@ class Candidate:
 _pending: deque[Candidate] = deque(maxlen=500)
 _subject_seen_recent: deque[tuple[str, float]] = deque(maxlen=200)  # for novelty
 _surprise_boost: dict[str, float] = defaultdict(float)  # subject → boost (decays)
+_pred_surprise: dict[str, float] = defaultdict(float)   # subject → predictor surprise (decays)
 _prior_winners: list[dict] = []  # last broadcast's items, for context
+
+# Maximum gain the predictor surprise alone can apply. Capped so a
+# pathological subject can't dominate the spotlight indefinitely; the
+# decay in _decay_surprise() collapses it back to baseline within ~30
+# ticks of quiet content.
+PRED_SURPRISE_CAP = 2.0
 
 
 def _source_weight(subject: str) -> float:
@@ -181,7 +198,13 @@ def _salience(c: Candidate, now: float) -> float:
     base = _source_weight(c.subject) * _severity_mult(c.payload)
     rec = _recency_score(c.received_at, now)
     nov = _novelty_score(c.subject, now)
-    surp = 1.0 + _surprise_boost.get(c.subject, 0.0)
+    # Two independent attentional gains stack multiplicatively: any
+    # subscriber's surprise complaint (feedback) AND the predictor's
+    # token-space surprise. Both decay each tick; neither can pin a
+    # subject in the spotlight forever.
+    fb_gain = _surprise_boost.get(c.subject, 0.0)
+    pred_gain = _pred_surprise.get(c.subject, 0.0)
+    surp = 1.0 + fb_gain + pred_gain
     return base * rec * nov * surp
 
 
@@ -215,12 +238,40 @@ async def _on_feedback(msg, nc):
         _surprise_boost[subj] = min(2.0, _surprise_boost.get(subj, 0.0) + surprise)
 
 
+async def _on_predictor_surprise(msg, nc):
+    """brain.predictor.surprise — continuous prediction-error gain. The
+    predictor publishes this per event with surprise ∈ [0, 1]. We
+    accumulate (EMA-style) so a sustained surprise pulse builds gain
+    quickly, but each tick's decay returns the channel to baseline
+    when the predictor goes quiet. Separate from _surprise_boost so
+    attribution stays clean and either channel can be tuned alone."""
+    try:
+        p = json.loads(msg.data.decode())
+    except Exception:
+        return
+    subj = p.get("subject")
+    surprise = float(p.get("surprise", 0.0))
+    if subj and surprise > 0:
+        # Add the new surprise; cap so a pathological storm can't pin
+        # one subject. Decay each tick will bring this back down.
+        _pred_surprise[subj] = min(
+            PRED_SURPRISE_CAP,
+            _pred_surprise.get(subj, 0.0) + surprise,
+        )
+
+
 def _decay_surprise():
-    """Each tick, decay all surprise boosts toward zero (half-life ~30s)."""
+    """Each tick, decay all surprise boosts toward zero (half-life ~30s).
+    Both feedback and predictor-surprise channels decay at the same
+    rate so neither can outlast the other by construction."""
     for k in list(_surprise_boost.keys()):
         _surprise_boost[k] *= 0.95
         if _surprise_boost[k] < 0.01:
             del _surprise_boost[k]
+    for k in list(_pred_surprise.keys()):
+        _pred_surprise[k] *= 0.90  # predictor decays slightly faster — high gain
+        if _pred_surprise[k] < 0.01:
+            del _pred_surprise[k]
 
 
 # ─────────────────────────────────────────────────────────
@@ -249,12 +300,20 @@ async def _tick_loop(nc):
             if c.subject in seen_subjects:
                 continue
             seen_subjects.add(c.subject)
-            unique_winners.append({
+            winner = {
                 "subject": c.subject,
                 "salience": round(score, 4),
                 "age_sec": round(now - c.received_at, 2),
                 "payload": c.payload,
-            })
+            }
+            # Surface attentional gain attribution so a downstream consumer
+            # can tell whether a subject won via baseline severity or via
+            # the predictor noticing it diverged. Only included when the
+            # gain is non-trivial — keeps the common case quiet.
+            pg = _pred_surprise.get(c.subject, 0.0)
+            if pg > 0.05:
+                winner["pred_surprise_gain"] = round(pg, 3)
+            unique_winners.append(winner)
         # Drop pending items already in winners or older than 2x recency-halflife
         cutoff = now - (2 * RECENCY_HALFLIFE_SEC)
         kept = deque(
@@ -302,6 +361,7 @@ async def main_async() -> int:
 
     async def _cb(msg): await _on_candidate(msg, nc)
     async def _fb_cb(msg): await _on_feedback(msg, nc)
+    async def _pred_cb(msg): await _on_predictor_surprise(msg, nc)
 
     # Subscribe to every salient substrate subject
     for subj in [
@@ -316,6 +376,7 @@ async def main_async() -> int:
     ]:
         await nc.subscribe(subj, cb=_cb)
     await nc.subscribe("workspace.feedback", cb=_fb_cb)
+    await nc.subscribe("brain.predictor.surprise", cb=_pred_cb)
 
     logger.info("workspace alive — subscribed to candidate sources + feedback; "
                 "tick loop starting")
