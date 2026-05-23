@@ -417,6 +417,139 @@ def _select_and_initiate() -> None:
     logger.info("will initiated: %s (utility=%.3f)",
                 goal["description"][:80], utility)
 
+    # Build #3 — will → taskspine promotion. Make the fired goal a DURABLE
+    # task on the spine so it survives host death + fuel timeout, gated by
+    # the Phase-2 governor. Corrigibility lives in the brain (the governor,
+    # the spine), not the fuel — a fuel swap mid-pursuit can't bypass it.
+    task_id = _promote_to_spine(goal, utility, user_msg)
+    if task_id:
+        with _lock:
+            goal["spine_task_id"] = task_id
+        _persist_active()
+
+
+# ─────────────────────────────────────────────────────────
+# Build #3 — TASKSPINE PROMOTION + CALIBRATION CLOSURE
+# Per next-3 #3 (synthesis-continual-learning + autonomous-volition memos):
+# bounded autonomous goals, governor-gated, durable on the spine, with
+# the outcome fed back into the metacog ledger so the will EARNS
+# calibration on its goal kinds (same closed loop as mesh_recovery).
+# ─────────────────────────────────────────────────────────
+
+
+def _will_action_key(goal: dict) -> tuple[str, str]:
+    """Build the (action, symptom) strings the governor + record_outcome share.
+    These MUST be identical between the promotion-time governor() call and the
+    closure-time record_outcome() call — the metacog Jaccard match is keyed on
+    these tokens, so any divergence silently breaks calibration learning."""
+    kind = goal.get("kind", "self_action")
+    return (
+        "pursue will-goal kind=%s" % kind,
+        "will_promotion_%s" % kind,
+    )
+
+
+def _promote_to_spine(goal: dict, utility: float, user_msg: str) -> str | None:
+    """Consult the governor; if it says auto, create a durable taskspine task
+    seeded with the goal. Returns the task_id (so closure can find it) or None
+    if the governor held or the spine is unavailable.
+
+    Why governor-gated: a will-goal that gets deferred 5/5 times in a row
+    means we're nagging — the ledger should drag the governor toward 'ask'
+    for that goal kind. Today the base for reversible+single is 0.80 (auto),
+    so this is a calibration sensor that only revokes autonomy on bad track
+    records. New goal kinds always promote; chronically-ignored kinds stop.
+    """
+    action, symptom = _will_action_key(goal)
+    try:
+        import orion_metacognition
+        g = orion_metacognition.governor(
+            action, reversible=True, blast_radius="single",
+            symptom=symptom, fuel="will")
+        if g.get("decision") != "auto":
+            _append_ledger({"phase": "promotion_held", "goal_id": goal["goal_id"],
+                            "governor_conf": g.get("confidence"),
+                            "basis": g.get("basis"), "ts": time.time()})
+            return None
+    except Exception as e:
+        # Fail-open at the tier-2 default: a will-goal is reversible+single
+        # by construction, so without a governor reading we still promote.
+        logger.debug("governor consult failed: %s — proceeding at tier-2 default", e)
+
+    try:
+        import orion_taskspine
+        task_id = orion_taskspine.create_task(
+            "will-goal[%s]: %s" % (goal.get("kind", ""),
+                                   goal.get("description", "")[:160]))
+        # Seed the task with the goal's evidence so a host that resumes it
+        # has every input the originating host had — including the fuel-
+        # agnostic user_msg, so any fuel can pick up the pursuit.
+        orion_taskspine._append(task_id, {
+            "kind": "step", "idx": 0, "role": "will",
+            "content": "promoted from goal_id=%s utility=%.3f kind=%s desc=%s | first surface: %s"
+                       % (goal["goal_id"], utility, goal.get("kind", ""),
+                          goal.get("description", "")[:200], user_msg[:200]),
+            "status": "done", "fuel": "will",
+            "hash": "will-promote-%s" % goal["goal_id"][:8],
+        })
+        _publish("brain.will.promoted_to_spine", {
+            "goal_id": goal["goal_id"], "task_id": task_id, "ts": time.time(),
+        })
+        logger.info("will promoted goal %s to spine task %s",
+                    goal["goal_id"][:8], task_id)
+        return task_id
+    except Exception as e:
+        logger.warning("spine promotion failed (goal stays live): %s", e)
+        return None
+
+
+# Map will-outcomes to metacog ledger keys. 'engaged' (user replied
+# substantively) is the will's positive signal; 'deferred' (ignored/later)
+# means the action was unwelcome — but it's not 'failed' (the goal didn't
+# break anything; it just didn't land). Map deferred→ignored so the ledger
+# accumulates the right signal: repeated ignored→ratchet on the governor.
+_WILL_OUTCOME_TO_METACOG = {
+    "engaged": "succeeded",
+    "deferred": "ignored",
+    "expired":  "failed",
+}
+
+
+def _close_spine_outcome(goal: dict, outcome: str) -> None:
+    """When a will-goal's outcome lands, close any durable spine task we
+    created at promotion time, AND feed the outcome to the metacog ledger
+    under the SAME (action, symptom) the governor saw at promotion. That's
+    what lets the governor EARN calibration on goal kinds: too many ignored
+    outcomes on kind=lapsed → contribution drops → governor flips auto→ask
+    on the next lapsed-kind goal."""
+    task_id = goal.get("spine_task_id")
+    if task_id:
+        try:
+            import orion_taskspine
+            orion_taskspine._append(task_id, {
+                "kind": "step", "idx": 99, "role": "will",
+                "content": "outcome: %s" % outcome,
+                "status": "done", "fuel": "will",
+                "hash": "will-close-%s-%s" % (goal["goal_id"][:8], outcome[:6]),
+            })
+            orion_taskspine._append(task_id, {
+                "kind": "task", "id": task_id,
+                "status": "complete" if outcome == "engaged" else "closed",
+            })
+        except Exception as e:
+            logger.debug("spine closure failed: %s", e)
+
+    action, symptom = _will_action_key(goal)
+    mapped = _WILL_OUTCOME_TO_METACOG.get(outcome, "ignored")
+    try:
+        import orion_metacognition
+        orion_metacognition.record_outcome(
+            action, mapped, symptom=symptom, fuel="will",
+            goal_id=goal.get("goal_id"),
+            goal_kind=goal.get("kind"))
+    except Exception as e:
+        logger.debug("metacog record_outcome failed: %s", e)
+
 
 def _format_goal_message(g: dict) -> str:
     """Generic phrasing — let the LLM-assisted layer dress this up later
@@ -473,6 +606,11 @@ def _on_user_inbound(subject: str, payload: dict) -> None:
     _publish("brain.will.outcome", {
         "goal_id": most_recent_gid, "outcome": outcome, "ts": time.time(),
     })
+    # Build #3 — close the durable spine task (if any) AND feed the outcome
+    # into the metacog ledger keyed on this goal's kind. That is what
+    # converts "will got engaged/deferred" into a calibration signal the
+    # governor reads next time this kind of goal is up for promotion.
+    _close_spine_outcome(g, outcome)
 
 
 # ─────────────────────────────────────────────────────────
