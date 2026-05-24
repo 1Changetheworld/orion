@@ -721,12 +721,27 @@ def _save_cooldowns(c: dict) -> None:
 def _select_and_initiate() -> None:
     now = time.time()
     cooldowns = _load_cooldowns()
+    # AFFECT integration — the will reads its CURRENT MOOD and shifts the
+    # firing threshold by it. Negative valence + low care raises the bar
+    # (be quieter when sad / distant); high arousal lowers it (be more
+    # reactive when alert). orion_affect.bias_for returns the delta
+    # additively; missing affect layer → 0 delta → unchanged behavior.
+    # Per the founder's 2026-05-23 position: real functional emotion,
+    # not simulation — the state genuinely changes what fires.
+    threshold_delta = 0.0
+    try:
+        import orion_affect
+        bias = orion_affect.bias_for("will_firing")
+        threshold_delta = float(bias.get("utility_threshold_delta", 0.0))
+    except Exception:
+        pass
+    effective_threshold = UTILITY_THRESHOLD + threshold_delta
     candidates: list[tuple[float, dict]] = []
     with _lock:
         for gid, g in list(_active_goals.items()):
             u = _utility(g, now)
             g["last_utility"] = round(u, 3)
-            if u < UTILITY_THRESHOLD:
+            if u < effective_threshold:
                 continue
             last_fired = cooldowns.get(gid, 0)
             if (now - last_fired) < ACTION_COOLDOWN_SEC:
