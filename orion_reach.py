@@ -125,6 +125,20 @@ class ReachQueue:
             items = list(self._items)
             self._items.clear()
 
+        # AFFECT integration (Gap 1b of unification): scale the per-channel
+        # cooldown by Orion's current mood. High arousal → faster delivery
+        # (be responsive when alert). Low care → more measured (less rush
+        # toward distant entities). Missing affect layer → multiplier 1.0
+        # → unchanged behavior. Emergency items still bypass.
+        delay_mult = 1.0
+        try:
+            import orion_affect
+            bias = orion_affect.bias_for("reach_timing")
+            delay_mult = max(0.25, min(3.0, float(bias.get("delay_multiplier", 1.0))))
+        except Exception:
+            pass
+        effective_cooldown = PER_CHANNEL_COOLDOWN_SEC * delay_mult
+
         ready = []
         keep = []
         for it in sorted(items, key=lambda x: (PRIORITY.get(x.get("priority", "medium"), 2),
@@ -144,7 +158,7 @@ class ReachQueue:
 
             if not is_emergency:
                 last = self._last_sent.get(channel, 0)
-                if (now - last) < PER_CHANNEL_COOLDOWN_SEC:
+                if (now - last) < effective_cooldown:
                     keep.append(it)
                     continue
 

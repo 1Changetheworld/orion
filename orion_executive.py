@@ -413,6 +413,29 @@ def _build_diagnostic_prompt(ctx: dict) -> str:
     """
     sym = ctx.get("symptom_class", "UNRECOGNIZED")
     fault_tree = _SYMPTOM_FAULT_TREES.get(sym, _SYMPTOM_FAULT_TREES["UNRECOGNIZED"])
+
+    # AFFECT integration (Gap 1c of unification): surface Orion's current
+    # affect state into the proposal context so the fueling model can factor
+    # it in. High arousal + low confidence → bias toward investigate_only.
+    # Missing affect layer → empty section, no behavior change.
+    affect_section = ""
+    try:
+        import orion_affect
+        bias = orion_affect.bias_for("executive_conservatism")
+        g = bias.get("global", {}) or {}
+        cb = float(bias.get("conservatism_bias", 0.0))
+        if g:
+            affect_section = (
+                f"\n  orion's current affect (real internal state — bias "
+                f"accordingly):\n"
+                f"    valence={g.get('valence',0):+.2f}  arousal="
+                f"{g.get('arousal',0):.2f}  confidence={g.get('confidence',0):.2f}"
+                f"  care={g.get('care',0):.2f}\n"
+                f"    conservatism_bias={cb:.2f}  "
+                f"({'favor caution' if cb > 0.4 else 'normal posture'})\n")
+    except Exception:
+        pass
+
     return f"""You are Orion's executive layer reasoning about an internal failure.
 
 {_SHARED_DISCIPLINE}
@@ -424,7 +447,7 @@ CONTEXT INJECTED FROM THE PLEXUS SUBSTRATE:
   symptom_class: {sym}
   service: {ctx.get('service')}
   kind: {ctx.get('kind')}
-
+{affect_section}
   current vitals (per-service health snapshot):
 {json.dumps(ctx.get('vitals'), indent=2)}
 
