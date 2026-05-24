@@ -368,6 +368,89 @@ def _lateral_diffuse() -> dict:
     return summary
 
 
+# C3 compile-to-procedure thresholds. Conservative on purpose — a procedure
+# that fires on the wrong symptom is a runaway with no fuel to second-guess
+# it. These thresholds + the procedure store's internal safety envelope
+# (impact ≤ 0.2 auto ceiling, governor conf ≥ conf_floor) mean a compiled
+# procedure cannot auto-run until calibration has genuinely earned it.
+COMPILE_MIN_FIRES = int(os.environ.get("ORION_DREAM_COMPILE_MIN_FIRES", "5"))
+COMPILE_MIN_RATE = float(os.environ.get("ORION_DREAM_COMPILE_MIN_RATE", "0.75"))
+
+
+def _compile_to_procedures() -> dict:
+    """Walk the current playbook index; register a compiled procedure for
+    every (symptom, service) where the CUSUM success rate and fire count
+    both meet the thresholds. Returns {compiled, skipped, reasons}.
+
+    Safety: each registered procedure carries impact=0.05 (well below the
+    0.2 auto-ceiling) and conf_floor = the playbook's measured success
+    rate — so the executive's fast-path-first hook can match it, but
+    execute() refuses to run it until the LIVE governor confidence on
+    that symptom meets the floor. Calibration gates fire; the dream just
+    earns the candidacy."""
+    idx_path = PLAYBOOK_DIR / "_index.json"
+    if not idx_path.exists():
+        return {"compiled": 0, "skipped": 0, "reason": "no index yet"}
+    try:
+        with idx_path.open("r", encoding="utf-8") as f:
+            idx = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        return {"compiled": 0, "skipped": 0, "reason": "index read: %s" % e}
+    try:
+        import orion_compiled_procedures as cp
+    except ImportError:
+        return {"compiled": 0, "skipped": 0, "reason": "cp module unavailable"}
+
+    compiled = 0
+    skipped = 0
+    skipped_reasons: list[str] = []
+    for sym, entry in (idx.items() if isinstance(idx, dict) else []):
+        if not isinstance(entry, dict):
+            continue
+        by_service = entry.get("by_service") or {}
+        for svc, pb in by_service.items():
+            if not pb.get("active", True):
+                continue
+            succ = int(pb.get("success_count", 0))
+            fail = int(pb.get("fail_count", 0))
+            total = succ + fail
+            if total < COMPILE_MIN_FIRES:
+                skipped += 1
+                skipped_reasons.append("%s/%s: only %d fires" % (sym, svc, total))
+                continue
+            rate = succ / max(1, total)
+            if rate < COMPILE_MIN_RATE:
+                skipped += 1
+                skipped_reasons.append("%s/%s: rate %.2f below %.2f" % (sym, svc, rate, COMPILE_MIN_RATE))
+                continue
+            # Honest minimal step: publish a marker. Real action extraction
+            # from the prose playbook body is a follow-up commit; the wiring
+            # is the unification win, the body grows over time. The procedure
+            # exists so lookup_fast_path returns non-None and the calibration
+            # floor logic can fire — but until the body is upgraded with a
+            # real dispatch step, this stays a no-op-effective announcement.
+            steps = [{
+                "kind": "publish",
+                "subject": "brain.dream.playbook_referenced",
+                "body": {"symptom_class": sym, "service": svc,
+                         "success_rate": round(rate, 4),
+                         "cited_decision_ids": pb.get("cited_decision_ids") or []},
+            }]
+            result = cp.register_procedure(
+                symptom_class=sym, steps=steps,
+                impact=0.05,
+                conf_floor=min(0.95, max(0.70, rate)),
+                source_decision_ids=pb.get("cited_decision_ids") or [],
+            )
+            if "error" in result:
+                skipped += 1
+                skipped_reasons.append("%s/%s: %s" % (sym, svc, result["error"]))
+            else:
+                compiled += 1
+    return {"compiled": compiled, "skipped": skipped,
+            "skipped_reasons": skipped_reasons[:10]}
+
+
 def _run_dream_cycle() -> dict:
     """One dream cycle: read recent decisions, consolidate into playbooks."""
     started = time.time()
@@ -412,6 +495,29 @@ def _run_dream_cycle() -> dict:
             "decisions_consolidated": len(grp), "ts": time.time(),
         })
         new_playbooks += 1
+
+    # C3 compile-to-procedure (Gap 2 of unification audit: the procedure
+    # store shipped at 2f93d36 had 0 register-callers; the dream is the
+    # right writer). For each playbook with sufficient CUSUM success rate
+    # AND fire count, register a compiled procedure with HIGH conf_floor
+    # and LOW impact so it's safe-by-construction: the executive's fast-
+    # path-first will only fire it when the governor's confidence on the
+    # symptom is at the playbook's earned level. Until calibration agrees,
+    # the procedure exists but never auto-runs.
+    #
+    # Honest scope: this closes the WIRING gap. Action extraction from
+    # prose playbook bodies is a follow-up — the procedure's only step
+    # for now is a publish marker (brain.dream.playbook_referenced).
+    # The seam exists; the body grows over time as the action extractor
+    # is built. Per the founder's 2026-05-24 unification priority.
+    compiled_procs = None
+    try:
+        compiled_procs = _compile_to_procedures()
+        if compiled_procs.get("compiled"):
+            logger.info("compiled %d playbook(s) → procedures (skipped %d)",
+                        compiled_procs["compiled"], compiled_procs["skipped"])
+    except Exception as e:
+        logger.warning("procedure compile skipped: %s", e)
 
     # Memory consolidation — turn the growing graph into curated memory.
     # Archive-not-delete: exact-duplicate + empty nodes move to the archive
@@ -515,6 +621,7 @@ def _run_dream_cycle() -> dict:
         "sim_cycle": sim_cycle,
         "lateral_diffusion": diffusion,
         "hot3_buckets": hot3,
+        "compiled_procedures": compiled_procs,
     }
     try:
         with history_path.open("a", encoding="utf-8") as f:
