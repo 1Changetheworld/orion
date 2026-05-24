@@ -465,6 +465,40 @@ def run_setup():
     print(f"    Mode:      {'Portable (drive)' if portable else 'Local (this machine)'}")
     print()
 
+    # ── Wire the brain into installed AI CLIs (THE bridge) ──
+    # Without this step the install completes but the AI CLIs go into
+    # honest-degraded mode — they correctly refuse to fake Orion identity
+    # because the orion-brain MCP server isn't registered. The audit
+    # 2026-05-24 found this was setup.py's missing seam: it wrote configs
+    # and context files but never invoked orion_mcp_server.py --setup,
+    # which is what actually registers the brain with each CLI.
+    print(c(CYAN, "  ── Wiring brain into AI CLIs ──"))
+    print()
+    try:
+        repo_dir = os.path.dirname(os.path.abspath(__file__))
+        result = subprocess.run(
+            [sys.executable, os.path.join(repo_dir, "orion_mcp_server.py"), "--setup"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            print(f"    {c(GREEN, '[OK]')}  Brain wired via MCP into available CLIs")
+            # Surface the wiring's own output (it lists per-CLI status)
+            for line in (result.stdout or "").splitlines():
+                if line.strip() and not line.startswith(" "):
+                    print(f"    {c(DIM, '    ' + line.strip())}")
+        else:
+            print(f"    {c(YELLOW, '[WARN]')} MCP wiring partial (rc={result.returncode})")
+            if result.stderr:
+                print(f"    {c(DIM, result.stderr.strip()[:240])}")
+            print(f"    {c(DIM, '         Run manually: python orion_mcp_server.py --setup')}")
+    except subprocess.TimeoutExpired:
+        print(f"    {c(YELLOW, '[WARN]')} MCP wiring timed out")
+        print(f"    {c(DIM, '         Run manually: python orion_mcp_server.py --setup')}")
+    except Exception as e:
+        print(f"    {c(YELLOW, '[WARN]')} MCP wiring skipped: {e.__class__.__name__}")
+        print(f"    {c(DIM, '         Run manually: python orion_mcp_server.py --setup')}")
+    print()
+
     # How to start
     print(c(CYAN, "  ── To start Orion ────────────────────────────"))
     print(f"    python orion_server.py")
