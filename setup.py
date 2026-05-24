@@ -23,10 +23,12 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 CYAN = "\033[96m"
+BLUE = "\033[94m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
 PURPLE = "\033[95m"
+WHITE = "\033[97m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
@@ -35,11 +37,24 @@ def c(color, text):
     return f"{color}{text}{RESET}"
 
 def banner():
+    # Evolved 2026-05-24 — Orion the constellation made visible: the
+    # iconic three-star belt with the central brain-hub node, satellite
+    # stars at the corners suggesting the connected CLIs / devices /
+    # mesh peers. The wall is a single line; the content is what speaks.
+    # Box width 70; internal 66; each row carefully padded.
+    wall = c(CYAN, "│")
     print()
-    print(c(CYAN, "  +-----------------------------------------------+"))
-    print(c(CYAN, "  |") + c(BOLD, "            O R I O N                       ") + c(CYAN, "|"))
-    print(c(CYAN, "  |") + c(DIM, "   Any AI Model. Same Persona. Same Brain. Same Memories.  ") + c(CYAN, "|"))
-    print(c(CYAN, "  +-----------------------------------------------+"))
+    print(c(CYAN, "  ╭──────────────────────────────────────────────────────────────────╮"))
+    print(c(CYAN, "  │                                                                  │"))
+    print("  " + wall + "      " + c(DIM, "⋆") + "                                                  " + c(CYAN, "✦") + "      " + wall)
+    print("  " + wall + "                 " + c(BLUE, "╲") + "                                  " + c(BLUE, "╱") + "                 " + wall)
+    print("  " + wall + "           " + c(YELLOW, "★") + c(CYAN, "━━━━━") + c(WHITE + BOLD, "●") + c(CYAN, "━━━━━") + c(YELLOW, "★") + "      " + c(BOLD, "O · R · I · O · N") + "       " + wall)
+    print("  " + wall + "                 " + c(BLUE, "╱") + "                                  " + c(BLUE, "╲") + "                 " + wall)
+    print("  " + wall + "      " + c(CYAN, "✦") + "                                                  " + c(DIM, "⋆") + "      " + wall)
+    print(c(CYAN, "  │                                                                  │"))
+    print("  " + wall + "       " + c(DIM, "memory IS the intelligence — model is fuel") + "                " + wall)
+    print(c(CYAN, "  │                                                                  │"))
+    print(c(CYAN, "  ╰──────────────────────────────────────────────────────────────────╯"))
     print()
 
 # ═══════════════════════════════════════════════════════════════

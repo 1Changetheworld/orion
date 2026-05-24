@@ -49,6 +49,64 @@ _TYPING_CPS = float(os.environ.get("ORION_TYPING_SPEED", "80"))  # 0 = instant
 _TYPING_DELAY = 1.0 / _TYPING_CPS if _TYPING_CPS > 0 else 0
 
 
+WHITE = "\033[97m"
+
+
+def _constellation_reveal(name: str | None = None, address: str | None = None) -> None:
+    """The final reveal — runs at the end of install AFTER Orion knows who
+    you are. Stars fade in, the three-star belt forms with the central
+    brain-hub node, the title settles, the personalized welcome lands.
+    Cross-platform: pure ANSI + Unicode, no external deps.
+
+    Designed 2026-05-24 per the founder's request for evolved terminal
+    intro graphics. The Orion constellation as Orion-the-brain — the
+    iconic belt is the network hub (★━●━★), satellite stars at the
+    corners suggest the connected CLIs / devices / mesh peers."""
+    pause(0.4)
+    print()
+    print()
+    # Stage 1 — dark sky (faint dots set the canvas)
+    sys.stdout.write(f"  {DIM}·     ·       ·         ·       ·     ·       ·{RESET}\n")
+    sys.stdout.flush()
+    pause(0.45)
+    # Stage 2 — top corner satellites light
+    sys.stdout.write(f"\n     {BLUE}⋆{RESET}                                                  {CYAN}✦{RESET}\n")
+    sys.stdout.flush()
+    pause(0.30)
+    # Stage 3 — connecting lines descend toward the center
+    sys.stdout.write(f"        {BLUE}╲{RESET}                                          {BLUE}╱{RESET}\n")
+    sys.stdout.flush()
+    pause(0.25)
+    # Stage 4 — the belt + brain-hub forms (the iconic moment)
+    sys.stdout.write(f"           {YELLOW}★{CYAN}━━━━━{WHITE}{BOLD}●{RESET}{CYAN}━━━━━{YELLOW}★{RESET}\n")
+    sys.stdout.flush()
+    pause(0.55)
+    # Stage 5 — lower lines + corner satellites
+    sys.stdout.write(f"        {BLUE}╱{RESET}                                          {BLUE}╲{RESET}\n")
+    sys.stdout.flush()
+    pause(0.25)
+    sys.stdout.write(f"     {CYAN}✦{RESET}                                                  {BLUE}⋆{RESET}\n")
+    sys.stdout.flush()
+    pause(0.45)
+    print()
+    # Stage 6 — the title settles
+    sys.stdout.write(f"               {BOLD}{WHITE}O · R · I · O · N{RESET}\n")
+    sys.stdout.flush()
+    pause(0.55)
+    sys.stdout.write(f"        {DIM}memory IS the intelligence — model is fuel{RESET}\n")
+    sys.stdout.flush()
+    pause(0.55)
+    print()
+    # Stage 7 — the personalized payoff. Uses the same speak() voice that
+    # carried the rest of the install, so the reveal lands as Orion's voice
+    # not a banner. Address > name > plain.
+    target = address or name or ""
+    if target:
+        speak(f"Welcome, {target}. I'm here.", color=BLUE, lead_pause=0.5)
+    else:
+        speak("I'm here.", color=BLUE, lead_pause=0.5)
+
+
 def speak(text: str, *, color: str = CYAN, label: str = "orion", lead_pause: float = 0.3) -> None:
     """Print as Orion. Slight typing cadence makes it feel alive."""
     if lead_pause:
@@ -1586,12 +1644,12 @@ def run():
               "with orion-brain in its MCP config to talk to me through it.")
 
     print()
-    # Use user's chosen address, fall back to name, fall back to plain welcome
-    greeting_target = user_address or user_name or ""
-    if greeting_target:
-        speak(f"Welcome, {greeting_target}. I'm here.", color=BLUE)
-    else:
-        speak("Welcome. I'm here.", color=BLUE)
+    # The final reveal — Orion-the-constellation made visible as Orion-the-
+    # brain. Stars fade in, the iconic three-star belt forms with the central
+    # brain-hub node, the title settles, then the personalized welcome lands
+    # inside it. Designed 2026-05-24 per the founder's request for evolved
+    # terminal intro graphics that mark the install's emotional close.
+    _constellation_reveal(name=user_name, address=user_address)
     print()
 
 
