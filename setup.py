@@ -508,5 +508,30 @@ def run_setup():
     print()
 
 
+def _chain_to_proto_orion():
+    """After the wizard + MCP wiring, hand off to orion_setup_chat.py so the
+    user gets the full canonical experience: proto-Orion greeting, identity
+    gathering (name + address + what they're working on), optional Orion
+    rename, and the constellation reveal animation.
+
+    Unification fix per the 2026-05-24 audit: previously `python setup.py`
+    alone produced a half-install (wizard + MCP only, no greeting/naming/
+    reveal). install.ps1 / install.sh handled the chaining; setup.py
+    standalone didn't. Now they all converge on the same flow."""
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    chat_script = os.path.join(repo_dir, "orion_setup_chat.py")
+    if not os.path.exists(chat_script):
+        return  # nothing to chain to; the wizard alone is OK
+    try:
+        # Use subprocess (not exec) so a crash in proto-Orion doesn't
+        # take down the install summary the user just saw. Inherit stdio
+        # so it's interactive — the chat is a real conversation.
+        subprocess.run([sys.executable, chat_script], check=False)
+    except KeyboardInterrupt:
+        print()
+        print(c(DIM, "    (proto-Orion interrupted — you can run it later: python orion_setup_chat.py)"))
+
+
 if __name__ == "__main__":
     run_setup()
+    _chain_to_proto_orion()

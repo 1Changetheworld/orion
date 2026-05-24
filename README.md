@@ -69,8 +69,9 @@ The mesh runs from `orion_mesh.py`; the device map is per-instance (`~/.orion/me
 ```bash
 git clone https://github.com/1Changetheworld/orion.git
 cd orion
-bash install.sh    # Linux / macOS — asks 4 questions, 2 min
-# Or: pip install -r requirements.txt && python setup.py   (Windows)
+bash install.sh                              # Linux / macOS — asks 4 questions, 2 min
+# Or for Windows (run from PowerShell inside the cloned folder):
+#   powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 When install finishes, run your AI CLI (`codex`, `gemini`, or `claude`) and ask: *"what's my name?"* — it'll know, because Orion just seeded its brain with you.
@@ -462,20 +463,27 @@ Under the hood, Orion also has **adaptive discovery** (finds AI tools on your ho
 ## Installation
 
 **Local (your computer):**
+
 ```bash
 git clone https://github.com/1Changetheworld/orion.git
 cd orion
-pip install -r requirements.txt
-python setup.py
+bash install.sh                              # Linux / macOS
+# Windows (from PowerShell inside the cloned folder):
+#   powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
+The installer creates a venv, installs dependencies, runs the setup wizard,
+wires the MCP server into your AI CLIs, then runs proto-Orion (the
+pre-LLM onboarding chat that asks your name + how to address you + what
+to call Orion). The constellation reveal lands at the end.
+
 **Portable (USB drive):**
+
 ```bash
 cd /path/to/drive
 git clone https://github.com/1Changetheworld/orion.git
 cd orion
-pip install -r requirements.txt
-python setup.py --portable
+bash install.sh --portable
 ```
 
 The setup wizard detects your OS, scans for available AI models, and asks which tier you want:
