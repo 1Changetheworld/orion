@@ -1090,12 +1090,27 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
     )
     nodes_written += 1
 
-    # 2. User's summary as a preference node (if non-empty)
+    # 2a. Explicit NAME node — separate from the canonical entity so
+    # orion_recall("user name") returns the raw string deterministically.
+    # Persona render reads this; without it the recall would land on the
+    # summary node first and the persona shows the summary as "name".
+    # Phase 2 hardening per the 2026-05-24 audit.
+    if user_name:
+        g.store(
+            content=f"The user's name is {user_name}.",
+            node_type="identity",
+            tags=["name", "user name", "user-name", "first name",
+                  "who am i", "what is my name", "user-identity"],
+            skip_contradiction_check=True,
+        )
+        nodes_written += 1
+
+    # 2b. User's summary as a preference node (if non-empty)
     if user_summary:
         g.store(
             content=user_summary,
             node_type="preference",
-            tags=["user-summary", "first-meeting"],
+            tags=["user-summary", "first-meeting", "about", "what they're working on"],
             skip_contradiction_check=True,
         )
         nodes_written += 1
@@ -1213,6 +1228,24 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
             skip_contradiction_check=True,
         )
         nodes_written += 1
+
+    # Phase 3 — render the persona INTO the CLI memory files (AGENTS.md /
+    # CLAUDE.md / GEMINI.md / ORION-CONTEXT.md). This is the synapse step:
+    # identity becomes the model's system prompt, not a tool call. Pure
+    # function read from the graph we just wrote, so it's guaranteed
+    # to reflect the install state. Best-effort; missing module never
+    # breaks the install. Per 2026-05-24 unification audit Phase 3.
+    try:
+        import orion_persona_render
+        _rep = orion_persona_render.write_persona_files()
+        if _rep.get("written"):
+            print(f"  [OK]  persona rendered into {len(_rep['written'])} CLI memory files "
+                  f"({_rep['persona_bytes']} bytes — synapse loaded)")
+    except Exception as _e:
+        # Persona render failure shouldn't kill the install; the user
+        # still has graph nodes (Phase 2). Persona can be re-rendered
+        # later with `python orion_persona_render.py`.
+        print(f"  [WARN] persona render skipped: {_e.__class__.__name__}")
 
     try:
         g.save()
