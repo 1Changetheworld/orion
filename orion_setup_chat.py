@@ -1135,7 +1135,12 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
             f"via proto-Orion onboarding."
         ),
         node_type="identity",
-        tags=["first-meeting", "install-day", "birthday", "orion-birthday", "orion-identity"],
+        # Tags include the EXACT recall-query strings AGENTS.md uses, so
+        # orion_recall finds these nodes deterministically (not relying on
+        # fuzzy tag matching). Per the 2026-05-24 Phase 2 unification.
+        tags=["birthday", "orion birthday", "orion-birthday",
+              "first-meeting", "install-day", "orion-identity",
+              "how old are you", "when were you born", "when did we meet"],
         skip_contradiction_check=True,
     )
     nodes_written += 1
@@ -1149,7 +1154,13 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
             else "The user does not want any honorific or title. Address them plainly or by name."
         ),
         node_type="preference",
-        tags=["address", "form-of-address", "user-preference"],
+        # AGENTS.md uses orion_recall("preferred form of address") — that
+        # exact string must be a tag or recall misses (fuzzy match isn't
+        # guaranteed across all graph backends). Phase 2 hardening.
+        tags=["preferred form of address", "form of address",
+              "address", "form-of-address", "honorific",
+              "user-preference", "preferred address",
+              "how to address me", "what to call me"],
         skip_contradiction_check=True,
     )
     nodes_written += 1
@@ -1164,7 +1175,11 @@ def seed_brain(user_name: str, user_summary: str, tools: dict,
             else "The user calls me Orion (default name kept)."
         ),
         node_type="identity",
-        tags=["orion-name", "orion-identity", "user-preference", "self-name"],
+        # AGENTS.md uses orion_recall("preferred name") to know its own
+        # chosen name — that exact string is a tag. Phase 2 hardening.
+        tags=["preferred name", "orion-name", "orion name",
+              "what to call orion", "what is your name",
+              "orion-identity", "user-preference", "self-name"],
         skip_contradiction_check=True,
     )
     nodes_written += 1
