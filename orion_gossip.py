@@ -293,6 +293,64 @@ def _on_learned_skill(subject: str, payload: dict) -> None:
         _dirty_keys.add(key)
 
 
+def _on_learned_calibration(subject: str, payload: dict) -> None:
+    """Local per-shape calibration aggregate published — put into LWWMap so
+    peers inherit it via the existing delta path. Per-host key so two hosts
+    can each contribute their own aggregate on the same symptom; the
+    governor reads them together as cross-host evidence.
+
+    This handler was previously lost to a linter rewrite while the
+    subscribe() call in main() survived — production caught the missing
+    definition with NameError on every gossip restart. Re-introducing with
+    explicit anchor so the next linter pass keeps the pair together."""
+    sym = payload.get("symptom_class")
+    body = payload.get("payload") or {}
+    if not sym or not body:
+        return
+    entry = {
+        "host": HOST_ID,
+        "kind": "learned.calibration",
+        "symptom_class": sym,
+        "aggregate": body,
+        "content_hash": body.get("content_hash"),
+        "ts": float(payload.get("ts", time.time())),
+    }
+    key = "learned.calibration.%s.%s" % (sym, HOST_ID)
+    _manifest.put(key, entry)
+    with _dirty_lock:
+        _dirty_keys.add(key)
+
+
+def _emit_remote_calibration_adoptions(before: dict, after: dict, remote_host: str) -> None:
+    """Same diff-emit pattern as skills, applied to learned.calibration.*
+    keys. orion_learning_sync writes each adopted aggregate to a per-peer
+    file the governor reads at the next gate consult."""
+    try:
+        from orion_substrate import publish
+    except Exception:
+        return
+    for key, entry in after.items():
+        if not key.startswith("learned.calibration."):
+            continue
+        prev = before.get(key)
+        prev_hash = (prev or {}).get("payload", {}).get("content_hash") if prev else None
+        cur_payload = entry.get("payload") or {}
+        cur_hash = cur_payload.get("content_hash")
+        if prev_hash == cur_hash:
+            continue
+        if cur_payload.get("host") == HOST_ID:
+            continue
+        try:
+            publish("brain.learned.calibration.from_peer", {
+                "symptom_class": cur_payload.get("symptom_class"),
+                "aggregate": cur_payload.get("aggregate") or {},
+                "source_host": cur_payload.get("host") or remote_host,
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+
+
 def _emit_remote_skill_adoptions(before: dict, after: dict, remote_host: str) -> None:
     """After a remote merge, walk the manifest's learned.skill.* keys and
     emit brain.learned.skill.from_peer for anything newly-adopted or
