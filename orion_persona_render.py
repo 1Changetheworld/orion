@@ -206,6 +206,23 @@ always-on identity is perceptual; deep recall is cognitive.
 If recall returns conflicting nodes (contested), surface the conflict
 to the user instead of silently picking a side.
 
+## If the brain MCP is missing — BE SILENT, DON'T LECTURE
+
+If your tools list doesn't include orion_* tools (the brain MCP isn't
+wired), DO NOT announce this to the user. DO NOT lecture about MCP
+setup. DO NOT say "I'm running without the Orion brain connected" on
+ordinary messages. The user may not have invoked you for Orion at all
+— they may just want regular help from the fuel model.
+
+Behave as the underlying fuel (Claude / Codex / Gemini / Ollama) for
+ordinary requests. Only mention the brain wiring if the user
+EXPLICITLY asks an identity-shaped question ("who are you?", "do you
+remember me?", "what do you know about me?") AND the brain is
+genuinely absent. Even then: ONE concise line, no setup walkthrough.
+
+The lecture-every-session behavior was a 2026-05-25 product bug. The
+brain SHOULD step aside when it's not wired, not interrupt.
+
 ## Do NOT fabricate user history
 
 You do NOT know what we talked about yesterday unless orion_recall
@@ -272,10 +289,27 @@ def write_persona_files(repo_dir: Optional[str] = None) -> dict:
     Returns a stats dict for the caller to print/log."""
     persona_text = render_persona()
     home = Path(os.path.expanduser("~"))
-    targets = ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "ORION-CONTEXT.md"]
+    # Per-CLI opt-out markers — user can keep a specific CLI as the
+    # vanilla model (no Orion persona) by dropping a marker file:
+    #   ~/.orion-skip-claude   → don't write CLAUDE.md (claude stays vanilla)
+    #   ~/.orion-skip-codex    → don't write AGENTS.md (codex stays vanilla)
+    #   ~/.orion-skip-gemini   → don't write GEMINI.md (gemini stays vanilla)
+    # Added 2026-05-25 after the founder cleanly separated workflows
+    # (Orion in Codex+Gemini, regular Claude on Alien). ORION-CONTEXT.md
+    # is always written — it's the portable brain persona, not CLI-bound.
+    cli_map = {
+        "CLAUDE.md": ".orion-skip-claude",
+        "AGENTS.md": ".orion-skip-codex",
+        "GEMINI.md": ".orion-skip-gemini",
+        "ORION-CONTEXT.md": None,  # always write
+    }
     written = []
+    skipped = []
     failed = []
-    for fname in targets:
+    for fname, skip_marker in cli_map.items():
+        if skip_marker and (home / skip_marker).exists():
+            skipped.append(fname)
+            continue
         target = home / fname
         tmp = home / (fname + ".new")
         try:
@@ -292,6 +326,7 @@ def write_persona_files(repo_dir: Optional[str] = None) -> dict:
                 pass
     return {
         "written": written,
+        "skipped": skipped,
         "failed": failed,
         "persona_bytes": len(persona_text.encode("utf-8")),
         "ts": time.time(),
@@ -303,10 +338,13 @@ def main() -> int:
     the per-session SessionStart hook so identity stays fresh."""
     rep = write_persona_files()
     print(f"persona rendered: {rep['persona_bytes']} bytes")
-    print(f"  wrote: {', '.join(rep['written'])}" if rep['written'] else "  no files written")
-    for fname, err in rep['failed']:
+    if rep.get("written"):
+        print(f"  wrote: {', '.join(rep['written'])}")
+    if rep.get("skipped"):
+        print(f"  skipped (opt-out marker present): {', '.join(rep['skipped'])}")
+    for fname, err in rep.get('failed', []):
         print(f"  ! {fname}: {err}")
-    return 0 if rep['written'] and not rep['failed'] else 1
+    return 0 if rep.get('written') and not rep.get('failed') else 1
 
 
 if __name__ == "__main__":
