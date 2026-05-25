@@ -51,8 +51,65 @@ def _should_send(text: str, recipient: str) -> bool:
     return True
 
 
+import re as _re
+
+# Recipients that should NEVER reach AppleScript. These are placeholder
+# strings that have leaked through the routing layer in the past
+# (e.g. commit 37ab7e6's "primary_user" misroute). Sending these to
+# Messages.app fails silently and the user never gets the message.
+# Hard-reject at the boundary instead of failing in osascript.
+_INVALID_RECIPIENT_LITERALS = {
+    "primary_user", "user", "default", "default_user",
+    "", "None", "null", "undefined",
+}
+# A valid recipient is either a phone number (E.164 or +-prefixed) or
+# an email address (Apple ID iMessage). Anything else is a routing bug.
+_PHONE_RE = _re.compile(r"^\+?[0-9][0-9\-\s\(\)\.]{6,}$")
+_EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _valid_recipient(recipient: str) -> tuple[bool, str]:
+    """Return (is_valid, reason). The boundary guard against placeholder
+    leaks like 'primary_user'. Added 2026-05-25 after audit showed the
+    leak survived even after commit 37ab7e6's reach-side fix."""
+    if not recipient or not isinstance(recipient, str):
+        return False, "empty/non-string recipient"
+    r = recipient.strip()
+    if r in _INVALID_RECIPIENT_LITERALS or r.lower() in _INVALID_RECIPIENT_LITERALS:
+        return False, "placeholder literal: %r" % r
+    if _PHONE_RE.match(r) or _EMAIL_RE.match(r):
+        return True, "ok"
+    return False, "not a phone number or email: %r" % r
+
+
+# Osascript timeout — Messages.app on a loaded mac can take >15s to
+# respond when starting up or processing prior sends. 30s removes the
+# false-timeout noise we saw on 2026-05-21. With retry-on-timeout below,
+# a transient slow Messages.app no longer drops messages silently.
+_OSASCRIPT_TIMEOUT_SEC = 30
+_OSASCRIPT_RETRIES = 1   # 1 retry after first timeout → 2 attempts total
+_RETRY_BACKOFF_SEC = 3
+
+
 def _send_via_applescript(recipient: str, text: str) -> bool:
-    """Run osascript to send through Messages.app. Returns success."""
+    """Run osascript to send through Messages.app. Returns success.
+
+    Hardened 2026-05-25:
+      - Validates recipient before invoking osascript (fail loud on
+        placeholder literals like 'primary_user' instead of silent
+        osascript failure).
+      - 30-second timeout (was 15) — Messages.app needs more headroom
+        on a loaded host.
+      - 1 retry on TimeoutExpired with 3-second backoff — transient
+        Messages.app slowness no longer drops messages on the floor.
+    """
+    # GUARD: reject placeholder leaks at the boundary.
+    valid, reason = _valid_recipient(recipient)
+    if not valid:
+        logger.error("REFUSING send — invalid recipient (%s). text-preview=%r",
+                     reason, text[:80])
+        return False
+
     # Escape double-quotes and backslashes for AppleScript string literal
     clean = text.replace("\\", "\\\\").replace('"', '\\"')
     script = (
@@ -62,19 +119,40 @@ def _send_via_applescript(recipient: str, text: str) -> bool:
         f'    send "{clean}" to targetBuddy\n'
         'end tell'
     )
-    try:
-        r = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=15
-        )
-        if r.returncode == 0:
-            logger.info("sent to %s: %s", recipient, text[:80])
-            return True
-        logger.warning("osascript rc=%s stderr=%s", r.returncode, r.stderr[:200])
-        return False
-    except Exception as e:
-        logger.warning("osascript failed: %s", e)
-        return False
+
+    last_err = ""
+    for attempt in range(_OSASCRIPT_RETRIES + 1):
+        try:
+            r = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True,
+                timeout=_OSASCRIPT_TIMEOUT_SEC,
+            )
+            if r.returncode == 0:
+                if attempt > 0:
+                    logger.info("sent to %s after retry %d: %s",
+                                recipient, attempt, text[:80])
+                else:
+                    logger.info("sent to %s: %s", recipient, text[:80])
+                return True
+            last_err = "rc=%s stderr=%s" % (r.returncode, (r.stderr or "")[:200])
+            logger.warning("osascript %s", last_err)
+            # Non-timeout failure: don't retry (returncode usually means
+            # AppleScript ERROR — re-sending won't help).
+            return False
+        except subprocess.TimeoutExpired:
+            last_err = "timeout after %ds (attempt %d/%d)" % (
+                _OSASCRIPT_TIMEOUT_SEC, attempt + 1, _OSASCRIPT_RETRIES + 1)
+            logger.warning("osascript %s", last_err)
+            if attempt < _OSASCRIPT_RETRIES:
+                time.sleep(_RETRY_BACKOFF_SEC)
+                continue
+        except Exception as e:
+            last_err = "%s: %s" % (e.__class__.__name__, e)
+            logger.warning("osascript failed: %s", last_err)
+            return False
+    logger.error("osascript exhausted retries — %s", last_err)
+    return False
 
 
 async def _publish_status(nc, recipient: str, text: str, ok: bool, error: str = ""):
