@@ -243,12 +243,19 @@ if (-not (Test-Path $LauncherSrcDir)) {
     New-Item -ItemType Directory -Path $LauncherSrcDir -Force | Out-Null
 }
 
-$launcherContent = @"
+# Use a single-quoted here-string + manual substitution so the embedded
+# double-quote literals don't confuse PS 5.1's scriptblock parser.
+# Caught 2026-05-25 -- the previous @"..."@ form with "$VenvPython"
+# inside was causing a runtime parse error pointing at line 366,
+# because PS 5.1's parser mis-tracked string state through the
+# embedded quotes. Single-quoted here-string sidesteps the bug.
+$launcherContent = @'
 @echo off
 REM orion launcher -- created by install.ps1
-REM Runs orion.py via the repo's venv so deps are always available.
-"$VenvPython" "$ScriptDir\orion.py" %*
-"@
+REM Runs orion.py via the repo venv so deps are always available.
+"__VENV_PYTHON__" "__SCRIPT_DIR__\orion.py" %*
+'@
+$launcherContent = $launcherContent.Replace('__VENV_PYTHON__', $VenvPython).Replace('__SCRIPT_DIR__', $ScriptDir)
 
 Set-Content -Path $LauncherSrc -Value $launcherContent -Encoding ascii
 Ok "Launcher installed at: $LauncherSrc"
@@ -344,13 +351,13 @@ if (Test-Path $preflight) {
 # launchctl/systemd-user don't exist; the plexus_deploy.sh path is
 # macOS/Linux only. Windows users can still run individual services
 # manually (python orion_chronos.py &, etc.) or use WSL. Tracked as
-# a known gap — the brain itself is fully wired here.
+# a known gap -- the brain itself is fully wired here.
 # ----------------------------------------------------------------
 Say ""
 Warn "Plexus services (substrate + 14 adaptive layers) are macOS/Linux only today."
 Say "  On Windows, the brain + MCP + channels are wired and working."
 Say "  For the full Plexus, run the install on a Mac/Linux host that has this brain visible."
-Say "  Tracked gap — Windows service-manager wiring is pending."
+Say "  Tracked gap -- Windows service-manager wiring is pending."
 
 # ----------------------------------------------------------------
 # Done
