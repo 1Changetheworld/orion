@@ -10,6 +10,8 @@ Three memory layers:
 
 The combination: fast deterministic recall + deep semantic search + continuous learning.
 """
+from __future__ import annotations   # PEP 604 'X | None' compat on Python 3.9
+                                     # (macOS 13 ships 3.9; required for OUTPOST onboarding 2026-05-29)
 import json
 import time
 import hashlib
