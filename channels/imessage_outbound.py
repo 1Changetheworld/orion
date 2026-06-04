@@ -92,67 +92,21 @@ _RETRY_BACKOFF_SEC = 3
 
 
 def _send_via_applescript(recipient: str, text: str) -> bool:
-    """Run osascript to send through Messages.app. Returns success.
+    """Send through Messages via the resilient multi-strategy sender.
 
-    Hardened 2026-05-25:
-      - Validates recipient before invoking osascript (fail loud on
-        placeholder literals like 'primary_user' instead of silent
-        osascript failure).
-      - 30-second timeout (was 15) — Messages.app needs more headroom
-        on a loaded host.
-      - 1 retry on TimeoutExpired with 3-second backoff — transient
-        Messages.app slowness no longer drops messages on the floor.
+    Rewired 2026-06-04: delegates to channels/imessage_send.py, which
+    cascades shortcuts-CLI → unqualified-buddy → participant → legacy
+    forms. macOS 15 Sequoia removed the `service`/`account`/`buddy`
+    nouns this used to rely on, so a single AppleScript form is no
+    longer reliable. The recipient guard, 30s timeout, and retry now
+    live in the shared module and apply to every strategy. Name kept for
+    call-site compatibility with _on_outbound.
     """
-    # GUARD: reject placeholder leaks at the boundary.
-    valid, reason = _valid_recipient(recipient)
-    if not valid:
-        logger.error("REFUSING send — invalid recipient (%s). text-preview=%r",
-                     reason, text[:80])
-        return False
-
-    # Escape double-quotes and backslashes for AppleScript string literal
-    clean = text.replace("\\", "\\\\").replace('"', '\\"')
-    script = (
-        'tell application "Messages"\n'
-        '    set targetService to 1st service whose service type = iMessage\n'
-        f'    set targetBuddy to buddy "{recipient}" of targetService\n'
-        f'    send "{clean}" to targetBuddy\n'
-        'end tell'
-    )
-
-    last_err = ""
-    for attempt in range(_OSASCRIPT_RETRIES + 1):
-        try:
-            r = subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True, text=True,
-                timeout=_OSASCRIPT_TIMEOUT_SEC,
-            )
-            if r.returncode == 0:
-                if attempt > 0:
-                    logger.info("sent to %s after retry %d: %s",
-                                recipient, attempt, text[:80])
-                else:
-                    logger.info("sent to %s: %s", recipient, text[:80])
-                return True
-            last_err = "rc=%s stderr=%s" % (r.returncode, (r.stderr or "")[:200])
-            logger.warning("osascript %s", last_err)
-            # Non-timeout failure: don't retry (returncode usually means
-            # AppleScript ERROR — re-sending won't help).
-            return False
-        except subprocess.TimeoutExpired:
-            last_err = "timeout after %ds (attempt %d/%d)" % (
-                _OSASCRIPT_TIMEOUT_SEC, attempt + 1, _OSASCRIPT_RETRIES + 1)
-            logger.warning("osascript %s", last_err)
-            if attempt < _OSASCRIPT_RETRIES:
-                time.sleep(_RETRY_BACKOFF_SEC)
-                continue
-        except Exception as e:
-            last_err = "%s: %s" % (e.__class__.__name__, e)
-            logger.warning("osascript failed: %s", last_err)
-            return False
-    logger.error("osascript exhausted retries — %s", last_err)
-    return False
+    try:
+        from channels.imessage_send import send_imessage
+    except ImportError:
+        from imessage_send import send_imessage  # run from channels/ dir
+    return send_imessage(recipient, text)
 
 
 async def _publish_status(nc, recipient: str, text: str, ok: bool, error: str = ""):

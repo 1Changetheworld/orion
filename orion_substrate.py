@@ -60,17 +60,56 @@ def _discover_substrate_url() -> str:
     ]
 
     import socket
+    # VESSEL SEAM A (additive; inert unless a canonical pin exists): a
+    # secondary host must not bind whatever answers :4222 by reachability —
+    # it verifies the host serves the PINNED canonical brain first. With no
+    # pin (fresh install / canonical host) this is False and the loop is the
+    # legacy first-reachable-wins behaviour.
+    pinned_secondary = _vessel_pinned_secondary()
     for ip in candidates:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(0.4)
                 if s.connect_ex((ip, 4222)) == 0:
+                    if pinned_secondary and not _vessel_host_is_canonical(ip):
+                        continue  # unverified / fork host — keep looking
                     return f"nats://{ip}:4222"
         except Exception:
             continue
-    # Nothing reachable. Return a localhost URL anyway; connect will
-    # fail cleanly and publish becomes a no-op.
+    # Nothing reachable (or nothing verified). Return a localhost URL anyway;
+    # connect will fail cleanly and publish becomes a no-op.
     return "nats://127.0.0.1:4222"
+
+
+def _vessel_pinned_secondary() -> bool:
+    """True iff this host has a canonical pin AND is not itself canonical —
+    i.e. it must verify any brain endpoint before binding. False (the common
+    case: no pin, or this IS the canonical host) preserves legacy discovery."""
+    if os.environ.get("ORION_VESSEL_DISABLE"):
+        return False
+    try:
+        import orion_vessel as v
+        return v.is_pinned() and not v.am_i_canonical()
+    except Exception:
+        return False
+
+
+def _vessel_host_is_canonical(ip: str) -> bool:
+    """Fetch the brain's signed whoami at `ip` and check it against the pin.
+    Reports a fork if the host serves a different authentic self. Never
+    raises — an unreachable/unverifiable host is simply 'not canonical'."""
+    try:
+        import orion_vessel as v
+        base = os.environ.get("ORION_CANONICAL_HTTP_URL") or f"http://{ip}:5556"
+        desc = v.fetch_whoami(base)
+        if not desc:
+            return False
+        verdict = v.classify_endpoint(desc)
+        if verdict == v.BIND_FORK:
+            v.report_fork(desc, context="substrate discover")
+        return verdict == v.BIND_MATCH
+    except Exception:
+        return False
 
 
 DEFAULT_URL = _discover_substrate_url()

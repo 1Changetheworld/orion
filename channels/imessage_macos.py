@@ -117,23 +117,17 @@ class IMessageChannel(Channel):
             time.sleep(self.poll_interval)
 
     def send(self, reply_text: str, reply_to: Message) -> None:
-        # AppleScript via osascript is the supported way to send from
-        # a script to Messages. Replace double quotes for safety.
-        clean = reply_text.replace('"', "'").replace("\\", "\\\\")
-        script = f'''
-        tell application "Messages"
-            set targetService to 1st service whose service type = iMessage
-            set targetBuddy to buddy "{reply_to.sender}" of targetService
-            send "{clean}" to targetBuddy
-        end tell
-        '''
+        # Delegates to the resilient multi-strategy sender (2026-06-04).
+        # macOS 15 Sequoia removed the service/account/buddy AppleScript
+        # nouns the old single form used; the shared module cascades
+        # shortcuts-CLI → unqualified-buddy → participant → legacy.
         try:
-            subprocess.run(
-                ["osascript", "-e", script],
-                check=True, capture_output=True, timeout=15,
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"[imessage] send failed: {e.stderr.decode()}", flush=True)
+            from channels.imessage_send import send_imessage
+        except ImportError:
+            from imessage_send import send_imessage  # run from channels/ dir
+        ok = send_imessage(reply_to.sender, reply_text)
+        if not ok:
+            print("[imessage] send failed — all strategies exhausted", flush=True)
 
 
 if __name__ == "__main__":

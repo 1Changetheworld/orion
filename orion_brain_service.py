@@ -234,6 +234,20 @@ class BrainHandler(BaseHTTPRequestHandler):
             })
             return
 
+        # VESSEL SEAM C (SERVE): the signed canonical whoami descriptor.
+        # Unauthenticated like /health — it carries NO private key and is
+        # Ed25519-signed, so any secondary host can verify-on-bind against
+        # its pin. This is the off-box surface that makes the mesh's
+        # one-brain guarantee enforceable. See
+        # docs/architecture/vessel-canonical-identity.md.
+        if self.path == "/vessel/whoami":
+            try:
+                import orion_vessel
+                self._respond_json(200, orion_vessel.build_whoami_descriptor())
+            except Exception as e:
+                self._respond_error(503, "vessel whoami unavailable", str(e))
+            return
+
         if not self._check_auth():
             self._respond_error(401, "unauthorized — bearer token required")
             return

@@ -78,6 +78,70 @@ _BRAIN_HTTP_AUTH_TOKEN_PATH = Path(os.path.expanduser(os.environ.get(
 )))
 _BRAIN_HTTP_PROBE_CACHE = {"available": None, "checked_at": 0.0, "auto_started": False}
 
+# ── VESSEL SEAM B (additive; inert unless a canonical pin exists) ──
+# Per docs/architecture/vessel-canonical-identity.md. The historical fork
+# origin: this server defaults _BRAIN_HTTP_URL to a LOCAL brain and
+# auto-spawns one on a fresh host, so each CLI binds its own self. The
+# vessel gate, ONCE A canonical.json PIN EXISTS, repoints a secondary host
+# at the verified canonical brain (de-fork) and forbids spawning a local
+# authoritative brain. With NO pin (fresh install / undeployed host) every
+# branch below is skipped and behaviour is byte-for-byte the legacy path.
+_VESSEL_STATE = {"resolved": False, "mode": "legacy", "orphan": False}
+
+
+def _vessel_log(level: str, msg: str, *args) -> None:
+    try:
+        import logging
+        getattr(logging.getLogger("orion.mcp.vessel"), level)(msg, *args)
+    except Exception:
+        pass
+
+
+def _vessel_resolve_endpoint() -> None:
+    """Run the Seam-B binding decision once. May repoint the module-global
+    _BRAIN_HTTP_URL at the verified canonical brain so this host's fuel
+    CLIs bind the ONE brain instead of a local fork. No-ops unless a pin
+    exists; never raises into the caller."""
+    global _BRAIN_HTTP_URL
+    if _VESSEL_STATE["resolved"]:
+        return
+    _VESSEL_STATE["resolved"] = True
+    if os.environ.get("ORION_VESSEL_DISABLE"):
+        return
+    try:
+        import orion_vessel as vessel
+    except Exception:
+        return
+    try:
+        if not vessel.is_pinned():
+            return  # no trust anchor → legacy behaviour, zero change
+        if vessel.am_i_canonical():
+            _VESSEL_STATE["mode"] = "canonical"
+            return  # this host IS the brain; keep the local default URL
+        # Secondary host: bind the verified canonical brain, never a fork.
+        canonical_url = os.environ.get("ORION_CANONICAL_HTTP_URL")
+        if canonical_url:
+            desc = vessel.fetch_whoami(canonical_url)
+            verdict = vessel.classify_endpoint(desc) if desc else None
+            if verdict == vessel.BIND_MATCH:
+                _BRAIN_HTTP_URL = canonical_url.rstrip("/")
+                _VESSEL_STATE["mode"] = "bound"
+                _vessel_log("info", "vessel: bound to canonical brain at %s",
+                            _BRAIN_HTTP_URL)
+                return
+            if verdict == vessel.BIND_FORK:
+                vessel.report_fork(desc, context="mcp_server bind")
+        # Pinned, not canonical, no verified endpoint → orphan. Refuse to
+        # auto-spawn a local authoritative brain (that is the fork origin).
+        _VESSEL_STATE["mode"] = "orphan"
+        _VESSEL_STATE["orphan"] = True
+        _vessel_log("warning",
+                    "vessel: canonical brain unverifiable — running ORPHAN "
+                    "(no local brain auto-start). Set ORION_CANONICAL_HTTP_URL "
+                    "or run on the canonical host.")
+    except Exception as e:
+        _vessel_log("debug", "vessel resolve skipped: %s", e)
+
 
 def _brain_http_health_check(timeout: float = 1.5) -> bool:
     try:
@@ -95,6 +159,12 @@ def _brain_http_auto_start() -> None:
     so it survives this MCP process exiting.
     """
     if _BRAIN_HTTP_PROBE_CACHE["auto_started"]:
+        return
+    # VESSEL SEAM B: when bound to a remote canonical brain, or orphaned
+    # under a pin, NEVER spawn a local authoritative brain — that default
+    # is precisely what forked FORGE onto its own 43-node self.
+    if _VESSEL_STATE.get("orphan") or _VESSEL_STATE.get("mode") == "bound":
+        _BRAIN_HTTP_PROBE_CACHE["auto_started"] = True
         return
     _BRAIN_HTTP_PROBE_CACHE["auto_started"] = True
     service = _this_dir / "orion_brain_service.py"
@@ -135,6 +205,11 @@ def _brain_http_proxy_available() -> bool:
     """
     # Skip proxy if we ARE the brain service — direct local call is faster.
     if os.environ.get("ORION_INSIDE_BRAIN_SERVICE") == "1":
+        return False
+    # VESSEL SEAM B: resolve canonical binding once (inert without a pin).
+    _vessel_resolve_endpoint()
+    if _VESSEL_STATE.get("orphan"):
+        # Read-only orphan: do not present a (forked) local brain as live.
         return False
     now = time.time()
     if _BRAIN_HTTP_PROBE_CACHE["available"] is not None:
