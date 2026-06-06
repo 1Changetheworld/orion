@@ -930,6 +930,8 @@ class GraphMemory:
         tmp = str(filepath) + ".tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())  # durability: data on disk BEFORE the atomic rename
         os.replace(tmp, str(filepath))
 
     def load(self, filepath: Path = None):

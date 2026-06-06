@@ -121,8 +121,24 @@ class GraphMemory:
             }
         }
         try:
-            with open(filepath, 'w') as f:
-                json.dump(data, f, indent=2)
+            # Durable atomic write (2026-06-06): temp file -> flush -> fsync ->
+            # atomic os.replace. The brain is the one irreplaceable asset; a
+            # power loss mid-write previously could truncate/erase graph_memory.json.
+            # On any failure the temp is removed and the last-good file is untouched.
+            _dir = os.path.dirname(filepath) or "."
+            _fd, _tmp = tempfile.mkstemp(dir=_dir, prefix=".graph_memory.", suffix=".tmp")
+            try:
+                with os.fdopen(_fd, "w") as f:
+                    json.dump(data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(_tmp, filepath)
+            except BaseException:
+                try:
+                    os.unlink(_tmp)
+                except OSError:
+                    pass
+                raise
         except OSError as e:
             # Storage canary. 2026-05-10 22:19 incident: macOS TCC denied
             # /usr/bin/python3 (launchd-spawned) write access to /Volumes/
