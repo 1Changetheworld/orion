@@ -25,3 +25,11 @@ openai>=1.0
 # nats-server separately when ready to activate the substrate.
 # See orion_substrate.py and project_orion-plexus-architecture.md.
 nats-py>=2.6
+
+# Mesh / federation (orion_federation.py — cross-device identity, signed beacons).
+# Lazy-imported; only needed if you run multi-device mesh mode.
+# cryptography>=42.0
+
+# Web absorb (orion_absorb.py — pull/learn from a URL). Lazy-imported;
+# only needed if you use the absorb faculty. stdlib urllib covers most paths.
+# requests>=2.31
