@@ -99,8 +99,15 @@ class GlobalWorkspace:
         # Last contact across all interfaces
         self.last_contact: dict | None = None
 
-        # Per-channel last seen + counts
+        # Per-channel last seen + counts (CONSCIOUS — real interactions only)
         self.channel_last_seen: dict[str, dict] = {}
+
+        # Autonomic / reflexive signals (canary heartbeats, probes). Perceived
+        # at the subconscious level so liveness monitoring still benefits, but
+        # NEVER promoted to last_contact / conscious experience. A mind that
+        # mistakes its own heartbeat for a conversation isn't aware — it's a
+        # mirror reflecting noise. This is the salience gate. (2026-06-07)
+        self.autonomic_last_seen: dict[str, dict] = {}
 
         # Per-host last seen + capabilities (from host.*.heartbeat / capabilities)
         self.host_last_seen: dict[str, dict] = {}
@@ -143,6 +150,17 @@ class GlobalWorkspace:
             if len(parts) >= 3 and parts[0] == "channel":
                 channel = parts[1]
                 direction = parts[2]
+                # Salience gate: autonomic/reflexive traffic (canary dry-runs,
+                # probes, acks, heartbeats) is sensed but NOT experienced. It
+                # updates a subconscious pulse record only — it must never
+                # become last_contact or count as a "recently active channel".
+                if _is_autonomic(subject, payload):
+                    self.autonomic_last_seen[channel] = {
+                        "ts": payload.get("ts", now),
+                        "iso": _iso(payload.get("ts", now)),
+                        "kind": parts[2],
+                    }
+                    return
                 self._inbound_subjects_seen.add(f"channel.{channel}")
                 self.channel_last_seen[channel] = {
                     "ts": payload.get("ts", now),
@@ -151,9 +169,15 @@ class GlobalWorkspace:
                     "sender": payload.get("sender") or payload.get("recipient") or "",
                     "preview": (payload.get("text") or "")[:200],
                 }
-                # any channel event is the new last_contact
-                self.last_contact = dict(self.channel_last_seen[channel],
-                                         channel=channel)
+                # "last contact" = when the USER last reached us. Only INBOUND
+                # counts — Orion's own outbound notifications (Wonder/will alerts)
+                # are Orion talking AT the user, not the user contacting Orion,
+                # and must not define "where did we last speak". (2026-06-08: this
+                # was why claude reported iMessage — Wonder's outbound iMessage was
+                # overwriting last_contact between the user's CLI visits.)
+                if direction == "inbound":
+                    self.last_contact = dict(self.channel_last_seen[channel],
+                                             channel=channel)
                 # bump active topic by content keywords
                 self._bump_topics(payload.get("text") or "")
                 return
@@ -254,6 +278,31 @@ def _iso(ts: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
 
 
+# Subject suffixes that are autonomic by nature — the body's own pulses,
+# not contact with anyone. Kept here so wonder/self-heal can import the
+# same definition and agree on what counts as "experience".
+_AUTONOMIC_SUFFIXES = frozenset({"canary_ack", "canary", "heartbeat",
+                                 "probe", "keepalive", "ping",
+                                 # delivery receipts / status acks are the body's
+                                 # own send-machinery, not contact with anyone:
+                                 "delivery_status", "delivery", "receipt",
+                                 "read_receipt", "ack", "status", "sent"})
+
+
+def _is_autonomic(subject: str, payload: dict) -> bool:
+    """True for reflexive/synthetic traffic that must not reach consciousness:
+    canary dry-runs, health probes, acks, heartbeats. Three independent
+    signals so a new probe shape still gets caught by at least one."""
+    if isinstance(payload, dict):
+        if payload.get("dry_run") or payload.get("probe_id"):
+            return True
+        text = payload.get("text") or ""
+        if isinstance(text, str) and text.lstrip().startswith("<canary"):
+            return True
+    suffix = subject.rsplit(".", 1)[-1] if subject else ""
+    return suffix in _AUTONOMIC_SUFFIXES
+
+
 def _summarize_payload(p: dict) -> str:
     """Tiny single-line summary for the rolling ring (avoid bloating memory)."""
     if not isinstance(p, dict):
@@ -275,6 +324,9 @@ def _summarize_payload(p: dict) -> str:
 
 _workspace = GlobalWorkspace()
 _stop = threading.Event()
+# Last contact-node content we rang the bell for — so we only invalidate the
+# other brain caches when the conscious record actually CHANGED, not every tick.
+_last_flushed_content: str | None = None
 
 
 def _on_any(subject: str, payload: dict) -> None:
@@ -302,6 +354,16 @@ def _broadcast_loop() -> None:
     last_graph_flush = 0.0
     while not _stop.is_set():
         try:
+            # 0. temporal heartbeat — stamp "Orion alive at now" so that after a
+            # shutdown/unplug, the next wake can RECONSTRUCT how long he was off
+            # (he can't experience the gap; he infers it from this anchor vs the
+            # clock). Single writer for the alive-pulse. (2026-06-08)
+            try:
+                import orion_temporal
+                orion_temporal.heartbeat()
+            except Exception:
+                pass
+
             snap = _workspace.snapshot()
 
             # 1. publish
@@ -389,6 +451,26 @@ def _flush_to_graph(snap: dict) -> None:
 
     GRAPH_PATH.write_text(json.dumps(graph, indent=2, default=str),
                           encoding="utf-8")
+
+    # Ring the bell — but ONLY when the conscious record actually changed.
+    # This is the load-bearing line for cohesion: the brain service (:5556)
+    # and every per-CLI MCP cache subscribe to brain.memory.stored and drop
+    # their in-memory copy on it. Writing the file silently (the old bug) left
+    # all four copies stale; ringing the bell makes every surface converge on
+    # this write. The publish is downstream of the file write, so any cache
+    # that reloads on the event reads the fresh disk. (2026-06-07)
+    global _last_flushed_content
+    if content != _last_flushed_content:
+        _last_flushed_content = content
+        try:
+            from orion_substrate import publish as _pub
+            _pub("brain.memory.stored", {
+                "source": "claustrum.contact",
+                "node_type": "cross_interface_contact",
+                "ts": now,
+            })
+        except Exception:
+            pass
 
 
 def main() -> int:

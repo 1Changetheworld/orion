@@ -17,6 +17,17 @@ import urllib.request
 import shutil
 import time
 
+# Daemons and non-interactive shells lack the user's interactive PATH, so the strong
+# CLIs (claude/codex/gemini) were invisible to shutil.which() and the whole cascade
+# silently fell to weak local Ollama — i.e. all of Orion's autonomous cognition ran on
+# fumes. Restore the real install locations so the brain reaches strong fuel. (2026-06-12)
+for _d in (os.path.expanduser("~/.npm-global/bin"),
+           os.path.expanduser("~/.homebrew/bin"),
+           "/opt/homebrew/bin", "/usr/local/bin",
+           os.path.expanduser("~/.local/bin")):
+    if os.path.isdir(_d) and _d not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
+
 
 # ═══════════════════════════════════════════════════════════════
 # FUEL ADAPTER INTERFACE
@@ -649,11 +660,27 @@ def init():
     return fuel
 
 
+def _log_fuel_call(interface, engine, ok):
+    """Append-only ledger of every model call — the primitive for the INDEPENDENCE INDEX
+    (how much of Orion's cognition still needs a model). Local engines (ollama*) are the
+    floor we want to reach; the endgoal is needing NO model at all. Silent on failure."""
+    try:
+        d = os.path.expanduser("~/.orion/state")
+        os.makedirs(d, exist_ok=True)
+        local = "ollama" in (engine or "").lower()
+        with open(os.path.join(d, "fuel_calls.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.time(), "interface": interface,
+                                "engine": engine, "local": local, "ok": bool(ok)}) + "\n")
+    except Exception:
+        pass
+
+
 def get_fuel(prompt, interface="cli", max_turns=15):
     """Query best available fuel. Used by the brain."""
     if not fuel.available:
         fuel.scan()
     response, engine = fuel.query(prompt, max_turns)
+    _log_fuel_call(interface, engine, bool(response))   # ledger every model call (Independence Index)
     if response:
         return response, engine
     return "All models unavailable. Try another interface.", "none"

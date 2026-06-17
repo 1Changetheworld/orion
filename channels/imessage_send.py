@@ -111,12 +111,16 @@ def _run_osascript(script: str) -> tuple[bool, str]:
 
 
 def _applescript_variants(recipient: str, clean: str) -> list[tuple[str, str]]:
-    """(strategy_name, script) pairs, ordered most-modern-first."""
+    """(strategy_name, script) pairs — iMessage-SERVICE-qualified ONLY.
+
+    VERIFIED on COMMAND's Sequoia 2026-06-07: the participant-of-service form
+    delivers BLUE (real iMessage). The old `send to buddy "X"` (unqualified)
+    form was REMOVED — it returned rc=0 but sent SMS/green that James never
+    received, a silent false-success that also short-circuited the blue path.
+    Every form here explicitly targets the iMessage service, so a non-delivery
+    is a REAL failure (send_imessage returns False → caller can fall back to a
+    reliable channel) instead of a green message into the void."""
     return [
-        ("as:buddy-unqualified",
-         'tell application "Messages"\n'
-         f'    send "{clean}" to buddy "{recipient}"\n'
-         'end tell'),
         ("as:participant-of-service",
          'tell application "Messages"\n'
          '    set svc to 1st service whose service type = iMessage\n'

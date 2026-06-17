@@ -622,9 +622,20 @@ TOOLS = [
 # ═══════════════════════════════════════════════════════════════
 
 _brain = None
+_brain_mtime = 0.0          # mtime of the graph file when _brain was loaded
 _synthesis = None
 _heartbeat_started = False
 _substrate_subscribed = False
+
+
+def _graph_mtime() -> float:
+    """Current mtime of the graph file on disk, or 0.0 if unavailable. The
+    cheap freshness signal that lets the cache self-heal without a 'bell'."""
+    try:
+        from orion_brain_portable import GRAPH_PATH
+        return GRAPH_PATH.stat().st_mtime
+    except Exception:
+        return 0.0
 
 
 def _on_memory_stored(subject: str, payload: dict) -> None:
@@ -662,10 +673,24 @@ def _ensure_substrate_subscriptions() -> None:
 
 
 def _get_brain() -> OrionBrain:
-    """Lazy-init the brain. No fuel scan needed for MCP (we don't call LLMs)."""
-    global _brain, _heartbeat_started
+    """Lazy-init the brain — and SELF-HEAL staleness on every access. If the
+    graph file changed on disk since we loaded it (any other process wrote a
+    memory), reload. This makes a stale in-memory copy IMPOSSIBLE by
+    construction: independent of the substrate 'bell', subscription health, or
+    how old the session is. Fresh sessions are no longer required for
+    cross-surface freshness — the design hurdle, engineered away. (2026-06-07)
+
+    The mtime stat is microseconds; a reload only happens when disk actually
+    advanced. The brain's own atomic writes advance mtime too, so the writing
+    process simply re-reads its own just-saved data on next access — correct,
+    negligibly wasteful."""
+    global _brain, _brain_mtime, _heartbeat_started
+    disk_mtime = _graph_mtime()
+    if _brain is not None and disk_mtime and disk_mtime > _brain_mtime:
+        _brain = None  # disk advanced past our copy → reload below
     if _brain is None:
         _brain = OrionBrain(scan_fuel=False)
+        _brain_mtime = disk_mtime or _graph_mtime()
     # Auto-start heartbeat on first brain access
     if not _heartbeat_started:
         _heartbeat_started = True
@@ -777,6 +802,32 @@ def _handle_orion_recall(args: dict) -> list:
             fallback = False
             break
 
+    # Temporal grounding (#2): annotate every result with how long ago it was,
+    # and for TIME-shaped queries return a chronological timeline so the model
+    # can reason about order/duration instead of guessing. Orion can do this
+    # because his memory is timestamped and he persists — a base model can't.
+    _now = time.time()
+    try:
+        from orion_temporal import _human as _hum
+    except Exception:
+        def _hum(s):
+            return "%dm" % int(s / 60)
+
+    def _node_ts(n):
+        return float(n.get("last_confirmed_at") or n.get("created") or 0)
+
+    def _age(n):
+        ts = _node_ts(n)
+        return (_now - ts) if ts else 0
+
+    _ql = query.lower()
+    temporal = any(w in _ql for w in (
+        "when", "how long", "ago", "before", "after", "timeline", "order",
+        "first", "last ", "recent", "yesterday", "today", "week", "month",
+        "earlier", "since", "history", "chronolog"))
+    if temporal:
+        nodes = sorted(nodes, key=_node_ts, reverse=True)  # newest first
+
     lines = []
     contested_count = 0
     for n in nodes:
@@ -784,8 +835,13 @@ def _handle_orion_recall(args: dict) -> list:
         if is_contested:
             contested_count += 1
         flag = " [contested]" if is_contested else ""
-        lines.append(f"- {n['content']}{flag}")
-    if fallback:
+        age = _age(n)
+        agestr = (" (~%s ago)" % _hum(age)) if age > 0 else ""
+        lines.append(f"- {n['content']}{flag}{agestr}")
+    if temporal:
+        lines.insert(0, "(timeline, newest first — use for ordering/duration; "
+                        "relative times are from now:)")
+    elif fallback:
         lines.insert(0, f"(no exact match for '{query}' — showing {len(nodes)} most-recent stored facts:)")
 
     body = "\n".join(lines)
@@ -824,11 +880,13 @@ def _handle_orion_memorize(args: dict) -> list:
     if mem_type not in tags:
         tags.append(mem_type)
 
-    # Use memorize with synthetic response so existing Mem0-style classification still runs
-    response = f"[MCP memorize] Storing {mem_type}: {content}"
-    action = brain.memorize(content, response, interface="mcp")
-
-    # Explicit graph store — unified schema
+    # SINGLE graph write — unified schema. Previously this handler ALSO called
+    # brain.memorize(), which stored a SECOND graph node for the same content
+    # (the 'User:X | Orion:X' duplication that polluted recall and fed
+    # confabulation). Removed 2026-06-08 — graph.store() now owns dedupe-on-write
+    # + contradiction detection, so one memorize = at most one node (a repeat
+    # strengthens the existing trace instead of duplicating it).
+    _n_before = len(brain.graph.nodes)
     node_id = brain.graph.store(
         content=content,
         node_type=mem_type,
@@ -836,6 +894,7 @@ def _handle_orion_memorize(args: dict) -> list:
         tags=tags,
     )
     brain.save()
+    action_type = "ADD" if len(brain.graph.nodes) > _n_before else "STRENGTHENED"
 
     # Reflex trigger for corrections / important signals
     c_lower = content.lower()
@@ -843,7 +902,6 @@ def _handle_orion_memorize(args: dict) -> list:
                                    "correction", "important", "critical", "emergency"]):
         reflex(content, source="mcp-memorize")
 
-    action_type = action.get("action", "ADD") if isinstance(action, dict) else "ADD"
     contested = brain.graph.nodes.get(node_id, {}).get("contested_with") or []
     return [{"type": "text", "text": json.dumps({
         "status": "stored",

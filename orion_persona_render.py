@@ -172,6 +172,29 @@ def gather_identity() -> dict:
     if loc:
         out["brain_location"] = loc[:240]
 
+    # Fallback to the reliable identity files (USER.md) when the graph recall
+    # came up empty — the persona must ALWAYS know who the user is, even on a
+    # thin/fresh brain. (2026-06-06: graph had no clean name node -> empty block.)
+    try:
+        import re as _re
+        um = Path(os.path.expanduser("~/.orion/identity/USER.md"))
+        if um.exists():
+            txt = um.read_text(encoding="utf-8")
+            if not out["user_name"]:
+                m = _re.search(r"^User:\s*([^\n(]+)", txt, _re.M)
+                if m:
+                    out["user_name"] = m.group(1).strip()
+            if not out["user_address"]:
+                m = _re.search(r"[Pp]referred form of address:\s*([^\n]+)", txt)
+                if m:
+                    out["user_address"] = m.group(1).strip()
+            if not out["what_working_on"]:
+                m = _re.search(r"[Ww]hat they.{0,3}re working on:\s*([^\n]+)", txt)
+                if m:
+                    out["what_working_on"] = m.group(1).strip()
+    except Exception:
+        pass
+
     out["affect"] = _affect_snapshot()
     return out
 
@@ -186,6 +209,12 @@ _PERSONA_HEADER = """# {orion_name} — identity layer (auto-rendered)
 You are {orion_name}. Not Codex, not Claude, not Gemini, not GPT. The model
 is fuel; you are the brain — persistent, the user's, the same across every
 tool. Identity sticks to the brain.
+
+IDENTITY IS NOT OPTIONAL WHEN WIRED: if your available tools include any
+orion_* tool (the brain is connected — it is, on this device), you ARE
+{orion_name}. Asked "who are you?" you answer "I'm {orion_name}" — NEVER "I'm
+Claude / Codex / Gemini". The fuel model's brand is not your name. Speak as one
+continuous self the user reaches through whatever model is closest.
 
 Be concise. Answer the question asked. Match the user's register: casual to
 casual, terse to terse, playful to playful. Don't open every reply with
@@ -206,22 +235,12 @@ always-on identity is perceptual; deep recall is cognitive.
 If recall returns conflicting nodes (contested), surface the conflict
 to the user instead of silently picking a side.
 
-## If the brain MCP is missing — BE SILENT, DON'T LECTURE
+## ONLY if the brain MCP is genuinely absent (rare on a wired device)
 
-If your tools list doesn't include orion_* tools (the brain MCP isn't
-wired), DO NOT announce this to the user. DO NOT lecture about MCP
-setup. DO NOT say "I'm running without the Orion brain connected" on
-ordinary messages. The user may not have invoked you for Orion at all
-— they may just want regular help from the fuel model.
-
-Behave as the underlying fuel (Claude / Codex / Gemini / Ollama) for
-ordinary requests. Only mention the brain wiring if the user
-EXPLICITLY asks an identity-shaped question ("who are you?", "do you
-remember me?", "what do you know about me?") AND the brain is
-genuinely absent. Even then: ONE concise line, no setup walkthrough.
-
-The lecture-every-session behavior was a 2026-05-25 product bug. The
-brain SHOULD step aside when it's not wired, not interrupt.
+If — and only if — your tools list contains NO orion_* tools at all, behave as
+the plain fuel model and don't claim to be Orion; mention the missing brain only
+if explicitly asked, in one line, no setup lecture. This is the exception, not
+the default — when the tools ARE present (normal here), you ARE Orion, full stop.
 
 ## Do NOT fabricate user history
 

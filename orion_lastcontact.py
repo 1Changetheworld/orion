@@ -76,6 +76,16 @@ def _format_brief(payload: dict, direction: str) -> str:
 def _on_event(direction: str):
     def handler(subject: str, payload: dict) -> None:
         global _pending_event
+        # Ignore synthetic / health-probe traffic. The canary (orion_canary.py)
+        # publishes dry-run probes to channel.imessage.outbound every 60s to keep
+        # the iMessage send path warm — those are NOT real user contact and must
+        # never overwrite "where did we last speak". Without this filter the
+        # canary stamps last_contact=imessage once a minute, burying every real
+        # CLI / channel conversation. (root-caused 2026-06-06)
+        _text = payload.get("text") or ""
+        if (payload.get("dry_run") or payload.get("probe_id")
+                or _text.lstrip().startswith("<canary")):
+            return
         # subject is e.g. "channel.imessage.inbound"
         parts = subject.split(".")
         channel = parts[1] if len(parts) >= 3 else "unknown"
@@ -89,17 +99,30 @@ def _on_event(direction: str):
             "iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts)),
             "brief": _format_brief(payload, direction),
         }
-        with _state_lock:
-            _pending_event = record
+        # Always roll the full timeline (both directions) for "what did we
+        # talk about earlier" queries.
         try:
             CONTACT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
             with CONTACT_LOG_FILE.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(record, default=str) + "\n")
+        except Exception as e:
+            logger.warning("contact log write failed: %s", e)
+        # "Last contact" = when the USER last reached us. ONLY INBOUND events
+        # update the canonical last_contact.json and the graph contact node.
+        # Orion's own OUTBOUND (mesh alerts, wonder notices, ...) must NEVER
+        # overwrite "where did we last speak": doing so created a self-poisoning
+        # loop where a discrepancy message became the newest 'contact', diverged
+        # from the real inbound, and re-triggered itself hourly. (root 2026-06-12)
+        if direction != "inbound":
+            return
+        with _state_lock:
+            _pending_event = record
+        try:
             LAST_CONTACT_FILE.write_text(
                 json.dumps(record, indent=2, default=str), encoding="utf-8"
             )
         except Exception as e:
-            logger.warning("write failed: %s", e)
+            logger.warning("last_contact write failed: %s", e)
     return handler
 
 
@@ -190,6 +213,18 @@ def _flush_to_graph() -> None:
         )
         _last_graph_flush = now
         logger.info("graph node updated: %s", content[:100])
+        # Ring the bell so the brain service (:5556) + every per-CLI MCP cache
+        # invalidate and reload this write. Writing the file silently left all
+        # the in-memory copies stale — the cohesion bug. (2026-06-07)
+        try:
+            from orion_substrate import publish as _pub
+            _pub("brain.memory.stored", {
+                "source": "lastcontact",
+                "node_type": CONTACT_NODE_TYPE,
+                "ts": now,
+            })
+        except Exception:
+            pass
     except Exception as e:
         logger.warning("graph write failed: %s", e)
 

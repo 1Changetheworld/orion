@@ -346,6 +346,22 @@ def _strengthen_node(node: dict, type_half_life: float, now: float) -> None:
     node["recall_count"] = int(node.get("recall_count", 0)) + 1
 
 
+_ROLE_PREFIX_RE = re.compile(r"^(user|orion|assistant|system)\s*:\s*", re.IGNORECASE)
+
+
+def _norm_content(s: str) -> str:
+    """Normalize content for dedupe-on-write: drop a leading role prefix
+    ('User:'/'Orion:'), lowercase, strip punctuation, collapse whitespace.
+    Conservative — only collapses near-identical re-statements of the same
+    fact, so distinct facts stay distinct."""
+    s = (s or "").strip()
+    s = _ROLE_PREFIX_RE.sub("", s)
+    s = s.lower()
+    s = re.sub(r"[^\w\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 class GraphMemory:
     """Fast tag-indexed memory with temporal decay + contradiction detection.
 
@@ -378,6 +394,32 @@ class GraphMemory:
         one gets marked `superseded_by` (supersede).
         """
         now = time.time()
+
+        # Dedupe-on-write (additive, 2026-06-08): if a node with identical
+        # NORMALIZED content already exists, STRENGTHEN it instead of storing a
+        # paraphrase duplicate. Matches the neuroscience — re-encountering a
+        # fact strengthens the trace, it does not create a second copy — and
+        # kills the 'User:X | Orion:X' double-storing that polluted recall.
+        # Conservative: exact normalized match only (case/punctuation/role-
+        # prefix), so distinct facts stay distinct.
+        _norm = _norm_content(content)
+        if _norm:
+            self._ensure_content_index()
+            ex_id = self._content_index.get(_norm)
+            if ex_id is not None and ex_id in self.nodes:
+                ex = self.nodes[ex_id]
+                ex["last_confirmed_at"] = now
+                try:
+                    _strengthen_node(ex, self.half_life_days.get(
+                        ex.get("type", "fact"), self.half_life_days.get("fact", 30.0)), now)
+                except Exception:
+                    pass
+                for t in (tags or []):
+                    if t not in ex["tags"]:
+                        ex["tags"].add(t)
+                        self.tag_index[t.lower()].add(ex_id)
+                return ex_id
+
         node_id = self._next_id
         self._next_id += 1
 
@@ -416,11 +458,19 @@ class GraphMemory:
         self.type_index[node_type].add(node_id)
         for tag in node["tags"]:
             self.tag_index[tag.lower()].add(node_id)
+        if _norm:
+            self._ensure_content_index()
+            self._content_index[_norm] = node_id
 
         if not skip_contradiction_check:
-            conflicts = self._find_contradictions(node_id)
-            if conflicts:
-                self._apply_contradiction_policy(node_id, conflicts)
+            # The cheap tag filter finds CANDIDATES only. It cannot tell a real
+            # contradiction (same claim, different value) from a duplicate or an
+            # unrelated same-topic fact, so auto-flagging from it produced an
+            # N^2 'contested' storm (re-seeded every sleep cycle). We keep its
+            # identical-content RE-CONFIRM side effect, but no longer flag from
+            # it. Genuine contradictions are surfaced by the async semantic layer
+            # (wonder/dmn belief-divergence) — the correct place to judge them.
+            self._find_contradictions(node_id)
 
         # Publish to the Plexus substrate (Layer 1). Side-effect only:
         # subscribers (e.g. other MCP processes) can invalidate their
@@ -478,8 +528,17 @@ class GraphMemory:
             return []
         conflicts = []
         candidates = set()
+        # A tag present on a large share of the graph is a CATEGORY label
+        # (e.g. 'fact','sleep','consolidated','visibility:mesh','user'), not a
+        # contradiction discriminator. Including it cross-flags every same-
+        # category fact as a conflict -> an N^2 false-positive storm. Only let
+        # SELECTIVE (low-frequency) tags nominate contradiction candidates.
+        cat_max = max(10, int(0.05 * len(self.nodes)))
         for tag in new["tags"]:
-            candidates |= self.tag_index.get(tag.lower(), set())
+            idx = self.tag_index.get(tag.lower(), set())
+            if len(idx) > cat_max:
+                continue
+            candidates |= idx
         candidates.discard(new_node_id)
         for nid in candidates:
             prior = self.nodes[nid]
@@ -575,6 +634,13 @@ class GraphMemory:
 
         if query:
             query_words = set(query.lower().split())
+            # RECENCY-INTENT (2026-06-17): "what just happened" queries must not let a heavily
+            # re-confirmed STALE thread bury fresh context (the stale-beats-live failure Orion
+            # diagnosed in the 3-window convo). When the query asks about recent time, boost
+            # genuinely recent nodes — gentle + intent-gated, so normal old-fact recall is untouched.
+            _RECENCY_INTENT = {"last", "just", "recent", "recently", "earlier", "now", "today",
+                               "ago", "latest", "currently", "tonight", "yesterday"}
+            recency_intent = bool(query_words & _RECENCY_INTENT)
             scored = []
             for nid in candidates:
                 node = self.nodes[nid]
@@ -586,33 +652,46 @@ class GraphMemory:
                 eff_conf = decayed_confidence(
                     node, now=now, half_life_table=self.half_life_days
                 )
+                rank = text_score * max(eff_conf, 0.05)
+                if recency_intent:                          # boost fresh nodes for recency queries
+                    age_h = (now - (node.get("last_seen") or node.get("last_confirmed_at")
+                                    or node.get("created") or now)) / 3600.0
+                    if age_h <= 1:      rank *= 2.5          # last hour — the live thread
+                    elif age_h <= 24:   rank *= 1.6          # today
+                    elif age_h <= 72:   rank *= 1.2          # last few days
                 if text_score > 0 or tags:
-                    # Final rank: text relevance weighted by decayed confidence
-                    scored.append((text_score * max(eff_conf, 0.05), eff_conf, nid))
+                    # Final rank: text relevance weighted by decayed confidence (+recency if asked)
+                    scored.append((rank, eff_conf, nid))
             scored.sort(reverse=True)
             if scored:
                 returned_ids = [nid for _, _, nid in scored[:limit]]
                 self._strengthen_recalled(returned_ids, now)
                 return [self.nodes[nid] for nid in returned_ids]
 
-            # Recency fallback — when the query has no keyword overlap with
-            # any stored node, return the most-recently-written nodes
-            # instead of an empty result. Caught 2026-05-06 dog-food: Codex
-            # stored 5 test facts on the Pi; Claude's abstract recall queries
-            # ("all stored facts memories notes") matched 0 tag words, so
-            # the user saw "no memories found" even though the writes were
-            # in the graph. Without this fallback, the brain has the data
-            # but TF-IDF strict-match hides it from cross-CLI continuity.
-            by_recency = sorted(
-                candidates,
-                key=lambda nid: self.nodes[nid].get(
-                    "last_confirmed_at", self.nodes[nid].get("created", 0)
-                ),
-                reverse=True,
-            )
-            returned_ids = list(by_recency[:limit])
-            self._strengthen_recalled(returned_ids, now)
-            return [self.nodes[nid] for nid in returned_ids]
+            # Recency fallback — but ONLY for BROAD "show me what you have"
+            # queries. A SPECIFIC query with no match MUST return empty so the
+            # model answers "I don't know" instead of confabulating from padded,
+            # irrelevant recency. (2026-06-07 gemini failure: it wove unrelated
+            # recent facts — COPPER-LANTERN, a fake meeting — into confident
+            # fiction precisely because recall padded a no-match query.) The
+            # original 2026-05-06 dog-food fix (abstract queries like "all
+            # stored facts memories notes" returning nothing) is preserved by
+            # keeping the fallback for broad queries only. (relevance threshold)
+            _BROAD = {"all", "everything", "everthing", "recent", "stored",
+                      "memories", "memory", "facts", "notes", "anything",
+                      "summary", "history", "catch", "context", "remember"}
+            if query_words & _BROAD:
+                by_recency = sorted(
+                    candidates,
+                    key=lambda nid: self.nodes[nid].get(
+                        "last_confirmed_at", self.nodes[nid].get("created", 0)
+                    ),
+                    reverse=True,
+                )
+                returned_ids = list(by_recency[:limit])
+                self._strengthen_recalled(returned_ids, now)
+                return [self.nodes[nid] for nid in returned_ids]
+            return []  # specific query, nothing relevant → honest empty (no padding)
 
         # No query: return highest-confidence nodes first
         scored = [
@@ -838,6 +917,18 @@ class GraphMemory:
         self._strengthen_recalled(out, now)
 
         return [self.nodes[nid] for nid in out]
+
+    def _ensure_content_index(self) -> None:
+        """Lazily build the normalized-content → node_id index for dedupe-on-
+        write. Built from current nodes on first use (works after a graph load
+        that didn't populate it); new stores keep it current."""
+        if getattr(self, "_content_index", None) is not None:
+            return
+        self._content_index = {}
+        for nid, n in self.nodes.items():
+            k = _norm_content(n.get("content", ""))
+            if k and k not in self._content_index:
+                self._content_index[k] = nid
 
     def _strengthen_recalled(self, node_ids: list, now: float) -> None:
         """Plexus Layer 2 (HLR): apply use-strengthens-paths plasticity to

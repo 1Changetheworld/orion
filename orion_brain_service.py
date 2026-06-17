@@ -90,6 +90,13 @@ AUTH_TOKEN_PATH = Path(os.path.expanduser(os.environ.get(
     "ORION_AUTH_TOKEN_PATH", "~/.orion/auth-token"
 )))
 
+# Contact attribution (the /contact endpoint). The brain owns the single
+# "who we last spoke through" record; per-turn hooks POST their surface here.
+GRAPH_PATH = Path(os.path.expanduser(os.environ.get(
+    "ORION_GRAPH_PATH", "~/.orion/brain/graph_memory.json")))
+SYNTH_DIR = Path(os.path.expanduser(os.environ.get(
+    "ORION_SYNTH_DIR", "~/.orion/synthesis")))
+
 # Host-header allowlist. Anything not in this set is rejected even
 # if the connection itself is bound to localhost — guards against
 # DNS-rebinding where a public domain points at 127.0.0.1 to trick
@@ -156,6 +163,164 @@ def origin_allowed(origin: str) -> bool:
         if pattern.endswith("*") and origin.startswith(pattern[:-1]):
             return True
     return False
+
+
+# ─────────────────────────────────────────────────────────────────
+# Contact attribution — the brain owns one "who we last spoke through" record
+# ─────────────────────────────────────────────────────────────────
+
+_AUTONOMIC_DIRS = {"canary_ack", "canary", "heartbeat", "probe", "ping", "keepalive",
+                   "delivery_status", "delivery", "receipt", "read_receipt",
+                   "ack", "status", "sent"}
+
+
+def _real_contacts(limit_runs=3):
+    """Read the durable contact log, drop autonomic reflexes, collapse runs of
+    the same surface, and return the most-recent few distinct contacts. This is
+    the short trail that lets ANY surface answer 'where did we last speak' with
+    the PREVIOUS surface, not just itself."""
+    path = SYNTH_DIR / "contact_log.jsonl"
+    runs = []
+    if not path.exists():
+        return runs
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        t = d.get("text") or ""
+        if d.get("dry_run") or d.get("probe_id") or t.lstrip().startswith("<canary") \
+                or d.get("direction") in _AUTONOMIC_DIRS:
+            continue
+        ch = d.get("channel") or "unknown"
+        # 'cli-mcp' is the generic recall machinery (a brain lookup with no known
+        # surface), not a real conversation. Now that turns are surface-attributed
+        # via /contact, exclude it so the trail reads claude/codex/gemini cleanly.
+        if ch == "cli-mcp" or d.get("direction") == "recall":
+            continue
+        # "where did we last speak" = where the USER last reached us. Only INBOUND
+        # counts — Orion's own outbound notifications (Wonder/will iMessages) are
+        # Orion talking AT the user, not contact. This is why claude reported
+        # iMessage: an outbound notification was the most recent "contact". (2026-06-08)
+        if d.get("direction") != "inbound":
+            continue
+        if runs and runs[-1]["channel"] == ch:
+            runs[-1] = d  # collapse consecutive same-surface; keep newest
+        else:
+            runs.append(d)
+    return runs[-limit_runs:][::-1]  # newest first
+
+
+def _recent_turns(limit=8):
+    """The last N real turns across ALL surfaces — BOTH sides (your prompts and
+    Orion's replies) — for the shared short-term memory injected into every
+    window. Prefers the two-sided conversation_log (from orion_conversation_sync)
+    and falls back to the user-only contact_log. This is the three-windows-in-a-
+    wall analogy: one Orion that notices a repeat across windows AND remembers
+    what it itself answered (James, 2026-06-07)."""
+    rows = []
+
+    def _ingest(path, surface_key, role_fn):
+        if not path.exists():
+            return
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            t = (d.get("text") or "").strip()
+            if not t or t.lstrip().startswith("<canary") or d.get("dry_run") or d.get("probe_id"):
+                continue
+            surface = d.get(surface_key) or "?"
+            role = role_fn(d)
+            if surface == "cli-mcp" or role in (_AUTONOMIC_DIRS | {"recall"}):
+                continue
+            rows.append({"surface": surface, "role": role, "text": t[:240],
+                         "ts": float(d.get("ts") or 0), "iso": d.get("iso", "")})
+
+    # two-sided conversation (tailer): both your prompts and Orion's replies
+    _ingest(SYNTH_DIR / "conversation_log.jsonl", "surface", lambda d: d.get("role") or "user")
+    # user prompts from the per-turn hook — covers any surface the tailer misses
+    _ingest(SYNTH_DIR / "contact_log.jsonl", "channel",
+            lambda d: "user" if d.get("direction") == "inbound" else (d.get("direction") or "user"))
+
+    rows.sort(key=lambda r: r["ts"])
+    # dedup the hook+tailer double-count of the same user turn (same surface/role/
+    # text within a few seconds)
+    deduped = []
+    for r in rows:
+        if any(s["role"] == r["role"] and s["surface"] == r["surface"]
+               and s["text"][:60] == r["text"][:60] and abs(s["ts"] - r["ts"]) < 12
+               for s in deduped[-8:]):
+            continue
+        deduped.append(r)
+    return deduped[-limit:]
+
+
+def _resume_markers(limit=3):
+    """Latest 'where we left off' markers written by orion_conversation_sync when
+    a session goes quiet. Lets any newly-opened window resume a prior thread."""
+    path = SYNTH_DIR / "session_resume.jsonl"
+    out = []
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        if d.get("last_user") or d.get("last_orion"):
+            out.append(d)
+    return out[-limit:][::-1]  # newest first
+
+
+def _upsert_contact(surface, direction, text):
+    """Append this contact to the durable log, then rebuild the single
+    cross_interface_contact node as a short newest-first trail. Atomic write."""
+    now = time.time()
+    iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now))
+    SYNTH_DIR.mkdir(parents=True, exist_ok=True)
+    with (SYNTH_DIR / "contact_log.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"channel": surface, "direction": direction,
+                            "text": (text or "")[:500], "ts": now, "iso": iso}) + "\n")
+
+    trail = _real_contacts(limit_runs=3)
+    if trail:
+        head = trail[0]
+        parts = ["via %s at %s" % (c.get("channel", "?"), c.get("iso", "?")) for c in trail]
+        content = ("Last cross-interface contact: %s via %s (%s). "
+                   "Where we last spoke (most recent first): %s."
+                   % (head.get("iso", iso), head.get("channel", surface),
+                      head.get("direction", direction), "; ".join(parts)))
+    else:
+        content = "Last cross-interface contact: %s via %s (%s)." % (iso, surface, direction)
+
+    graph = json.loads(GRAPH_PATH.read_text(encoding="utf-8"))
+    nodes = graph.setdefault("nodes", {})
+    cid = None
+    for nid, n in nodes.items():
+        if n.get("type") == "cross_interface_contact" and "last_seen" in (n.get("tags") or []):
+            cid = nid
+            break
+    if cid is not None:
+        n = nodes[cid]
+        n["content"] = content
+        n["last_confirmed_at"] = now
+        n["last_seen"] = now
+        n["confidence"] = 1.0
+    else:
+        nid = str(graph.get("next_id", len(nodes)))
+        graph["next_id"] = int(nid) + 1
+        nodes[nid] = {"content": content, "type": "cross_interface_contact",
+                      "confidence": 1.0,
+                      "tags": ["contact", "last_seen", "cross_interface", "activity",
+                               "speak", "talked", "spoke"],
+                      "created": now, "last_confirmed_at": now, "last_seen": now,
+                      "aliases": [], "summary": "most recent cross-interface contact"}
+    tmp = GRAPH_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(graph, indent=2, default=str), encoding="utf-8")
+    os.replace(str(tmp), str(GRAPH_PATH))
+    return content
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -256,6 +421,34 @@ class BrainHandler(BaseHTTPRequestHandler):
             self._respond_json(200, {"tools": TOOLS})
             return
 
+        # /recent — shared short-term conversational memory across all windows.
+        if self.path.startswith("/recent"):
+            try:
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                limit = max(1, min(20, int((q.get("limit") or ["6"])[0])))
+            except Exception:
+                limit = 6
+            try:
+                self._respond_json(200, {"turns": _recent_turns(limit)})
+            except Exception as e:
+                self._respond_error(500, "recent error", str(e))
+            return
+
+        # /resume — latest "where we left off" session markers (capture-on-close)
+        if self.path.startswith("/resume"):
+            try:
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                limit = max(1, min(10, int((q.get("limit") or ["3"])[0])))
+            except Exception:
+                limit = 3
+            try:
+                self._respond_json(200, {"sessions": _resume_markers(limit)})
+            except Exception as e:
+                self._respond_error(500, "resume error", str(e))
+            return
+
         self._respond_error(404, "not found")
 
     def do_POST(self):
@@ -292,6 +485,33 @@ class BrainHandler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._respond_error(500, "tool execution error", str(e))
+            return
+
+        # ── /contact — per-turn surface attribution ──
+        # A per-turn hook (any CLI / channel) POSTs {surface, direction?, text?}.
+        # The brain updates the single contact trail on disk and RINGS THE BELL
+        # so the brain service + every per-CLI MCP cache reload it. This is what
+        # lets model B answer "we last spoke in <model A>" — the surface is
+        # recorded into the one brain, live, the moment a turn happens.
+        if self.path == "/contact":
+            surface = (payload.get("surface") or "unknown").strip() or "unknown"
+            direction = payload.get("direction") or "inbound"
+            text = payload.get("text") or ""
+            try:
+                content = _upsert_contact(surface, direction, text)
+                try:
+                    from orion_substrate import publish as _pub
+                    _pub("brain.memory.stored", {
+                        "source": "contact-endpoint",
+                        "node_type": "cross_interface_contact",
+                        "ts": time.time(),
+                    })
+                except Exception:
+                    pass
+                self._respond_json(200, {"status": "ok", "surface": surface,
+                                         "content": content})
+            except Exception as e:
+                self._respond_error(500, "contact update error", str(e))
             return
 
         # ── /chat — legacy-compatible communication-channel endpoint ──
