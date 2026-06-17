@@ -2,7 +2,7 @@
 #
 # Detects the first removable USB, wipes any prior Orion state from
 # both the host's home directory and the USB, clones a fresh copy of
-# the Orion repo onto the USB, and runs Install Orion.bat.
+# the Orion repo onto the USB, and runs the canonical install.ps1.
 #
 # Run via:
 #   iwr https://raw.githubusercontent.com/1Changetheworld/orion/master/scripts/orion-install-fresh.ps1 | iex
@@ -146,7 +146,7 @@ if ($LASTEXITCODE -ne 0) {
 # ---- 4. Run the install ----
 Set-Location "$USB\orion"
 Write-Host ""
-Write-Host "Running Install Orion.bat from $USB\orion ..." -ForegroundColor Cyan
+Write-Host "Running the canonical installer (install.ps1) from $USB\orion ..." -ForegroundColor Cyan
 Write-Host ""
 
-& ".\Install Orion.bat"
+powershell -ExecutionPolicy Bypass -File ".\install.ps1"
