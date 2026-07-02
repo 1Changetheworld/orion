@@ -145,7 +145,7 @@ async def _on_outbound(msg, nc):
         logger.info("duplicate suppressed (within %.0fs): %s", DEDUPE_WINDOW_SEC, text[:60])
         await _publish_status(nc, recipient, text, True, error="deduped")
         return
-    ok = _send_via_applescript(recipient, text)
+    ok = await asyncio.to_thread(_send_via_applescript, recipient, text)
     await _publish_status(nc, recipient, text, ok,
                           error="" if ok else "osascript-failed")
 

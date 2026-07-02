@@ -54,6 +54,13 @@ _OSASCRIPT_TIMEOUT_SEC = int(os.environ.get("ORION_IMESSAGE_TIMEOUT", "30"))
 _OSASCRIPT_RETRIES = 1
 _RETRY_BACKOFF_SEC = 3
 
+# Surface self-heal: when EVERY strategy fails (the -1712 "AppleEvent timed
+# out" wedge), force-relaunch Messages.app so the scripting surface recovers
+# without a human. Rate-limited so a burst of failures triggers ONE relaunch.
+_RELAUNCH_MIN_INTERVAL_SEC = int(os.environ.get("ORION_IMESSAGE_RELAUNCH_INTERVAL", "120"))
+_RELAUNCH_SETTLE_SEC = int(os.environ.get("ORION_IMESSAGE_RELAUNCH_SETTLE", "8"))
+_last_relaunch_monotonic = 0.0
+
 _INVALID_RECIPIENT_LITERALS = {
     "primary_user", "user", "default", "default_user",
     "", "none", "null", "undefined",
@@ -158,7 +165,39 @@ def _strategy_shortcuts(recipient: str, text: str) -> tuple[bool, str]:
         return False, "%s: %s" % (e.__class__.__name__, e)
 
 
-def send_imessage(recipient: str, text: str) -> bool:
+def _relaunch_messages() -> bool:
+    """Force-restart Messages.app to clear a wedged AppleScript surface
+    (the -1712 'AppleEvent timed out' state). Rate-limited via a module-level
+    monotonic timestamp so a storm of failures triggers at most one relaunch
+    per _RELAUNCH_MIN_INTERVAL_SEC. Returns True if a relaunch was performed.
+
+    Safe to call from the adapter's worker thread (send runs under
+    asyncio.to_thread), so the killall/open + settle sleep never block the
+    event loop or NATS keepalive."""
+    import time
+    global _last_relaunch_monotonic
+    now = time.monotonic()
+    if now - _last_relaunch_monotonic < _RELAUNCH_MIN_INTERVAL_SEC:
+        logger.info("skip Messages relaunch — within %ds rate limit",
+                    _RELAUNCH_MIN_INTERVAL_SEC)
+        return False
+    _last_relaunch_monotonic = now
+    logger.warning("relaunching Messages.app to clear wedged scripting surface")
+    try:
+        subprocess.run(["killall", "Messages"], capture_output=True, timeout=10)
+    except Exception as e:
+        logger.warning("killall Messages failed: %s", e)
+    try:
+        subprocess.run(["open", "-a", "Messages"], capture_output=True, timeout=15)
+    except Exception as e:
+        logger.warning("open -a Messages failed: %s", e)
+        return True
+    time.sleep(_RELAUNCH_SETTLE_SEC)  # let imagent re-attach before next send
+    logger.info("Messages.app relaunched; surface should recover within a cycle")
+    return True
+
+
+def send_imessage(recipient: str, text: str, _retry_after_relaunch: bool = True) -> bool:
     """Deliver `text` to `recipient` via the first working strategy.
 
     Logs the winning strategy at INFO and every miss at WARNING, so the
@@ -192,6 +231,12 @@ def send_imessage(recipient: str, text: str) -> bool:
     logger.error("ALL iMessage strategies failed for %s — surface is DOWN "
                  "(macOS may have changed the Messages scripting surface again)",
                  recipient)
+    # Self-heal the wedged scripting surface, then retry the send ONCE. The
+    # _retry_after_relaunch guard makes the recursion terminate: the retry call
+    # passes False, so a second consecutive failure just returns without looping.
+    if _retry_after_relaunch and _relaunch_messages():
+        logger.info("retrying send once after Messages relaunch")
+        return send_imessage(recipient, text, _retry_after_relaunch=False)
     return False
 
 
