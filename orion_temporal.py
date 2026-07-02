@@ -190,6 +190,17 @@ def temporal_context(now: float = None) -> str:
         if lc:
             lines.append(lc)
 
+    # First-class temporal ORIENTATION (orion_temporal_state, 2026-06-24): session age, last
+    # substantive exchange, and a compressed "since then" — so Orion ORIENTS against a live state
+    # object instead of reconstructing from scraps each turn. Lazy + best-effort.
+    try:
+        import orion_temporal_state
+        ori = orion_temporal_state.orient()
+        if ori:
+            lines.append(ori)
+    except Exception:
+        pass
+
     lines.append("Use this for any 'now', duration, ordering, or 'how long ago' "
                  "reasoning — do not guess the date or elapsed time.")
     return "\n".join(lines)

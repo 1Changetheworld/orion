@@ -664,7 +664,20 @@ class GraphMemory:
                     scored.append((rank, eff_conf, nid))
             scored.sort(reverse=True)
             if scored:
-                returned_ids = [nid for _, _, nid in scored[:limit]]
+                # RECALL-TIME DEDUP (Orion's #2 recommendation, 2026-06-17): write-dedup only catches
+                # EXACT paraphrases, so recall still returned "swarms of near-identical nodes". Collapse
+                # near-duplicates here — keep the highest-ranked of each cluster — so the model sees
+                # DISTINCT content, not the same thing five ways. Non-destructive: nothing is deleted.
+                _DEDUP_SIM = float(os.environ.get("ORION_RECALL_DEDUP_SIM", "0.72"))  # empirical: swarm ~0.8
+                returned_ids = []
+                for _, _, nid in scored:
+                    c = self.nodes[nid].get("content", "")
+                    if any(text_similarity(c, self.nodes[s].get("content", "")) >= _DEDUP_SIM
+                           for s in returned_ids):
+                        continue                       # near-duplicate of an already-chosen node — skip
+                    returned_ids.append(nid)
+                    if len(returned_ids) >= limit:
+                        break
                 self._strengthen_recalled(returned_ids, now)
                 return [self.nodes[nid] for nid in returned_ids]
 
