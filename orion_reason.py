@@ -83,8 +83,14 @@ TELEMETRY_MARKERS = ("memory stored", "surprise spike", "workspace current",
 # DURABILITY-DRIVEN SELF-CHECK: a resolution PREDICTS the topic won't return; a RE-FIRE
 # MEASURES that it didn't hold; the CORRECTION is to escalate (native -> model -> hold-open)
 # instead of falsely re-resolving the same thing forever (the observed last-contact loop).
-HOLD_AFTER = int(os.environ.get("ORION_REASON_HOLD_AFTER", "2"))            # re-fires before HOLDing
-HELD_REFRACTORY = float(os.environ.get("ORION_REASON_HELD_REFRACTORY", "86400"))  # 24h quiet once held
+HOLD_AFTER = int(os.environ.get("ORION_REASON_HOLD_AFTER", "4"))            # re-fires before HOLDing
+HELD_REFRACTORY = float(os.environ.get("ORION_REASON_HELD_REFRACTORY", "7200"))  # 2h quiet once held (was 24h; loosened 07-02 per RC build-request #1)
+# SATISFACTION GATE (Orion's own #1 recommendation, 2026-06-17): the per-topic refractory keys on the
+# EXACT string, so a NEAR-identical tension (slightly different wording) slips through and re-loops —
+# "nothing could register 'I've already answered this; stand down.'" This suppresses a tension when a
+# near-duplicate was resolved recently. Predictive-coding: an already-seen pattern propagates no error.
+SATISFY_WINDOW = float(os.environ.get("ORION_REASON_SATISFY_WINDOW", "3600"))   # 1h "already answered"
+SATISFY_SIM = float(os.environ.get("ORION_REASON_SATISFY_SIM", "0.9"))          # keyword-overlap threshold
 
 _tension: dict[str, dict] = {}                     # key -> {score,label,sources,ts}
 _active: dict[str, str] = {}                       # key -> task_id
@@ -752,6 +758,25 @@ def _trace_report() -> int:
 
 
 # ── control loop ────────────────────────────────────────────────────────────
+def _recently_satisfied(key: str) -> bool:
+    """Orion's satisfaction gate: True if a NEAR-IDENTICAL tension was resolved within SATISFY_WINDOW
+    — 'I've already answered this; stand down.' Generalizes the exact-key refractory to near-duplicates
+    (the workspace.current re-spawn Orion flagged). Pure arithmetic, no model."""
+    kk = _keywords(key)
+    if len(kk) < 2:
+        return False
+    now = time.time()
+    for rkey, h in _resolved.items():
+        if rkey == key:
+            continue                                   # exact key already handled by the refractory
+        if now - h.get("last_ts", 0) > SATISFY_WINDOW:
+            continue
+        rk = _keywords(rkey)
+        if rk and len(kk & rk) / max(len(kk), len(rk)) >= SATISFY_SIM:
+            return True
+    return False
+
+
 def _control_loop() -> None:
     global _last_deliberation_ts
     while not _stop.is_set():
@@ -784,6 +809,10 @@ def _control_loop() -> None:
                         continue
                     if _is_telemetry(k):                   # purge bus telemetry that slipped in
                         _tension.pop(k, None)
+                        continue
+                    if _recently_satisfied(k):             # SATISFACTION GATE — near-duplicate just resolved
+                        _tension.pop(k, None)
+                        _cooldown[k] = now + REFRACTORY_SEC
                         continue
                     if t["score"] >= eff_threshold:
                         candidate = (k, t["label"])
