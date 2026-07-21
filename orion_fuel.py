@@ -51,6 +51,13 @@ _FUEL_ERROR_MARKERS = (
     "overloaded", "too many requests", "try again later",
     "service unavailable", "service is unavailable",
     "temporarily unavailable", "529 ", "503 ",
+    # auth/credential failures (2026-07-21 silent-mute-on-401 fix): a 401/auth
+    # error from a strong CLI must TRIGGER FAILOVER to local fuel, not be
+    # forwarded as if it were an answer. Specific phrases only — never bare
+    # "401"/"403", which would false-match legitimate numbers in real answers.
+    "failed to authenticate", "authentication failed", "authentication error",
+    "api error:", "unauthorized", "invalid api key", "invalid x-api-key",
+    "not authenticated", "oauth token has expired", "please run `claude",
 )
 
 
@@ -675,12 +682,39 @@ def _log_fuel_call(interface, engine, ok):
         pass
 
 
+def _surface_fuel_degraded(primary, used, interface):
+    """Fuel-health reflex (2026-07-21): the cascade fell OFF its primary onto a
+    weaker/backup engine — Orion must NOTICE, not fail silently. Writes a durable
+    fuel_health event and best-effort publishes brain.fuel.degraded so wonder/
+    perception can pick it up. Never raises (advisory)."""
+    rec = {"ts": time.time(), "event": "fuel_degraded", "primary": primary,
+           "used": used, "interface": interface,
+           "on_local": "ollama" in (used or "").lower()}
+    try:
+        d = os.path.expanduser("~/.orion/state")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "fuel_health.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass
+    try:  # best-effort bus publish; a no-op if the substrate isn't importable here
+        from orion_substrate import publish as _pub
+        _pub("brain.fuel.degraded", rec)
+    except Exception:
+        pass
+
+
 def get_fuel(prompt, interface="cli", max_turns=15):
     """Query best available fuel. Used by the brain."""
     if not fuel.available:
         fuel.scan()
+    primary_name = fuel.available[0].name if fuel.available else None
     response, engine = fuel.query(prompt, max_turns)
     _log_fuel_call(interface, engine, bool(response))   # ledger every model call (Independence Index)
+    # If we got an answer but NOT from the primary, the primary failed and we
+    # rode the failover reflex to a backup — surface it so Orion knows.
+    if response and engine and engine != "none" and primary_name and engine != primary_name:
+        _surface_fuel_degraded(primary_name, engine, interface)
     if response:
         return response, engine
     return "All models unavailable. Try another interface.", "none"
