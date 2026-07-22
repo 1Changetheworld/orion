@@ -478,13 +478,18 @@ def _save_resolved() -> None:
         pass
 
 
-def _record_resolution(key: str, native: bool) -> None:
+def _record_resolution(key: str, native: bool, deliberated: bool = False) -> None:
     """A resolution claims the topic is settled — log it so a later RE-FIRE is detectable as
-    a durability failure (the measure in predict->measure->correct)."""
-    h = _resolved.setdefault(key, {"n": 0, "native_n": 0, "refire": 0, "held": False, "last_ts": 0.0})
+    a durability failure (the measure in predict->measure->correct). `deliberated` counts a
+    GENUINE multi-step deliberation (real thought, steps>0) — the counter the hold gate uses so
+    a topic is only 'held as eternal' after it has actually been thought through, not merely
+    fired repeatedly."""
+    h = _resolved.setdefault(key, {"n": 0, "native_n": 0, "refire": 0, "held": False, "last_ts": 0.0, "delib_n": 0})
     h["n"] += 1
     if native:
         h["native_n"] += 1
+    if deliberated:
+        h["delib_n"] = h.get("delib_n", 0) + 1
     h["last_ts"] = time.time()
     _save_resolved()
 
@@ -514,10 +519,17 @@ def deliberate(key: str, label: str, resume_task_id: str | None = None) -> dict:
     if re_fired:
         hist["refire"] = hist.get("refire", 0) + 1
         _save_resolved()
-        if hist["refire"] >= HOLD_AFTER:                   # keeps returning -> genuinely OPEN
+        # HOLD only when we have GENUINELY DELIBERATED this topic (real, multi-step thought)
+        # enough times and it STILL returns — an EARNED "eternal question", not a reflexive
+        # 0-step trap. Firing often is NOT grounds to stop thinking; only repeated REAL
+        # deliberation that fails to settle is. The prior code gated the hold on `refire`
+        # (firings), so recurring topics were held at 0 steps forever and the Loom never took
+        # a single step (measured: 100% held, 0 resolved). (2026-07-22 Loom-revival fix)
+        if hist.get("delib_n", 0) >= HOLD_AFTER:           # genuinely thought-through, still open
             n = hist.get("n", 0)
-            concl = (f"(HELD as a genuinely open question — resolved {n}x but it keeps "
-                     f"returning; I will not force another false resolution. Held open.)")
+            concl = (f"(HELD as a genuinely open question — deliberated {hist.get('delib_n', 0)}x "
+                     f"with real steps but it keeps returning; I will not force another false "
+                     f"resolution. Held open.)")
             hist["held"] = True
             _save_resolved()
             _trace({"ts": time.time(), "rec": "conclude", "key": key, "eff_depth": 0,
@@ -536,7 +548,10 @@ def deliberate(key: str, label: str, resume_task_id: str | None = None) -> dict:
     # NATIVE FAST-PATH: try the brain's own structure before ANY model call — UNLESS a prior
     # native resolution already failed to hold here (then the cheap check is unreliable for this
     # topic, so think harder via the model).
-    native_unreliable = bool(hist and hist.get("native_n", 0) > 0 and re_fired)
+    # A RE-FIRING topic deserves genuine thought, not a laundered recall shortcut: skip the
+    # native fast-path on ANY re-fire so escalation actually deliberates (real steps), which is
+    # also what lets a topic accumulate delib_n toward an EARNED hold. (2026-07-22)
+    native_unreliable = bool(re_fired)
     if not resume_task_id and not native_unreliable:
         native = _try_native_resolution(label)
         if native:
@@ -639,7 +654,9 @@ def deliberate(key: str, label: str, resume_task_id: str | None = None) -> dict:
         clean = _strip_prediction(conclusion)               # don't pollute the graph with the block
         src_content = f"{clean}  (reasoned via the Loom from tension: {label})" if clean else ""
         if resolved:
-            _record_resolution(key, native=False)          # durability: a model resolution claims it's settled
+            # deliberated=steps_done>0 marks a GENUINE multi-step thought — the counter the
+            # hold gate uses, so only truly-thought-through topics can ever be held as eternal.
+            _record_resolution(key, native=False, deliberated=(steps_done > 0))
             _emit_prediction(key, label, conclusion, src_content)  # VERIFIER: forward prediction + node link
         if clean:
             _memorize(src_content, node_type="insight", tags=["reasoned", "loom", "insight"])
