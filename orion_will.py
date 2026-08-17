@@ -1343,7 +1343,10 @@ def main() -> int:
     # subjects that mean 'something broke or got fixed without you':
     subscribe("brain.health.alert", _on_health_event)
     subscribe("brain.executive.failure", _on_health_event)
-    subscribe("brain.fuel.degraded", _on_health_event)
+    # brain.fuel.degraded user-alerting moved to com.orion.fuel-steward (2026-08-17):
+    # the steward is rate-limited + fires only on PERSISTENT fuel failure with the exact
+    # recovery command, so transient failover blips no longer false-alarm the user here.
+    # (orion_workspace still consumes brain.fuel.degraded for salience/attention.)
     subscribe("brain.storage.degraded", _on_health_event)
     subscribe("brain.health.recovered", _on_recovery_event)
 
