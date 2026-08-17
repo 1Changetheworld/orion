@@ -16,6 +16,7 @@ import json
 import time
 import hashlib
 import os
+import tempfile
 import urllib.request
 from collections import defaultdict
 try:
