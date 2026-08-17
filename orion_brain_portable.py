@@ -362,6 +362,49 @@ def _norm_content(s: str) -> str:
     return s
 
 
+
+# ── concurrency-safe atomic JSON write (2026-08-17 graph-corruption fix) ──────
+# The prior save() used a SHARED temp filename (path + ".tmp"). When two daemons
+# saved the graph at the same instant they wrote the same temp file, interleaving
+# bytes, and os.replace swapped a corrupt file into place (the "offset keeps
+# moving" mid-file corruption). Fix: unique per-process/thread temp + a best-effort
+# cross-process advisory lock so graph writers serialize and never clobber a temp.
+try:
+    import fcntl as _fcntl
+except Exception:
+    _fcntl = None
+
+def _atomic_dump(data, filepath, indent=None, do_fsync=True):
+    filepath = str(filepath)
+    tmp = "%s.tmp.%d.%d" % (filepath, os.getpid(), threading.get_ident())
+    lockf = None
+    if _fcntl is not None:
+        try:
+            lockf = open(filepath + ".lock", "w")
+            _fcntl.flock(lockf.fileno(), _fcntl.LOCK_EX)
+        except Exception:
+            lockf = None
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=indent)
+            f.flush()
+            if do_fsync:
+                os.fsync(f.fileno())
+        os.replace(tmp, filepath)
+    finally:
+        if lockf is not None:
+            try:
+                _fcntl.flock(lockf.fileno(), _fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lockf.close()
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+
+
 class GraphMemory:
     """Fast tag-indexed memory with temporal decay + contradiction detection.
 
@@ -1031,12 +1074,7 @@ class GraphMemory:
                 for k, v in self.nodes.items()
             }
         }
-        tmp = str(filepath) + ".tmp"
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())  # durability: data on disk BEFORE the atomic rename
-        os.replace(tmp, str(filepath))
+        _atomic_dump(data, filepath, indent=2, do_fsync=True)
 
     def load(self, filepath: Path = None):
         """Load graph from disk. Forward-migrates older nodes to the temporal schema."""
@@ -1262,10 +1300,7 @@ class KnowledgeIndex:
                 "avg_doc_length": self.avg_doc_length,
             }
         }
-        tmp = str(filepath) + ".tmp"
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f)  # no indent — these get large
-        os.replace(tmp, str(filepath))
+        _atomic_dump(data, filepath, indent=None, do_fsync=False)
         self._dirty = False
 
     def load(self, filepath: Path = None):
