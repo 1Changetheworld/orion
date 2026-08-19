@@ -83,65 +83,70 @@ def _growth_rate(h):
     return (n1 - n0) / dt if dt > 0.1 else None
 
 
+def _commit(topic, label, claim, observable, check, horizon, prior, native_supported):
+    """Commit a prediction ONLY if its CHECK is currently FALSE — a genuine BET ON THE FUTURE.
+    A check already true confirms trivially (no learning signal); an unreadable one can't verify.
+    So we only bet where reality has NOT yet made it true."""
+    try:
+        v = tl._eval_check(check)
+    except Exception:
+        v = None
+    if v is not False:          # True (trivial) or None (unreadable) -> skip
+        return None
+    tl.record(key=f"{KEY_PREFIX}{topic}", label=label, claim=claim, observable=observable,
+              kind="operational", horizon_hours=horizon, check=check,
+              prior=prior, native_supported=native_supported)
+    return (topic, check)
+
+
 def predict(horizon_hours: float = 2.0):
-    """Commit a handful of NON-TRIVIAL external forward-predictions, natively. A prediction is
-    only worth making if it could plausibly go either way — trivially-true ones carry no info."""
+    """Commit GENUINELY UNCERTAIN external forward-predictions (currently-false checks), natively.
+    Each can confirm (reality moves to it) or refute (horizon passes, still false) -> real signal."""
     h = _snap_history()
     made = []
 
-    # 1) GRAPH GROWTH — informative: will the brain actually grow by a real margin? (learnable:
-    #    depends on activity; refutes when quiet). prior high only if growth has been steady.
+    # 1) GRAPH GROWTH — currently false (target > now); confirms only if the brain really grows.
     n = _probe("graph:nodes")
     g = _growth_rate(h)
     if n is not None:
         margin = max(8, round((g or 4) * horizon_hours))
         target = int(n + margin)
-        prior = 0.5 if (g and g > 2) else 0.1      # honest: quiet periods make this uncertain
-        tl.record(key=f"{KEY_PREFIX}graph_growth",
-                  label=f"my memory will grow past {target} nodes",
-                  claim=f"Within {horizon_hours:g}h my graph will exceed {target} nodes "
-                        f"(now {int(n)}, est {g:.1f}/h)." if g else
-                        f"Within {horizon_hours:g}h my graph will exceed {target} nodes (now {int(n)}).",
-                  observable=["graph", "nodes", "growth"], kind="operational",
-                  horizon_hours=horizon_hours, check=f"graph:nodes >= {target}",
-                  prior=prior, native_supported=bool(g and g > 2))
-        made.append(("graph_growth", f"graph:nodes >= {target}"))
+        r = _commit("graph_growth", f"my memory will grow past {target} nodes",
+                    f"Within {horizon_hours:g}h my graph exceeds {target} (now {int(n)}"
+                    + (f", est {g:.1f}/h)." if g else ")."),
+                    ["graph", "nodes", "growth"], f"graph:nodes >= {target}",
+                    horizon_hours, prior=(0.5 if (g and g > 2) else 0.1),
+                    native_supported=bool(g and g > 2))
+        if r: made.append(r)
 
-    # 2) SERVICE FATE — will an unstable service crash-loop? (genuinely learnable which do)
+    # 2) SERVICE ACTIVITY — currently false (runs >= now+1); tests whether the service actually
+    #    ticks/restarts in the window. Confirms for periodic/restarting; refutes for dormant.
+    #    Orion learns which of its own organs are alive-and-cycling vs quiet.
     for svc in WATCH_SVCS:
         runs = _probe(f"service:{svc}:runs")
-        running = _probe(f"service:{svc}:running")
         if runs is None:
             continue
-        # predict CONTINUED STABILITY: run-count won't jump by >2 in the horizon. Refutes for
-        # crash-loopers — which is exactly the learnable signal.
-        tl.record(key=f"{KEY_PREFIX}svc_stable:{svc}",
-                  label=f"{svc} stays stable (no crash-loop)",
-                  claim=f"{svc} will not crash-loop in {horizon_hours:g}h (runs stays <= {int(runs)+2}).",
-                  observable=["service", "stable", svc], kind="operational",
-                  horizon_hours=horizon_hours, check=f"service:{svc}:runs <= {int(runs)+2}",
-                  prior=0.7 if running == 1.0 else 0.3, native_supported=None)
-        made.append((f"svc_stable:{svc}", f"service:{svc}:runs <= {int(runs)+2}"))
+        r = _commit(f"svc_active:{svc}", f"{svc} will cycle (tick/restart) soon",
+                    f"{svc} run-count rises past {int(runs)+1} within {horizon_hours:g}h (now {int(runs)}).",
+                    ["service", "active", svc], f"service:{svc}:runs >= {int(runs)+1}",
+                    horizon_hours, prior=0.4, native_supported=None)
+        if r: made.append(r)
 
-    # 3) NEUROMOD DYNAMICS — predict a modulator's near-future band from its trend (learnable
-    #    self-dynamics; low-prior when the trend is weak = an informative bet).
-    for m in ["learning", "explore", "caution"]:
+    # 3) NEUROMOD DYNAMICS — currently false (thr is a step away from now); tests whether the
+    #    drive actually moves in the predicted direction. Genuinely uncertain self-dynamics.
+    for m in ["learning", "explore", "caution", "arousal", "focus"]:
         cur = _probe(f"neuromod:{m}")
         if cur is None:
             continue
         prev = next((s.get(f"m_{m}") for s in reversed(h[:-1]) if s.get(f"m_{m}") is not None), None)
-        if prev is None:
-            continue
-        rising = cur >= prev
-        thr = round(cur + (0.05 if rising else -0.05), 3)
+        rising = (prev is None) or (cur >= prev)
+        thr = round(cur + (0.04 if rising else -0.04), 3)
         op = ">=" if rising else "<="
-        tl.record(key=f"{KEY_PREFIX}mod:{m}",
-                  label=f"my {m} drive keeps {'rising' if rising else 'falling'}",
-                  claim=f"neuromod:{m} will be {op} {thr} in {horizon_hours:g}h (now {cur:.3f}).",
-                  observable=["neuromod", m], kind="operational",
-                  horizon_hours=horizon_hours, check=f"neuromod:{m} {op} {thr}",
-                  prior=0.4, native_supported=None)
-        made.append((f"mod:{m}", f"neuromod:{m} {op} {thr}"))
+        r = _commit(f"mod:{m}", f"my {m} drive keeps {'rising' if rising else 'falling'}",
+                    f"neuromod:{m} will be {op} {thr} within {horizon_hours:g}h (now {cur:.3f}).",
+                    ["neuromod", m], f"neuromod:{m} {op} {thr}",
+                    horizon_hours, prior=0.4, native_supported=None)
+        if r: made.append(r)
 
     return made
 
@@ -218,6 +223,17 @@ def main():
     elif arg == "--lp":
         out = learning_progress()
         print(json.dumps(out, indent=1))
+    elif arg == "--tick":
+        # self-contained curiosity cycle: predict -> RESOLVE DUE (don't depend on the Loom) -> reward
+        made = predict()
+        try:
+            swept = tl.check_due()
+        except Exception as e:
+            swept = {"error": str(e)[:80]}
+        out = learning_progress()
+        print(f"tick: +{len(made)} predictions | swept={swept} | "
+              f"LP topics={out['summary']['topics']} resolved={out['summary']['resolved']} "
+              f"mean_lp={out['summary']['mean_lp']}")
     else:  # --show
         print(json.dumps(_load(LP, {"note": "no LP yet — run --predict, let it resolve, then --lp"}),
                          indent=1))
