@@ -1,159 +1,226 @@
 #!/usr/bin/env python3
 """
-orion_curiosity.py — THE CURIOSITY SEED (Piece 1 + the missing upstream).
+orion_curiosity.py — THE CURIOSITY SEED (v2: ADAPTIVE).
 
-Genuine curiosity, not performed: Orion commits NON-TRIVIAL, machine-checkable FORWARD
-PREDICTIONS about its real (external, causally-independent) substrate — natively, NO model
-(truth-serum by default) — and a LEARNING-PROGRESS reward measures where its predictions are
-getting BETTER over time (reducible error), the fertile unknown worth pursuing.
+Genuine curiosity, not performed: Orion commits GENUINELY-UNCERTAIN, machine-checkable FORWARD
+PREDICTIONS about its real substrate — natively, NO model (truth-serum) — and LEARNS from its own
+confirmed/refuted history so its predictions get BETTER over time. LEARNING-PROGRESS (accuracy
+climbing) is the intrinsic reward; where it climbs is the fertile unknown worth pursuing; where it
+stays flat is either mastered (stop betting) or noise (ignore).
 
-Built ON existing machinery: orion_temporal_ledger (record + native _probe/_eval_check) and
-neuromod. Writes only predictions (perceived, never believed; non-action-triggering) + a
-learning-progress state file. Safe: no actuation, no self-modification, never raises.
+v2 fix over v1: v1 used FIXED heuristics (e.g. "a drive will move 0.04") that were miscalibrated and
+refuted 100% forever — no learning. v2 keeps a per-topic learned model (the real scale of change),
+calibrated online toward a genuine-but-achievable bet (~60% hit), so accuracy CLIMBS as it learns and
+plateaus once mastered — real learning-progress.
 
-ANTI-PATHOLOGY GATE: only predictions with a real probe-vocab CHECK
-(service:/graph:/neuromod:/refire:) count — self-referential/internal claims earn NOTHING.
-This starves the recursive-self-noise loop AND aims curiosity at the world.
+Built ON existing machinery: orion_temporal_ledger (record + native _probe/_eval_check + check_due).
+ANTI-PATHOLOGY GATE: only external probe-checkable predictions count. Safe: predicts only, no
+actuation, no self-modification, never raises.
 
-CLI:  --predict (commit forward predictions)  |  --lp (recompute learning-progress)  |  --show
+CLI:  --tick (predict -> resolve -> learn -> reward)  |  --predict  |  --lp  |  --show  |  --model
 """
 from __future__ import annotations
-import json, os, sys, time
+import json, os, re, sys, time
 from pathlib import Path
 
 sys.path.insert(0, os.path.expanduser("~/orion-code"))
-import orion_temporal_ledger as tl   # record(), _probe(), PRED_FILE
+import orion_temporal_ledger as tl
 
 STATE = Path(os.path.expanduser("~/.orion/state"))
-HIST = STATE / "curiosity_hist.json"     # small probe-value history (for trend-based prediction)
-LP = STATE / "curiosity_lp.json"          # per-topic learning-progress (the reward)
+HIST = STATE / "curiosity_hist.json"
+MODEL = STATE / "curiosity_model.json"      # per-topic LEARNED dynamics (the adaptive core)
+LP = STATE / "curiosity_lp.json"
 PRED_FILE = Path(os.path.expanduser("~/.orion/reason/predictions.jsonl"))
-KEY_PREFIX = "curio:"                      # tags OUR predictions so LP can find them
+KEY_PREFIX = "curio:"
+LEARN_MARK = STATE / "curiosity_learned_ts.json"   # high-water mark of learned resolutions
 
-# cognitively-relevant services Orion can predict the fate of (real, external, checkable)
 WATCH_SVCS = ["com.orion.reason", "com.orion.neuromod", "com.orion.wonder", "com.orion.dream",
               "com.orion.workspace", "com.orion.perceive", "com.orion.dmn", "com.orion.will"]
 MODULATORS = ["arousal", "learning", "explore", "caution", "focus"]
+TARGET_HIT = 0.60         # a genuine-but-achievable bet: calibrate deltas toward ~60% hit-rate
 
 
-def _probe(expr):
+def _probe(e):
     try:
-        return tl._probe(expr)
+        return tl._probe(e)
     except Exception:
         return None
 
 
-def _load(p, default):
+def _load(p, d):
     try:
         return json.loads(p.read_text())
     except Exception:
-        return default
+        return d
 
 
-def _save(p, obj):
+def _save(p, o):
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(p.suffix + ".tmp")
-        tmp.write_text(json.dumps(obj, indent=1))
-        tmp.replace(p)
+        t = p.with_suffix(p.suffix + ".tmp"); t.write_text(json.dumps(o, indent=1)); t.replace(p)
     except Exception:
         pass
 
 
-# ───────────────────────── PREDICT (native, truth-serum) ─────────────────────────
-def _snap_history():
-    """Append a light snapshot of key live probes so predictions can be trend-informed."""
+# ───────────── history (for the very first estimate before outcomes exist) ─────────────
+def _snap():
     h = _load(HIST, [])
-    snap = {"ts": time.time(), "nodes": _probe("graph:nodes")}
+    s = {"ts": time.time(), "nodes": _probe("graph:nodes")}
     for m in MODULATORS:
-        snap[f"m_{m}"] = _probe(f"neuromod:{m}")
-    h.append(snap)
-    h = [s for s in h if s.get("ts", 0) > time.time() - 14 * 86400][-500:]
+        s[f"m_{m}"] = _probe(f"neuromod:{m}")
+    for svc in WATCH_SVCS:
+        s[f"r_{svc}"] = _probe(f"service:{svc}:runs")
+    h.append(s)
+    h = [x for x in h if x.get("ts", 0) > time.time() - 14 * 86400][-800:]
     _save(HIST, h)
     return h
 
 
-def _growth_rate(h):
-    """nodes/hour over the recent history (Orion learning its own growth)."""
-    pts = [(s["ts"], s["nodes"]) for s in h if s.get("nodes")]
-    if len(pts) < 2:
-        return None
-    (t0, n0), (t1, n1) = pts[0], pts[-1]
-    dt = (t1 - t0) / 3600.0
-    return (n1 - n0) / dt if dt > 0.1 else None
+# ───────────── the ADAPTIVE MODEL: per-topic learned change-scale (`delta`) ─────────────
+def _model():
+    return _load(MODEL, {})
 
 
-def _commit(topic, label, claim, observable, check, horizon, prior, native_supported):
-    """Commit a prediction ONLY if its CHECK is currently FALSE — a genuine BET ON THE FUTURE.
-    A check already true confirms trivially (no learning signal); an unreadable one can't verify.
-    So we only bet where reality has NOT yet made it true."""
+def _topic_delta(model, topic, seed):
+    """Current learned delta for a topic; seed it the first time from raw history."""
+    m = model.get(topic)
+    if m and isinstance(m.get("delta"), (int, float)):
+        return float(m["delta"])
+    model[topic] = {"delta": float(seed), "hits": [], "n": 0}
+    return float(seed)
+
+
+# ───────────── PREDICT — genuinely-uncertain bets sized by the LEARNED model ─────────────
+def _commit(topic, label, claim, obs, check, horizon, prior):
     try:
         v = tl._eval_check(check)
     except Exception:
         v = None
-    if v is not False:          # True (trivial) or None (unreadable) -> skip
+    if v is not False:                    # only bet where it's currently FALSE (a real future-bet)
         return None
-    tl.record(key=f"{KEY_PREFIX}{topic}", label=label, claim=claim, observable=observable,
-              kind="operational", horizon_hours=horizon, check=check,
-              prior=prior, native_supported=native_supported)
+    tl.record(key=f"{KEY_PREFIX}{topic}", label=label, claim=claim, observable=obs,
+              kind="operational", horizon_hours=horizon, check=check, prior=prior,
+              native_supported=None)
     return (topic, check)
 
 
-def predict(horizon_hours: float = 2.0):
-    """Commit GENUINELY UNCERTAIN external forward-predictions (currently-false checks), natively.
-    Each can confirm (reality moves to it) or refute (horizon passes, still false) -> real signal."""
-    h = _snap_history()
+def predict(model, horizon_hours: float = 2.0):
+    h = _snap()
     made = []
 
-    # 1) GRAPH GROWTH — currently false (target > now); confirms only if the brain really grows.
+    # GRAPH GROWTH — learned margin (starts from raw growth rate, then calibrated by outcomes)
     n = _probe("graph:nodes")
-    g = _growth_rate(h)
-    if n is not None:
-        margin = max(8, round((g or 4) * horizon_hours))
-        target = int(n + margin)
-        r = _commit("graph_growth", f"my memory will grow past {target} nodes",
-                    f"Within {horizon_hours:g}h my graph exceeds {target} (now {int(n)}"
-                    + (f", est {g:.1f}/h)." if g else ")."),
-                    ["graph", "nodes", "growth"], f"graph:nodes >= {target}",
-                    horizon_hours, prior=(0.5 if (g and g > 2) else 0.1),
-                    native_supported=bool(g and g > 2))
+    if n is not None and not model.get("graph_growth", {}).get("mastered"):
+        seed = 12.0
+        if len(h) >= 2 and h[0].get("nodes") and h[-1].get("nodes"):
+            dt = (h[-1]["ts"] - h[0]["ts"]) / 3600.0
+            if dt > 0.5:
+                seed = max(3.0, (h[-1]["nodes"] - h[0]["nodes"]) / dt * horizon_hours)
+        d = _topic_delta(model, "graph_growth", seed)
+        target = int(round(n + max(1.0, d)))
+        r = _commit("graph_growth", f"my memory will pass {target} nodes",
+                    f"graph exceeds {target} within {horizon_hours:g}h (now {int(n)}, learned +{d:.1f}).",
+                    ["graph", "nodes", "growth"], f"graph:nodes >= {target}", horizon_hours, prior=0.3)
         if r: made.append(r)
 
-    # 2) SERVICE ACTIVITY — currently false (runs >= now+1); tests whether the service actually
-    #    ticks/restarts in the window. Confirms for periodic/restarting; refutes for dormant.
-    #    Orion learns which of its own organs are alive-and-cycling vs quiet.
+    # SERVICE ACTIVITY — learned increment per service (perceive ticks fast; stable ones -> ~0,
+    # so the bet becomes currently-true and is auto-skipped = curiosity abandons the mastered)
     for svc in WATCH_SVCS:
         runs = _probe(f"service:{svc}:runs")
-        if runs is None:
+        if runs is None or model.get(f"svc:{svc}", {}).get("mastered"):
             continue
-        r = _commit(f"svc_active:{svc}", f"{svc} will cycle (tick/restart) soon",
-                    f"{svc} run-count rises past {int(runs)+1} within {horizon_hours:g}h (now {int(runs)}).",
-                    ["service", "active", svc], f"service:{svc}:runs >= {int(runs)+1}",
-                    horizon_hours, prior=0.4, native_supported=None)
+        d = _topic_delta(model, f"svc:{svc}", 1.0)
+        step = max(1, int(round(d)))
+        r = _commit(f"svc:{svc}", f"{svc} will cycle ~+{step}",
+                    f"{svc} runs reaches {int(runs)+step} within {horizon_hours:g}h (now {int(runs)}, learned +{d:.2f}).",
+                    ["service", svc], f"service:{svc}:runs >= {int(runs)+step}", horizon_hours, prior=0.4)
         if r: made.append(r)
 
-    # 3) NEUROMOD DYNAMICS — currently false (thr is a step away from now); tests whether the
-    #    drive actually moves in the predicted direction. Genuinely uncertain self-dynamics.
-    for m in ["learning", "explore", "caution", "arousal", "focus"]:
+    # NEUROMOD DYNAMICS — learned move-scale (v1's 0.04 was too big; real is ~0.01) + recent direction
+    for m in MODULATORS:
         cur = _probe(f"neuromod:{m}")
-        if cur is None:
+        if cur is None or model.get(f"mod:{m}", {}).get("mastered"):
             continue
-        prev = next((s.get(f"m_{m}") for s in reversed(h[:-1]) if s.get(f"m_{m}") is not None), None)
+        prev = next((s.get(f"m_{m}") for s in reversed(h[:-1]) if isinstance(s.get(f"m_{m}"), (int, float))), None)
         rising = (prev is None) or (cur >= prev)
-        thr = round(cur + (0.04 if rising else -0.04), 3)
+        d = _topic_delta(model, f"mod:{m}", 0.012)
+        thr = round(cur + (d if rising else -d), 4)
         op = ">=" if rising else "<="
-        r = _commit(f"mod:{m}", f"my {m} drive keeps {'rising' if rising else 'falling'}",
-                    f"neuromod:{m} will be {op} {thr} within {horizon_hours:g}h (now {cur:.3f}).",
-                    ["neuromod", m], f"neuromod:{m} {op} {thr}",
-                    horizon_hours, prior=0.4, native_supported=None)
+        r = _commit(f"mod:{m}", f"my {m} drive moves {'up' if rising else 'down'} ~{d:.3f}",
+                    f"neuromod:{m} {op} {thr} within {horizon_hours:g}h (now {cur:.4f}, learned {d:.4f}).",
+                    ["neuromod", m], f"neuromod:{m} {op} {thr}", horizon_hours, prior=0.4)
         if r: made.append(r)
 
+    _save(MODEL, model)
     return made
 
 
-# ───────────────────────── LEARNING-PROGRESS (the reward) ─────────────────────────
-def _our_resolved():
-    """All curiosity predictions the ledger has resolved (confirmed/refuted), by topic."""
+# ───────────── LEARN — calibrate each topic's delta toward a genuine-but-achievable bet ─────────────
+DELTA_BOUNDS = {"graph_growth": (1.0, 300.0), "mod": (0.002, 0.08), "svc": (1.0, 50.0)}
+
+
+def _bounds(topic):
+    if topic.startswith("mod:"):
+        return DELTA_BOUNDS["mod"]
+    if topic.startswith("svc:"):
+        return DELTA_BOUNDS["svc"]
+    return DELTA_BOUNDS.get(topic, (1e-3, 1e6))
+
+
+def learn(model):
+    """Ingest predictions resolved since last learn into per-topic hit-windows, THEN nudge each
+    touched topic's delta ONCE (based on its recent hit-rate) — not once per outcome (that
+    compounded and blew up). A topic whose hit-rate is stuck extreme (always/never, with enough
+    data) is DETERMINISTIC/unlearnable -> mark it 'mastered' so predict() abandons it. That's
+    correct curiosity: stop betting the certain/impossible, spend attention on the learnable."""
+    last = float(_load(LEARN_MARK, {"ts": 0}).get("ts", 0))
+    newmax = last
+    if not PRED_FILE.exists():
+        return {"updated": 0, "touched": 0}
+    touched = {}
+    for line in PRED_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if not str(r.get("key", "")).startswith(KEY_PREFIX):
+            continue
+        if r.get("status") not in ("confirmed", "refuted"):
+            continue
+        rts = float(r.get("resolved_ts") or 0)
+        if rts <= last:
+            continue
+        newmax = max(newmax, rts)
+        topic = str(r["key"])[len(KEY_PREFIX):]
+        m = model.setdefault(topic, {"delta": 1.0, "hits": [], "n": 0})
+        m["hits"] = (m.get("hits", []) + [1 if r["status"] == "confirmed" else 0])[-20:]
+        m["n"] = m.get("n", 0) + 1
+        touched[topic] = m
+    # ONE nudge per touched topic, from its recent window
+    for topic, m in touched.items():
+        hits = m.get("hits", [])
+        if not hits:
+            continue
+        rate = sum(hits) / len(hits)
+        lo, hi = _bounds(topic)
+        d = min(hi, max(lo, float(m.get("delta", lo))))
+        if rate < TARGET_HIT - 0.05:
+            d = max(lo, d * 0.85)          # missing -> easier bet
+        elif rate > TARGET_HIT + 0.05:
+            d = min(hi, d * 1.15)          # too easy -> harder bet
+        m["delta"] = d
+        # deterministic / unlearnable? (stuck at a rail despite calibration) -> abandon it
+        m["mastered"] = (len(hits) >= 8 and (rate >= 0.92 or rate <= 0.08))
+    _save(MODEL, model)
+    _save(LEARN_MARK, {"ts": newmax})
+    return {"updated": sum(1 for _ in touched), "touched": len(touched)}
+
+
+# ───────────── LEARNING-PROGRESS reward (accuracy climbing = the fertile unknown) ─────────────
+def _resolved_by_topic():
     by = {}
     if not PRED_FILE.exists():
         return by
@@ -167,76 +234,62 @@ def _our_resolved():
             continue
         if not str(r.get("key", "")).startswith(KEY_PREFIX):
             continue
-        # ANTI-PATHOLOGY GATE: must be a real probe-vocab CHECK (external, native-checkable)
-        chk = (r.get("check") or "")
+        chk = r.get("check") or ""
         if not any(chk.startswith(p) for p in ("service:", "graph:", "neuromod:", "refire:")):
+            continue          # anti-pathology gate: external probe-checkable only
+        if r.get("status") not in ("confirmed", "refuted"):
             continue
-        st = r.get("status")
-        if st not in ("confirmed", "refuted"):
-            continue
-        topic = str(r["key"])[len(KEY_PREFIX):]
-        by.setdefault(topic, []).append((r.get("horizon_ts") or r.get("made_ts") or 0,
-                                         1.0 if st == "confirmed" else 0.0))
+        by.setdefault(str(r["key"])[len(KEY_PREFIX):], []).append(
+            (r.get("resolved_ts") or r.get("made_ts") or 0, 1.0 if r["status"] == "confirmed" else 0.0))
     return by
 
 
 def learning_progress():
-    """Per-topic LEARNING-PROGRESS = are recent predictions more accurate than older ones?
-    Reward = max(0, recent_accuracy - older_accuracy). This is reducible-error, not raw surprise."""
-    by = _our_resolved()
-    lp, summary = {}, {"topics": 0, "resolved": 0, "mean_lp": 0.0, "mean_acc": 0.0}
-    total_lp = total_acc = 0.0
+    by = _resolved_by_topic()
+    lp, tot_lp, tot_acc = {}, 0.0, 0.0
     for topic, rows in by.items():
         rows.sort()
-        outs = [o for _, o in rows]
+        outs = [o for _, o in rows][-30:]           # recent window
         acc = sum(outs) / len(outs)
-        if len(outs) >= 4:
+        if len(outs) >= 6:
             half = len(outs) // 2
-            older = sum(outs[:half]) / half
-            recent = sum(outs[half:]) / (len(outs) - half)
-            progress = max(0.0, recent - older)
+            prog = max(0.0, sum(outs[half:]) / (len(outs) - half) - sum(outs[:half]) / half)
         else:
-            progress = 0.0                       # not enough data to claim learning yet — honest
-        lp[topic] = {"n": len(outs), "accuracy": round(acc, 3),
-                     "learning_progress": round(progress, 3)}
-        summary["resolved"] += len(outs)
-        total_lp += progress
-        total_acc += acc
-    if by:
-        summary["topics"] = len(by)
-        summary["mean_lp"] = round(total_lp / len(by), 3)
-        summary["mean_acc"] = round(total_acc / len(by), 3)
-    out = {"ts": time.time(), "summary": summary, "by_topic": lp,
-           "note": "reward = learning-progress on EXTERNAL probe-checkable predictions only "
-                   "(anti-pathology gate). LP forms only once predictions resolve at their horizon."}
+            prog = 0.0
+        lp[topic] = {"n": len(outs), "accuracy": round(acc, 3), "learning_progress": round(prog, 3)}
+        tot_lp += prog; tot_acc += acc
+    summ = {"topics": len(by), "resolved": sum(len(v) for v in by.values()),
+            "mean_lp": round(tot_lp / len(by), 3) if by else 0.0,
+            "mean_acc": round(tot_acc / len(by), 3) if by else 0.0,
+            "max_lp": round(max((d["learning_progress"] for d in lp.values()), default=0.0), 3)}
+    out = {"ts": time.time(), "summary": summ, "by_topic": lp}
     _save(LP, out)
     return out
 
 
 def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else "--show"
+    model = _model()
     if arg == "--predict":
-        made = predict()
-        print(f"committed {len(made)} native external predictions:")
-        for topic, chk in made:
-            print(f"   {topic:24s} CHECK: {chk}")
+        made = predict(model)
+        print(f"committed {len(made)}:"); [print("  ", t, "->", c) for t, c in made]
     elif arg == "--lp":
-        out = learning_progress()
-        print(json.dumps(out, indent=1))
+        print(json.dumps(learning_progress(), indent=1))
+    elif arg == "--model":
+        print(json.dumps(model, indent=1))
     elif arg == "--tick":
-        # self-contained curiosity cycle: predict -> RESOLVE DUE (don't depend on the Loom) -> reward
-        made = predict()
+        made = predict(model)
         try:
             swept = tl.check_due()
         except Exception as e:
             swept = {"error": str(e)[:80]}
+        learned = learn(_model())
         out = learning_progress()
-        print(f"tick: +{len(made)} predictions | swept={swept} | "
-              f"LP topics={out['summary']['topics']} resolved={out['summary']['resolved']} "
-              f"mean_lp={out['summary']['mean_lp']}")
-    else:  # --show
-        print(json.dumps(_load(LP, {"note": "no LP yet — run --predict, let it resolve, then --lp"}),
-                         indent=1))
+        print(f"tick: +{len(made)} preds | swept={swept} | learned={learned} | "
+              f"LP topics={out['summary']['topics']} mean_lp={out['summary']['mean_lp']} "
+              f"max_lp={out['summary']['max_lp']} mean_acc={out['summary']['mean_acc']}")
+    else:
+        print(json.dumps(_load(LP, {"note": "run --tick"}), indent=1))
 
 
 if __name__ == "__main__":
