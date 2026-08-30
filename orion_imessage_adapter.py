@@ -56,6 +56,7 @@ except Exception:
 
 DB = os.path.expanduser("~/Library/Messages/chat.db")
 WATERMARK = Path(os.path.expanduser("~/.orion/state/imessage_watermark.json"))
+CAPTURED = Path(os.path.expanduser("~/.orion/state/imessage_captured.json"))
 APPLE_EPOCH = 978307200                          # 2001-01-01 -> unix
 SURFACE = "imessage"
 
@@ -168,24 +169,92 @@ def _max_rowid():
         return 0
 
 
+# ── IDEMPOTENCY (the raw stream is the incorruptible spine — it may never double-write) ──
+# The raw stream is append-only with no dedupe, so a stray re-run (or a lost watermark) would
+# append the same history twice and corrupt the one record that is supposed to always be true.
+# ROWIDs are monotonic and we only ever capture ascending ranges, so the set of captured
+# messages is exactly one contiguous interval — O(1) to store, O(1) to check, no scanning as
+# the archive grows. If the index is ever lost it is rebuilt from the raw stream (--rebuild-index).
+
+def _covered():
+    try:
+        d = json.loads(CAPTURED.read_text())
+        return int(d["lo"]), int(d["hi"])
+    except Exception:
+        return None
+
+
+def _cover(lo, hi):
+    """Extend the covered interval to include [lo, hi]."""
+    cur = _covered()
+    if cur:
+        lo, hi = min(lo, cur[0]), max(hi, cur[1])
+    try:
+        CAPTURED.parent.mkdir(parents=True, exist_ok=True)
+        tmp = CAPTURED.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"lo": int(lo), "hi": int(hi), "ts": time.time()}))
+        tmp.replace(CAPTURED)
+    except Exception:
+        pass
+
+
+def _is_captured(rowid):
+    c = _covered()
+    return bool(c and c[0] <= rowid <= c[1])
+
+
+def rebuild_index():
+    """Reconstruct the covered interval from the raw stream itself (recovery path)."""
+    lo = hi = None
+    try:
+        for line in P.RAW.open(encoding="utf-8"):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("surface") != SURFACE:
+                continue
+            rid = (r.get("meta") or {}).get("rowid")
+            if not isinstance(rid, int):
+                continue
+            lo = rid if lo is None else min(lo, rid)
+            hi = rid if hi is None else max(hi, rid)
+    except Exception:
+        pass
+    if lo is None:
+        print("no imessage events in the raw stream — nothing to index")
+        return
+    _cover(lo, hi)
+    print("index rebuilt from the raw stream: covered rowids %d..%d" % (lo, hi))
+
+
 def capture(lo=None, hi=None, limit=None, advance=True):
     """Push a ROWID range through the boundary. Live and backfill are the SAME call (§8.6).
+    Already-captured rowids are SKIPPED, so re-running is a no-op rather than a corruption.
     The watermark advances only on a successful capture, so a failure loses nothing."""
-    n_ok = n_rej = 0
+    n_ok = n_rej = n_dup = 0
     last = lo or 0
+    seen_lo = seen_hi = None
     prov = {"external": 0, "self": 0}
     for rowid, ev in _read(lo, hi, limit):
+        last = rowid
+        if _is_captured(rowid):
+            n_dup += 1
+            continue
         r = P.ingest(ev)
         if r.get("ok"):
             n_ok += 1
             prov[ev["provenance"]] += 1
+            seen_lo = rowid if seen_lo is None else min(seen_lo, rowid)
+            seen_hi = rowid if seen_hi is None else max(seen_hi, rowid)
         else:
             n_rej += 1
-        last = rowid
+    if seen_lo is not None:
+        _cover(seen_lo, seen_hi)
     if advance and n_ok and last:
         _set_mark(last)
-    return {"captured": n_ok, "rejected": n_rej, "last_rowid": last,
-            "external": prov["external"], "self": prov["self"]}
+    return {"captured": n_ok, "skipped_duplicate": n_dup, "rejected": n_rej,
+            "last_rowid": last, "external": prov["external"], "self": prov["self"]}
 
 
 def dry_run(n=10):
@@ -218,7 +287,10 @@ def status():
         raw = sum(1 for _ in P.RAW.open(encoding="utf-8"))
     except Exception:
         pass
+    cov = _covered()
     print("watermark rowid : %d  (db max %d)" % (mark, mx))
+    print("captured range  : %s" % ("rowid %d..%d (%d messages)" % (cov[0], cov[1], cov[1] - cov[0] + 1)
+                                    if cov else "nothing captured yet"))
     print("messages in db  : %d" % total)
     print("pending capture : %d" % pending)
     print("raw stream      : %d events total (all surfaces)" % raw)
@@ -239,5 +311,7 @@ if __name__ == "__main__":
         print(json.dumps(capture(lo=_mark())))
     elif arg == "--backfill":
         print(json.dumps(capture(lo=0, hi=_mark() or None, advance=False)))
+    elif arg == "--rebuild-index":
+        rebuild_index()
     else:
         print(__doc__)
