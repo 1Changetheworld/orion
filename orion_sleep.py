@@ -48,6 +48,9 @@ CYCLE_SEC = float(os.environ.get("ORION_SLEEP_CYCLE_SEC", "10800"))   # periodic
 DEBOUNCE_SEC = float(os.environ.get("ORION_SLEEP_DEBOUNCE_SEC", "180"))  # after session-close
 MIN_NEW_TURNS = int(os.environ.get("ORION_SLEEP_MIN_TURNS", "4"))
 MAX_TURNS = int(os.environ.get("ORION_SLEEP_MAX_TURNS", "60"))
+# What consolidation is allowed to SEE per turn. Was hard-coded at 300 — on top of the
+# conversation log's own 400-char capture cut, so it never saw a long message at all.
+MAX_TURN_CHARS = int(os.environ.get("ORION_SLEEP_MAX_TURN_CHARS", "2000"))
 MAX_INSIGHTS = int(os.environ.get("ORION_SLEEP_MAX_INSIGHTS", "3"))
 MAX_FACTS = int(os.environ.get("ORION_SLEEP_MAX_FACTS", "8"))
 
@@ -158,16 +161,25 @@ def _parse_json(raw: str):
 
 # ── the cycle ─────────────────────────────────────────────────────
 
-def run_cycle(reason="schedule"):
+def run_cycle(reason="schedule", turns=None):
+    """turns=None keeps the original behaviour (read the conversation log). When the
+    SALIENCE GATE supplies an episode it is used verbatim and attributed, and the
+    minimum-turns floor does not apply — the gate has already judged it worth thinking
+    about, and a two-message exchange that corrected him outweighs four of his own."""
     st = _load_state()
     since = float(st.get("cursor_ts", 0))
-    turns = _recent_turns(since)
-    if len(turns) < MIN_NEW_TURNS:
-        return {"skipped": "only %d new turns" % len(turns)}
+    gated = turns is not None
+    if not gated:
+        turns = _recent_turns(since)
+        if len(turns) < MIN_NEW_TURNS:
+            return {"skipped": "only %d new turns" % len(turns)}
+    if not turns:
+        return {"skipped": "no turns"}
 
     transcript = "\n".join(
-        "[%s/%s] %s" % (t.get("surface", "?"), t.get("role", "?"),
-                        (t.get("text") or "")[:300]) for t in turns)
+        "[%s/%s] %s" % (t.get("surface", "?"),
+                        t.get("actor") or t.get("role", "?"),
+                        (t.get("text") or "")[:MAX_TURN_CHARS]) for t in turns)
 
     prompt = (
         "You are consolidating your own recent memory while no one is talking — "
