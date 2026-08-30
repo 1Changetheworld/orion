@@ -102,9 +102,94 @@ def _resume_block() -> str:
     return "\n".join(lines)
 
 
+# Prompts that arrive on the UserPromptSubmit hook but are NOT the user
+# speaking: persona re-renders, heartbeat pokes, intent-extraction probes, and
+# other machine-authored turns. Before this filter (2026-08-24) they were logged
+# as inbound USER contact, so "when did we last speak" was partly measuring
+# Orion's own scaffolding instead of James. Match is on a normalized prefix.
+_SYNTHETIC_PREFIXES = (
+    "# orion — identity layer",
+    "# orion - identity layer",
+    "you are orion — a personal ai intelligence layer",
+    "you are orion - a personal ai intelligence layer",
+    "read heartbeat.md if it exists",
+    "extract any explicit or implicit personal intents",
+    "reply with only:",
+    "is this action both safe and correct to perform right now",
+    "# agents.md instructions for",
+)
+
+
+def _is_synthetic(prompt: str) -> bool:
+    """True when this turn was machine-authored, not the user speaking.
+
+    Canonical definition lives in orion_temporal (the module that owns "when
+    did we last speak"); the tuple above is a fail-silent fallback only, so the
+    hook still works if that import is unavailable. Do not let the two drift —
+    edit orion_temporal.SYNTHETIC_PREFIXES.
+    """
+    try:
+        import orion_temporal
+        return orion_temporal.is_synthetic_turn(prompt)
+    except Exception:
+        pass
+    p = (prompt or "").strip().lower()
+    if not p:
+        return True
+    return any(p.startswith(pref) for pref in _SYNTHETIC_PREFIXES)
+
+
+def _provenance(prompt: str):
+    """Decide, from EVIDENCE, whether this turn is Orion's own or the world's (§3).
+
+    Priority, strongest evidence first:
+      1. env stamp        — a producer explicitly declared itself (ORION_PROVENANCE)
+      2. efference ticket — Orion issued this exact prompt through the fuel funnel
+      3. prefix stopgap   — is_synthetic_turn; CRUDE, kept for one cycle (§8.3) and
+                            deleted once 1+2 carry everything. meta.mechanism reports
+                            which rule fired, so we can measure before deleting.
+    Returns (provenance, actor, mechanism).
+    """
+    env = (os.environ.get("ORION_PROVENANCE") or "").strip().lower()
+    if env in ("self", "external"):
+        return env, (os.environ.get("ORION_ACTOR")
+                     or ("orion" if env == "self" else "james")), "env"
+    try:
+        import orion_perception
+        spawner = orion_perception.claim_self(prompt)
+        if spawner:
+            return "self", "orion", "efference:" + spawner
+    except Exception:
+        pass
+    if _is_synthetic(prompt):
+        return "self", "orion", "stopgap"
+    return "external", "james", "default"
+
+
+def _perceive(prompt: str, prov: str, actor: str, mechanism: str) -> None:
+    """Emit this turn through the perception boundary (§4). Capture only — the
+    boundary writes the verbatim raw stream and does NOT touch the graph or
+    trigger consolidation. Fail-silent: perception must never break a prompt."""
+    try:
+        import orion_perception as P
+        P.ingest(P.make_event(prompt, provenance=prov, surface=_surface(),
+                              direction="inbound", actor=actor, modality="text",
+                              thread=os.environ.get("CLAUDE_SESSION_ID"),
+                              meta={"mechanism": mechanism, "adapter": "inject_hook"}))
+    except Exception:
+        pass
+
+
 def _note_contact(prompt: str) -> None:
     """Tell the brain this turn happened, on THIS surface. Fail-silent. Called
-    AFTER recall so the injected memory still reflects the PREVIOUS surface."""
+    AFTER recall so the injected memory still reflects the PREVIOUS surface.
+
+    Synthetic turns are dropped (see _is_synthetic): only real user contact
+    belongs in the contact log, because that log is the canonical answer to
+    "when did we last speak"."""
+    prov, _actor, _mech = _provenance(prompt)
+    if prov == "self":
+        return
     try:
         token = open(AUTH_PATH, encoding="utf-8").read().strip()
     except Exception:
@@ -212,6 +297,8 @@ def main() -> int:
     # Record THIS turn into the one brain — AFTER recall/recent, so what we just
     # injected reflects PRIOR turns, not this one. Write half of cross-surface
     # awareness: how the next window knows what was just said here.
+    _prov, _actor, _mech = _provenance(prompt)
+    _perceive(prompt, _prov, _actor, _mech)
     _note_contact(prompt)
     return 0
 

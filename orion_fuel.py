@@ -604,6 +604,16 @@ class FuelSystem:
         fall through the priority cascade. Escape hatch:
         ORION_FUEL_PREF_LOCKED=1 disables the preference read.
         """
+        # EFFERENCE COPY (Perception Contract §3): Orion is issuing this prompt
+        # HIMSELF. Stamping it here — the one funnel every adapter passes through —
+        # is what lets the prompt hook later tell Orion's own voice from James's,
+        # by identity rather than by matching text. Fail-silent by design.
+        try:
+            import orion_perception as _P
+            _P.stamp_self(prompt, spawner="fuel")
+        except Exception:
+            pass
+
         # Tier-preference path (NEW). Honored BEFORE the file-based
         # preference so an explicit intent flag wins over a sticky
         # preference. Caller asks for uncensored → we send it to the

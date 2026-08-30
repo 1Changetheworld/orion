@@ -97,6 +97,80 @@ def ingest(ev) -> dict:
     return {"ok": False, "reason": reason}
 
 
+# ── the EFFERENCE LEDGER (§3) — provenance stamped at CREATION ─────────────────
+# Orion records every prompt he ISSUES. A later observer (the prompt hook) can
+# then recognize his own motor command by IDENTITY, instead of guessing from text
+# with a prefix list that only ever knows the synthetic prompts someone noticed.
+# Append-only + TTL: safe under concurrent writers, self-pruning, never blocks.
+EFFERENCE = STATE / "efference.jsonl"
+EFFERENCE_TTL = float(os.environ.get("ORION_EFFERENCE_TTL", "900"))   # 15 min
+_EFFERENCE_MAX = 2000
+
+
+def _fingerprint(text):
+    import hashlib
+    return hashlib.sha256((text or "").strip().encode("utf-8", "replace")).hexdigest()[:20]
+
+
+def stamp_self(prompt, spawner="fuel", ttl=None):
+    """Record that ORION issued this exact prompt. Call at the moment of issuance.
+    Never raises, never blocks — a lost stamp degrades to the stopgap, not to a crash."""
+    try:
+        STATE.mkdir(parents=True, exist_ok=True)
+        rec = {"ts": time.time(), "fp": _fingerprint(prompt), "spawner": spawner,
+               "ttl": float(ttl if ttl is not None else EFFERENCE_TTL)}
+        with EFFERENCE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
+        _prune_efference()
+        return True
+    except Exception:
+        return False
+
+
+def _prune_efference():
+    """Drop expired tickets when the file grows. Cheap, best-effort, never raises."""
+    try:
+        if not EFFERENCE.exists() or EFFERENCE.stat().st_size < 200_000:
+            return
+        now = time.time()
+        keep = []
+        for line in EFFERENCE.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if now - float(r.get("ts", 0)) <= float(r.get("ttl", EFFERENCE_TTL)):
+                keep.append(line)
+        tmp = EFFERENCE.with_suffix(".jsonl.tmp")
+        tmp.write_text("\n".join(keep[-_EFFERENCE_MAX:]) + ("\n" if keep else ""), encoding="utf-8")
+        tmp.replace(EFFERENCE)
+    except Exception:
+        pass
+
+
+def claim_self(prompt):
+    """Did ORION issue this exact prompt (within its TTL)? -> spawner name, or None.
+    Not consumed: an identical prompt issued twice is still his both times."""
+    try:
+        if not EFFERENCE.exists():
+            return None
+        fp = _fingerprint(prompt)
+        now = time.time()
+        lines = EFFERENCE.read_text(encoding="utf-8", errors="replace").splitlines()
+        for line in reversed(lines[-_EFFERENCE_MAX:]):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("fp") != fp:
+                continue
+            if now - float(r.get("ts", 0)) <= float(r.get("ttl", EFFERENCE_TTL)):
+                return str(r.get("spawner") or "fuel")
+        return None
+    except Exception:
+        return None
+
+
 def _selftest():
     """Verify the boundary holds before anything real depends on it."""
     cases = [
