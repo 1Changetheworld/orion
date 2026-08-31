@@ -191,6 +191,24 @@ def study(question: str, url: str | None = None) -> dict:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) >= 2 and argv[1] == "--auto":
+        # AUTONOMOUS STUDY. Takes one question that came from a real conversation with James and
+        # goes and reads about it. If the queue is empty it does NOTHING and says nothing —
+        # silence is a valid output here for the same reason it is in the salience gate: the
+        # trigger must be a real signal, never a clock deciding it is time to seem busy.
+        try:
+            import orion_questions
+        except Exception:
+            return 0
+        item = orion_questions.pop()
+        if not item:
+            return 0
+        res = study(item["q"])
+        print(json.dumps({"studied": item["q"], "source": item.get("source"),
+                          "n_sources": res.get("n_sources"), "grounded": res.get("grounded"),
+                          "consolidated": res.get("consolidated"),
+                          "injection_flags": len(res.get("injection_flags") or [])}))
+        return 0
     if len(argv) >= 2 and argv[1] == "--once":
         q = argv[2] if len(argv) > 2 else "predictive coding"
         url = argv[3] if len(argv) > 3 else None

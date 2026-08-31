@@ -575,6 +575,20 @@ def tick(dry=True):
                         stats["fired"] += 1
                     except Exception as e:
                         d["fire_error"] = str(e)[:120]
+                    # ...and ask what this revealed about THE WORLD that he could go learn.
+                    # This is where idle time stops being "think about myself": the questions
+                    # come from what James actually talks about, never from Orion's own
+                    # navel (orion_questions refuses self-referential questions natively).
+                    try:
+                        import orion_questions
+                        qs = orion_questions.propose(
+                            " ".join(e.get("content", "") for e in ep["events"]),
+                            source="conversation:%s" % ep["surface"])
+                        if qs:
+                            d["questions_raised"] = qs
+                            stats["questions"] = stats.get("questions", 0) + len(qs)
+                    except Exception:
+                        pass
         if not dry:
             _log(d)
         else:
