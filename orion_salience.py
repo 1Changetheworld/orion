@@ -342,14 +342,20 @@ def _correction_candidates(ep):
 
 
 def _file_corrections(hits, live):
-    """Written where the prompt hook surfaces them next turn: IMMEDIATE inside a live conversation,
-    simply available when there is none. Never a push (§7.4 — the nine-iMessage incident)."""
+    """Hand confirmed corrections to the corrections STORE — which the prompt hook surfaces on his
+    next turn, dedups so an eternal complaint is not re-raised, and REOPENS with an escalation if
+    the same correction recurs after he said he had addressed it.
+
+    This previously appended to pending_corrections.jsonl, a file nothing reads. The gate was
+    detecting corrections correctly (2026-08-30 22:28: corrections=2, model-confirmed, score 7.0)
+    and writing them into a void, so the entire correction mechanism was inert — which is why the
+    sales-pitch greeting recurred four hours after James corrected it."""
     try:
-        CORRECTIONS.parent.mkdir(parents=True, exist_ok=True)
-        with CORRECTIONS.open("a", encoding="utf-8") as f:
-            for h in hits:
-                f.write(json.dumps({**h, "filed_ts": time.time(), "live": bool(live),
-                                    "status": "open"}, ensure_ascii=False) + "\n")
+        import orion_corrections
+        for h in hits:
+            orion_corrections.file_correction(h.get("content"),
+                                              actor=h.get("actor") or "james",
+                                              ts=h.get("ts"), source="salience")
     except Exception:
         pass
 
