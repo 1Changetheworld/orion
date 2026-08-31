@@ -661,6 +661,10 @@ def tick(dry=True):
         # governor. Piggybacks on this tick so it needs no daemon of its own.
         try:
             import orion_raise
+            # confirm FIRST: anything we tried to send is either proven delivered (chat.db) or
+            # becomes due again. Marking "raised" on a fire-and-forget publish lost a question
+            # permanently on 2026-08-31 — proof comes from Apple's record or it did not happen.
+            orion_raise.confirm_or_retry()
             orion_raise.send_due()
         except Exception:
             pass

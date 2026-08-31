@@ -112,7 +112,10 @@ def add(kind, text, priority="medium", key=None):
 
 
 def pending():
-    return [x for x in _load()["items"].values() if not x.get("raised")]
+    """Not yet raised. Items awaiting delivery proof are excluded so they are not double-sent,
+    but an undeliverable one comes BACK — the conversation path is the fallback, never silence."""
+    return [x for x in _load()["items"].values()
+            if not x.get("raised") and not x.get("sent_at")]
 
 
 def mark_raised(ids, how):
@@ -147,6 +150,67 @@ def block():
     return "\n".join(lines)
 
 
+MAX_ATTEMPTS = 3
+CONFIRM_WINDOW_SEC = 600      # how long to wait for proof before retrying
+
+
+def _sent_outbound_since(fragment, since_ts):
+    """Did an outbound iMessage actually go out carrying this text? Read chat.db directly —
+    Apple's own record is the only honest proof of delivery. Publishing to the bus is NOT
+    delivery: the publish is fire-and-forget, and reach holds its queue IN MEMORY, so a restart
+    discards it. On 2026-08-31 that combination silently lost a question forever, because the
+    item had already been marked raised and dedup is permanent."""
+    import sqlite3
+    frag = " ".join((fragment or "").split())[:40].lower()
+    if len(frag) < 12:
+        return False
+    try:
+        sys.path.insert(0, os.path.expanduser("~/server_data/agents"))
+        from imessage_monitor import _decode_attributed
+        db = os.path.expanduser("~/Library/Messages/chat.db")
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+        apple = (since_ts - 978307200) * 1e9
+        for row in con.execute("SELECT text, attributedBody FROM message "
+                               "WHERE is_from_me=1 AND date >= ? ORDER BY ROWID DESC LIMIT 40",
+                               (apple,)):
+            t = row[0] or (_decode_attributed(row[1]) if row[1] else "")
+            if t and frag in " ".join(t.split()).lower():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def confirm_or_retry(now=None):
+    """Close the loop on anything we tried to send. Confirmed -> raised. Unproven past the
+    window -> retry. Out of attempts -> hand it to the conversation path rather than lose it."""
+    now = now or time.time()
+    d = _load()
+    changed = False
+    for x in d["items"].values():
+        if x.get("raised") or not x.get("sent_at"):
+            continue
+        if _sent_outbound_since(x["text"], x["sent_at"] - 60):
+            x["raised"] = True
+            x["how"] = "reach-confirmed"
+            x["raised_ts"] = now
+            _log("delivered", {"id": x["id"], "text": x["text"][:120]})
+            changed = True
+        elif (now - x["sent_at"]) > CONFIRM_WINDOW_SEC:
+            if x.get("attempts", 0) >= MAX_ATTEMPTS:
+                # never silently lose it: stop sending, let him raise it in conversation instead
+                x["sent_at"] = None
+                x["undeliverable"] = True
+                _log("undeliverable", {"id": x["id"], "text": x["text"][:120]})
+            else:
+                x["sent_at"] = None          # unproven -> becomes due again
+                _log("retry", {"id": x["id"], "attempts": x.get("attempts", 0)})
+            changed = True
+    if changed:
+        _save(d)
+    return d
+
+
 def send_due(now=None):
     """Items nobody surfaced in conversation within the grace window go out through the GOVERNOR
     (orion_reach: cooldown, channel choice, delivery tracking). Never straight to a channel."""
@@ -160,19 +224,29 @@ def send_due(now=None):
         from orion_substrate import publish
     except Exception:
         return {"sent": 0, "error": "substrate unavailable"}
+    d = _load()
     sent = []
     for x in sorted(due, key=lambda i: i["created"])[:3]:
+        if x.get("sent_at"):
+            continue                       # awaiting proof from a previous attempt
         try:
             publish("brain.synthesis.candidate", {
                 "kind": x["kind"], "ts": now, "priority": x.get("priority", "medium"),
                 "text": x["text"], "raise_id": x["id"],
             })
-            sent.append(x["id"])
         except Exception:
             break
+        # ATTEMPTED, not raised. Marking raised here — on a fire-and-forget publish — is what
+        # lost a question permanently on 2026-08-31. Proof comes from chat.db or it did not happen.
+        rec = d["items"].get(x["id"])
+        if rec:
+            rec["sent_at"] = now
+            rec["attempts"] = rec.get("attempts", 0) + 1
+            sent.append(x["id"])
     if sent:
-        mark_raised(sent, "reach")
-    return {"sent": len(sent)}
+        _save(d)
+        _log("attempted", {"ids": sent})
+    return {"attempted": len(sent)}
 
 
 if __name__ == "__main__":
