@@ -40,6 +40,37 @@ def _is_noise(node):
     return False
 
 
+def _safe_dump(data, path):
+    """Write like every other writer in this system: exclusive lock, private temp, fsync, atomic
+    replace. Bare open(path,"w") here corrupted the live graph (2026-08-31, and at least three
+    times before) because it raced the brain's own writer with no lock between them."""
+    try:
+        from orion_brain_portable import _atomic_dump
+        _atomic_dump(data, path, indent=None, do_fsync=True)
+        return
+    except Exception:
+        pass
+    import json as _json
+    import fcntl as _fcntl
+    lockf = None
+    tmp = "%s.tmp.%d" % (path, os.getpid())
+    try:
+        lockf = open(path + ".lock", "w")
+        _fcntl.flock(lockf.fileno(), _fcntl.LOCK_EX)
+        with open(tmp, "w", encoding="utf-8") as f:
+            _json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if lockf:
+            try:
+                _fcntl.flock(lockf.fileno(), _fcntl.LOCK_UN)
+                lockf.close()
+            except Exception:
+                pass
+
+
 def consolidate(graph_path, apply=False, decay_days=45, decay_conf=0.4, prune_noise=False):
     archive_path = graph_path.replace(".json", ".archive.json")
     with open(graph_path, encoding="utf-8") as f:
@@ -99,11 +130,9 @@ def consolidate(graph_path, apply=False, decay_days=45, decay_conf=0.4, prune_no
             except Exception:
                 existing = {}
         existing.update(archived)
-        with open(archive_path, "w", encoding="utf-8") as f:
-            json.dump({"nodes": existing}, f, ensure_ascii=False)
+        _safe_dump({"nodes": existing}, archive_path)
         d["nodes"] = kept
-        with open(graph_path, "w", encoding="utf-8") as f:
-            json.dump(d, f, ensure_ascii=False)
+        _safe_dump(d, graph_path)
         result["applied"] = True
         result["archive_path"] = archive_path
         result["archive_total"] = len(existing)
