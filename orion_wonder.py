@@ -207,9 +207,47 @@ def _think(prompt: str, interface: str) -> str:
     full = (self_frame + "\n\n---\n\n" + prompt) if self_frame else prompt
     try:
         reply, _engine = orion_fuel.get_fuel(full, interface=interface)
-        return (reply or "").strip()
+        return _reject_fuel_error((reply or "").strip())
     except Exception:
         return ""
+
+
+# Harness/auth failures come back as ORDINARY STRINGS, not exceptions. Without
+# this gate they get stored as genuine reflections — on 2026-08-20 an expired
+# OAuth token put "Not logged in - Please run /login" into the journal five times
+# as Orion's philosophy. Treat a known error string as no answer at all.
+_FUEL_ERROR_MARKERS = (
+    "please run /login",
+    "not logged in",
+    "login expired",
+    "invalid api key",
+    "authentication_error",
+    "rate limit",
+    "credit balance is too low",
+    "usage limit reached",
+)
+
+
+def _reject_fuel_error(reply: str) -> str:
+    """Return '' if the fuel handed back an error string instead of an answer.
+
+    Only short replies are screened: a genuine reflection that happens to
+    discuss authentication should not be discarded, but an error string is
+    always brief.
+    """
+    if not reply:
+        return ""
+    low = reply.lower()
+    if len(reply) < 400 and any(m in low for m in _FUEL_ERROR_MARKERS):
+        try:
+            logger.warning("WONDER: rejected fuel error string: %s", reply[:120])
+            _append_jsonl(THREADS_LOG,
+                          {"event": "fuel_error_rejected",
+                           "text": reply[:200], "ts": _now()})
+        except Exception:
+            pass
+        return ""
+    return reply
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -307,10 +345,21 @@ def _surface(thread: dict, note: str, reason: str) -> None:
         _save_open(threads)
 
     if SEND_CHANNEL:
-        _publish("channel.imessage.outbound", {
-            "text": msg, "ts": now, "severity": thread.get("severity", "notice"),
-            "source": "brain.wonder", "via": "orion_wonder.surface",
-        })
+        # THROUGH THE GOVERNOR, NEVER AROUND IT. This used to publish straight to
+        # channel.imessage.outbound, bypassing orion_reach's cooldown, channel choice and
+        # delivery tracking — almost certainly how nine unsolicited messages reached James in
+        # one day on 2026-06-07. orion_raise decides whether he says it in an active
+        # conversation or sends it, dedups so an eternal question is asked ONCE, and can be
+        # silenced entirely by touching ~/.orion/NO_REACH.
+        try:
+            import orion_raise
+            _kind = ("wonder_question" if (thread.get("kind") == "eternal")
+                     else "unresolved_memory")
+            orion_raise.add(_kind, thread.get("question") or msg,
+                            priority=("high" if thread.get("severity") == "critical"
+                                      else "medium"))
+        except Exception:
+            pass
     logger.info("SURFACED (%s, send=%s): %s", reason, SEND_CHANNEL, thread["question"])
 
 

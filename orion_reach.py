@@ -292,6 +292,17 @@ def _format_message_for_channel(item: dict, channel: str) -> str:
         return f"Fuel switched to {payload.get('fuel')} as you asked."
     if kind == "failure_narration":
         return _format_failure_narration(payload)
+    # Orion bringing something to James himself (orion_raise). These need real renderers: the
+    # fallback below deliberately returns None for unknown kinds, so without these the whole
+    # point — him being able to reach out — would be silently swallowed.
+    if kind == "wonder_question":
+        return ("Something I keep coming back to, sir: %s"
+                % (payload.get("text") or "(no question)"))
+    if kind == "unresolved_memory":
+        return ("Something in my memory doesn't add up and I can't settle it alone: %s"
+                % (payload.get("text") or "(see brain)"))
+    if kind == "issue":
+        return "Something's wrong and I think you should know: %s" % (payload.get("text") or "")
     # Refuse to send a meaningless "Notice: <kind>" stub for an unrecognized
     # alert kind — that bare stub (misrouted to "primary_user") was a recurring
     # third-sender in the iMessage spam. A kind must have a real renderer here,

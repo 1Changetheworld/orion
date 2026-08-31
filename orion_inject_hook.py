@@ -256,6 +256,16 @@ def main() -> int:
                 blocks.append(_cb)
         except Exception:
             pass
+        # What he has been carrying and has not raised. James is HERE, so he says it himself
+        # rather than texting someone he is already talking to. Surfacing marks it raised, so it
+        # is never also sent.
+        try:
+            import orion_raise
+            _rb = orion_raise.block()
+            if _rb:
+                blocks.append(_rb)
+        except Exception:
+            pass
 
     # Temporal frame FIRST — Orion's grounded sense of "now", how long he's been
     # running, whether he just woke after being offline, and when you last spoke.

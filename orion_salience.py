@@ -597,6 +597,13 @@ def tick(dry=True):
                      d.get("score", "-"), d.get("judged_by"), d.get("reason", "")[:70]))
     if not dry:
         _save(STATE / "salience_last_affect.json", _neuromod())
+        # Anything he has been carrying that no conversation picked up goes out through the
+        # governor. Piggybacks on this tick so it needs no daemon of its own.
+        try:
+            import orion_raise
+            orion_raise.send_due()
+        except Exception:
+            pass
     return stats
 
 
