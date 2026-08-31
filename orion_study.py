@@ -127,6 +127,15 @@ def _brain(name: str, args: dict, timeout: int = 30) -> str:
 def study(question: str, url: str | None = None) -> dict:
     # 1. GATHER from the world + own memory
     sources = _wiki(question)
+    # THE OPEN WEB (James, 2026-08-30). Wikipedia is a good encyclopaedia and a small world.
+    # Containment lives in orion_web: SSRF guard, ports, manual redirect re-checking, read-only,
+    # injection QUARANTINE (a page that tries to give him orders is refused, not read carefully),
+    # and capture through the perception boundary so every claim stays traceable to its page.
+    try:
+        import orion_web
+        sources.extend(orion_web.search(question, k=2))
+    except Exception:
+        pass
     if url:
         t = _fetch_text(url, allow_any=True)     # explicit manual URL is operator-authorized
         if t:
