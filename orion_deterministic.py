@@ -279,11 +279,15 @@ async def _on_inbound(nc, msg) -> None:
         from orion_metacognition import score_recall
         meta = score_recall(target, ranked)
     except Exception as e:
-        # Scorer unavailable. Phase 1 fails open to preserve existing
-        # behavior; once score_recall is universally deployed this
-        # should flip to fail-closed.
-        logger.debug("score_recall unavailable (%s); allowing short-circuit", e)
-        meta = {"action_hint": "answer", "reason": "scorer unavailable"}
+        # FAIL-CLOSED (2026-08-30). Was: fail open, i.e. answer anyway when the confidence
+        # scorer is unavailable — which contradicted this module's own docstring ("Both gates
+        # have to fail-closed for safety"). Harmless while Orion only answers when asked;
+        # not harmless once anything acts on its own, which is the direction of the build.
+        # A safety gate whose failure mode is "proceed" is not a safety gate.
+        # This does not silence him: 'hedge' falls through to the LLM path, which can express
+        # uncertainty in words. The cost is speed, never voice.
+        logger.warning("score_recall unavailable (%s); FAILING CLOSED (no short-circuit)", e)
+        meta = {"action_hint": "hedge", "reason": "scorer unavailable (fail-closed)"}
 
     if meta["action_hint"] != "answer":
         await nc.publish("brain.deterministic.refused", json.dumps({
