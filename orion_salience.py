@@ -310,14 +310,16 @@ def _correction_candidates(ep):
 
 
 def _file_corrections(hits, live):
-    """Written where the prompt hook surfaces them next turn: IMMEDIATE inside a live conversation,
-    simply available when there is none. Never a push (§7.4 — the nine-iMessage incident)."""
+    """Hand confirmed corrections to the corrections store, which the prompt hook surfaces on his
+    NEXT turn: immediate inside a live conversation, simply waiting when there is none. Never a
+    push (§7.4 — the nine-iMessage incident). The store also handles the case that matters most:
+    a correction recurring after he marked it addressed REOPENS and escalates, which is how
+    "he said he'd fix it and didn't" stops being invisible."""
     try:
-        CORRECTIONS.parent.mkdir(parents=True, exist_ok=True)
-        with CORRECTIONS.open("a", encoding="utf-8") as f:
-            for h in hits:
-                f.write(json.dumps({**h, "filed_ts": time.time(), "live": bool(live),
-                                    "status": "open"}, ensure_ascii=False) + "\n")
+        import orion_corrections
+        for h in hits:
+            orion_corrections.file_correction(h.get("content"), actor=h.get("actor") or "james",
+                                              ts=h.get("ts"), source="salience")
     except Exception:
         pass
 

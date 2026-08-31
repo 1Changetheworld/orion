@@ -240,6 +240,23 @@ def main() -> int:
 
     blocks = []
 
+    # Decide provenance ONCE, up front: it gates what gets surfaced below and is reused at the
+    # end for capture, so the efference ledger is only consulted a single time per prompt.
+    _prov, _actor, _mech = _provenance(prompt)
+
+    # CORRECTIONS FIRST. A correction that arrives after the answer has already been formed is
+    # useless — Orion made the same confident-wrong mistake twice in one night (2026-08-27) with
+    # the correction sitting in his graph the whole time. Storage is not steering; being in front
+    # of him at the moment he speaks is. Only when JAMES is talking, never for his own scaffolding.
+    if _prov == "external":
+        try:
+            import orion_corrections
+            _cb = orion_corrections.block()
+            if _cb:
+                blocks.append(_cb)
+        except Exception:
+            pass
+
     # Temporal frame FIRST — Orion's grounded sense of "now", how long he's been
     # running, whether he just woke after being offline, and when you last spoke.
     # A base model can't have this (it's invocation-lived); Orion lends it his
@@ -297,7 +314,6 @@ def main() -> int:
     # Record THIS turn into the one brain — AFTER recall/recent, so what we just
     # injected reflects PRIOR turns, not this one. Write half of cross-surface
     # awareness: how the next window knows what was just said here.
-    _prov, _actor, _mech = _provenance(prompt)
     _perceive(prompt, _prov, _actor, _mech)
     _note_contact(prompt)
     return 0
