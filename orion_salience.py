@@ -254,6 +254,29 @@ def _prediction_error(since_ts):
     return n
 
 
+def _goal_relevance(text):
+    """How much this touches what James has shown he cares about. Grounded, not guessed: the
+    reinforce store holds what he has said more than once, and repetition is his own stated
+    signal of importance. Self-improving — the more he repeats, the sharper this gets."""
+    try:
+        store = _load(REINFORCE, {})
+    except Exception:
+        return 0.0
+    t = (text or "").lower()
+    if not t or not store:
+        return 0.0
+    best = 0.0
+    for rec in store.values():
+        sample = str(rec.get("sample") or "").lower()
+        words = [w for w in sample.split() if len(w) > 5][:12]
+        if not words:
+            continue
+        hits = sum(1 for w in words if w in t)
+        if hits >= 2:
+            best = max(best, min(1.0, hits / max(4.0, len(words))) * min(3, rec.get("count", 1)))
+    return round(best, 3)
+
+
 def _learning_weight(text):
     """What he is actively LEARNING should be what he KEEPS. Wired now, near-zero today
     (mean learning-progress ~0.002) — the socket exists so it needs no retrofit later."""
@@ -446,8 +469,21 @@ def judge(ep, cfg, since_ts, may_call_model=True):
         d.update(decision="reinforce", reason="already known — strengthened not duplicated",
                  repeat_count=rec["count"], fingerprint=fp)
         if rec["count"] >= cfg["reinforce_threshold"] and not rec.get("derived"):
-            d["derive_belief"] = ("repeated %dx — this matters to James disproportionately"
-                                  % rec["count"])
+            belief = ("James has said this %d times — it matters to him disproportionately: %s"
+                      % (rec["count"], str(rec.get("sample") or "")[:140]))
+            d["derive_belief"] = belief
+            # (A) A belief that lives only in a decision log is not a belief. Write it, and mark
+            # it derived so it is formed once rather than every time he repeats himself again.
+            try:
+                import orion_sleep as _sl
+                if _sl._memorize(belief, node_type="insight",
+                                 tags=["derived", "importance", "james", "repetition"]):
+                    store = _load(REINFORCE, {})
+                    if fp in store:
+                        store[fp]["derived"] = True
+                        _save(REINFORCE, store)
+            except Exception:
+                pass
         return d
 
     # CORRECTIONS FIRST — before any novelty check. Something that genuinely CHANGED often looks
@@ -492,6 +528,13 @@ def judge(ep, cfg, since_ts, may_call_model=True):
     if lw > 0:
         score += lw * 10
         why.append("actively learning (lp %.3f)" % lw)
+    gr = _goal_relevance(text)
+    if gr > 0:
+        score += gr
+        why.append("matters to James (goal-relevance %.2f)" % gr)
+    d["goal_relevance"] = gr
+    d["felt"] = {k: (round(v, 4) if isinstance(v, (int, float)) else None)
+                 for k, v in (_neuromod() or {}).items()}
     if verdict is False:
         score -= 1.5
         why.append("model: not durable")
@@ -575,6 +618,23 @@ def tick(dry=True):
                         stats["fired"] += 1
                     except Exception as e:
                         d["fire_error"] = str(e)[:120]
+                    # FELT MEMORY (B). Record the state he was in while this happened, so the
+                    # memory has a texture instead of being a database row. Honest caveat: his
+                    # drives barely move yet, so early entries will look alike — recording costs
+                    # nothing and cannot be reconstructed later if we skip it.
+                    try:
+                        import orion_sleep as _sl
+                        felt = d.get("felt") or {}
+                        if felt:
+                            _sl._memorize(
+                                "While talking with James on %s (%s), my state was %s."
+                                % (time.strftime("%b %d %H:%M", time.localtime(ep["last_ts"])),
+                                   ep["surface"],
+                                   ", ".join("%s=%.3f" % (k, v) for k, v in sorted(felt.items())
+                                             if isinstance(v, (int, float)))),
+                                node_type="fact", tags=["felt", "affect", "episode", "self"])
+                    except Exception:
+                        pass
                     # ...and ask what this revealed about THE WORLD that he could go learn.
                     # This is where idle time stops being "think about myself": the questions
                     # come from what James actually talks about, never from Orion's own
