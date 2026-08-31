@@ -103,6 +103,13 @@ DEFAULTS = {
     "allow_model": True,          # James, 2026-08-30: yes — for genuinely ambiguous cases only
     "model_calls_per_day": 24,    # "rarely"
     "max_turn_chars": 2000,       # what consolidation may SEE per turn (was hard-capped at 300)
+    # SOLICITED surfaces: external in provenance (the world really did produce them), but Orion
+    # ASKED for them. Found by the shadow run 2026-08-30: 9 of the first 10 decisions were web
+    # pages he fetched himself during a study, each firing its own consolidation cycle. Study
+    # already consolidates its findings with citations, so this double-counts — and under
+    # autonomous study it becomes a new self-driven loop wearing external clothes. These may ride
+    # along in an episode; they may never start one. The world speaking to him is the driver.
+    "passenger_surfaces": ["web"],
 }
 
 # crude, deliberately conservative correction cues. Native first; the model adjudicates the
@@ -420,6 +427,12 @@ def judge(ep, cfg, since_ts, may_call_model=True):
     d = {"surface": ep["surface"], "thread": ep["thread"], "first_ts": ep["first_ts"],
          "last_ts": ep["last_ts"], "n_events": len(ep["events"]),
          "external": len(ext), "self": len(slf), "judged_by": "native"}
+
+    # SOLICITED input cannot drive a cycle (see passenger_surfaces): he asked for it, so it is
+    # not the world arriving. Silent, like any other non-event.
+    if ep["surface"] in (cfg.get("passenger_surfaces") or []):
+        d.update(decision="skip", reason="solicited surface — passenger, never driver", silent=True)
+        return d
 
     # NECESSARY condition. Below this nothing happened, and §6.5 says do not even log the skip.
     if len(ext) < cfg["min_external_events"]:
