@@ -83,6 +83,7 @@ SEEN = STATE / "salience_seen.json"                                  # episode f
 REINFORCE = STATE / "salience_reinforce.json"                        # repeat counts -> derived beliefs
 CORRECTIONS = Path(os.path.expanduser("~/.orion/pending_corrections.jsonl"))
 BUDGET = STATE / "salience_model_budget.json"
+PENDING = STATE / "salience_pending.json"    # events of conversations still in flight
 
 # ── CONSTITUTIONAL. Not in the config file, on purpose. ──────────────────────────────────────
 INVARIANTS = (
@@ -520,10 +521,20 @@ def tick(dry=True):
     cfg = config()
     since = float(_load(OFFSET, {"ts": 0}).get("ts", 0))
     evs, _off = _read_new(commit=not dry)
-    if not evs:
+    # Carry UNFINISHED conversations across ticks. The read offset advances every tick, but an
+    # episode is only judged once it has gone quiet — so without this buffer the early messages
+    # of a live conversation are consumed and thrown away, and the episode is finally judged on
+    # nothing but its last message. Every real-time conversation would arrive amputated.
+    pend = _load(PENDING, []) if not dry else []
+    allev = pend + evs
+    if not allev:
         return {"new_events": 0, "episodes": 0, "consolidated": 0, "note": "silence"}
-    eps = [e for e in episodes(evs, cfg) if _closed(e, cfg)]
-    stats = {"new_events": len(evs), "episodes": len(eps), "consolidate": 0,
+    grouped = episodes(allev, cfg)
+    eps = [e for e in grouped if _closed(e, cfg)]
+    if not dry:
+        still = [ev for e in grouped if not _closed(e, cfg) for ev in e["events"]]
+        _save(PENDING, still[-500:])
+    stats = {"new_events": len(evs), "carried": len(pend), "episodes": len(eps), "consolidate": 0,
              "reinforce": 0, "drop": 0, "skip": 0, "corrections": 0, "model_calls": 0,
              "fired": 0, "dry_run": dry}
     for ep in eps:
