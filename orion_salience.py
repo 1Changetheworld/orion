@@ -58,6 +58,7 @@ Safe: never raises, writes no graph nodes itself, and fires nothing unless confi
 
   --dry-run    decide over the real raw stream, fire NOTHING, print every decision
   --tick       the live gate (fires consolidation when config.enabled)
+  --init       start from now (skip replaying the archive)
   --status     offset, episodes, model budget
   --config     print the live config
   --decisions  recent decisions and why
@@ -310,16 +311,14 @@ def _correction_candidates(ep):
 
 
 def _file_corrections(hits, live):
-    """Hand confirmed corrections to the corrections store, which the prompt hook surfaces on his
-    NEXT turn: immediate inside a live conversation, simply waiting when there is none. Never a
-    push (§7.4 — the nine-iMessage incident). The store also handles the case that matters most:
-    a correction recurring after he marked it addressed REOPENS and escalates, which is how
-    "he said he'd fix it and didn't" stops being invisible."""
+    """Written where the prompt hook surfaces them next turn: IMMEDIATE inside a live conversation,
+    simply available when there is none. Never a push (§7.4 — the nine-iMessage incident)."""
     try:
-        import orion_corrections
-        for h in hits:
-            orion_corrections.file_correction(h.get("content"), actor=h.get("actor") or "james",
-                                              ts=h.get("ts"), source="salience")
+        CORRECTIONS.parent.mkdir(parents=True, exist_ok=True)
+        with CORRECTIONS.open("a", encoding="utf-8") as f:
+            for h in hits:
+                f.write(json.dumps({**h, "filed_ts": time.time(), "live": bool(live),
+                                    "status": "open"}, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
@@ -585,6 +584,13 @@ if __name__ == "__main__":
         print(json.dumps(tick(dry=False), indent=1))
     elif arg == "--status":
         status()
+    elif arg == "--init":
+        # Start the gate from NOW. Without this its first live tick replays the entire archive
+        # from offset 0 and files five months of historical corrections at once — which would
+        # bury him in old business the moment the gate wakes up.
+        sz = P.RAW.stat().st_size if P.RAW.exists() else 0
+        _save(OFFSET, {"offset": sz, "ts": time.time()})
+        print("gate offset initialised at %d bytes — it starts from now, not from history" % sz)
     elif arg == "--config":
         print(json.dumps(config(), indent=1))
     elif arg == "--decisions":
