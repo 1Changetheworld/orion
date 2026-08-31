@@ -139,6 +139,42 @@ def inspect(path, size_key):
         return {"file": path.name, "state": "corrupt", "detail": str(e)[:120]}
 
 
+def failing_organs(state):
+    """Which of his own services keep dying? The 2026-08-31 corruption was ANNOUNCED for hours —
+    com.orion.hygiene exited 1 every six hours with the exact JSON error — and nothing surfaced
+    it, because nothing reads an .err file. launchctl exit codes are readable without the brain,
+    so this works under the same failure it is meant to catch. Escalates only after repeated
+    failures: a service that blips once is noise, one that fails three checks running is broken."""
+    import subprocess
+    streak = state.get("fail_streak") or {}
+    now_failing = {}
+    try:
+        out = subprocess.run(["launchctl", "list"], capture_output=True, text=True,
+                             timeout=20).stdout
+    except Exception:
+        return [], streak
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 3 or not parts[2].startswith("com.orion."):
+            continue
+        label, code = parts[2], parts[1]
+        try:
+            code = int(code)
+        except Exception:
+            continue
+        if code != 0 and code != -15:          # -15 is a normal SIGTERM from a restart
+            now_failing[label] = code
+    alarms = []
+    for label, code in now_failing.items():
+        streak[label] = streak.get(label, 0) + 1
+        if streak[label] == 3:                  # exactly at 3: alarm once, not every cycle
+            alarms.append((label, code, streak[label]))
+    for label in list(streak):
+        if label not in now_failing:
+            streak.pop(label, None)             # recovered
+    return alarms, streak
+
+
 def run(repair=True):
     st = _load_state()
     known = st.get("counts") or {}
@@ -196,6 +232,15 @@ def run(repair=True):
         if isinstance(cur, int):
             known[path.name] = cur
         results.append(v)
+
+    # his own organs — a service failing quietly is the same blindness as a corrupt file
+    alarms, streak = failing_organs(st)
+    st["fail_streak"] = streak
+    for label, code, n in alarms:
+        actions.append("SERVICE FAILING: %s (exit %s, %d checks running)" % (label, code, n))
+        _escalate("My %s service has failed %d checks in a row (exit %s). It has been failing "
+                  "quietly and I would rather tell you than let it sit." % (label, n, code),
+                  priority="high")
 
     st["counts"] = known
     st["last_run"] = time.time()
