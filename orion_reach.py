@@ -313,11 +313,28 @@ def _format_message_for_channel(item: dict, channel: str) -> str:
 def _active_surfaces() -> list[str]:
     """Return surface names currently marked 'active' in the probe manifest,
     sorted by preference (sticky priority order for the fallback chain)."""
-    if not _channels_manifest:
+    manifest = _channels_manifest
+    if not manifest:
+        # FALLBACK (2026-09-01): the manifest arrives as a NATS broadcast, so missing that one
+        # publish — or restarting after it — left reach permanently blind and unable to deliver
+        # anything, including Orion's own attempts to reach James. The probe also writes it to
+        # disk, so read that rather than staying deaf until the next broadcast.
+        try:
+            import glob as _glob
+            import json as _json
+            paths = _glob.glob(os.path.expanduser("~/.orion/channels/*.json"))
+            if paths:
+                newest = max(paths, key=os.path.getmtime)
+                if (time.time() - os.path.getmtime(newest)) < 3600:
+                    with open(newest, encoding="utf-8") as fh:
+                        manifest = _json.load(fh)
+        except Exception:
+            manifest = None
+    if not manifest:
         return []
     PREF = ["imessage", "telegram", "telnyx_sms", "telnyx_call", "gmail",
             "slack", "discord", "meshtastic", "generic_http", "push"]
-    actives = {s.get("surface"): s for s in _channels_manifest.get("surfaces", [])
+    actives = {s.get("surface"): s for s in manifest.get("surfaces", [])
                if s.get("status") == "active"}
     ordered = [c for c in PREF if c in actives]
     extras = [c for c in actives if c not in PREF]
@@ -533,7 +550,10 @@ def _drain_loop() -> None:
                 if publish:
                     publish(channel_outbound_subject(channel), {
                         "channel": channel,
-                        "recipient": "primary_user",
+                        # No recipient here: the channel resolves it (DEFAULT_RECIPIENT).
+                        # This was the literal "primary_user", which imessage_send hard-
+                        # rejects as a placeholder — so EVERY proactive message Orion ever
+                        # tried to send to James was refused at the last step (2026-09-01).
                         "text": msg,
                         "ts": now,
                         "fuel_used": "proactive_reach",

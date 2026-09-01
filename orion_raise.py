@@ -217,7 +217,11 @@ def send_due(now=None):
     if silenced():
         return {"sent": 0, "note": "silenced by ~/.orion/NO_REACH"}
     now = now or time.time()
-    due = [x for x in pending() if (now - x["created"]) >= CONVERSATION_GRACE_SEC]
+    # An item that proved undeliverable is NOT retried forever — that looped attempt/undeliverable
+    # endlessly. It stays pending so the conversation path can still carry it (never silence),
+    # but sending stops.
+    due = [x for x in pending()
+           if (now - x["created"]) >= CONVERSATION_GRACE_SEC and not x.get("undeliverable")]
     if not due:
         return {"sent": 0}
     try:

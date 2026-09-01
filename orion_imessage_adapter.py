@@ -71,8 +71,19 @@ _SQL = (
 )
 
 
-def _conn():
-    return sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
+def _conn(_tries=3):
+    """macOS TCC intermittently refuses chat.db to a launchd-spawned python ("authorization
+    denied") even when Full Disk Access is granted. It succeeds on a retry. Nothing was ever lost
+    — the watermark does not advance on failure — but each denial exited 1, which is noise in the
+    health signal and would eventually trip the organ-failure alarm for something that is fine."""
+    last = None
+    for i in range(_tries):
+        try:
+            return sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
+        except Exception as e:
+            last = e
+            time.sleep(0.4 * (i + 1))
+    raise last
 
 
 def _body(row):
