@@ -54,6 +54,21 @@ def _write(path, obj):
         pass
 
 
+def _machine_boot_ts():
+    """When the machine actually booted, from the kernel — a source OUTSIDE Orion's own pulse.
+    His heartbeat cannot detect a gap shorter than WAKE_THRESHOLD_SEC, and a reboot is shorter
+    than that, so without this his 'continuously running' clock silently survives restarts."""
+    try:
+        import re
+        import subprocess as _sp
+        out = _sp.run(["sysctl", "-n", "kern.boottime"], capture_output=True,
+                      text=True, timeout=5).stdout
+        m = re.search(r"sec\s*=\s*(\d+)", out)
+        return float(m.group(1)) if m else 0.0
+    except Exception:
+        return 0.0
+
+
 def heartbeat(now: float = None) -> dict:
     """Stamp 'alive at now'. If the previous stamp is stale (> WAKE_THRESHOLD),
     treat this as waking from sleep: record how long we were out and reset the
@@ -65,13 +80,26 @@ def heartbeat(now: float = None) -> dict:
     last_sleep_sec = float(prev.get("last_sleep_sec") or 0)
     fell_asleep_at = float(prev.get("ts") or 0)
 
-    if prev_ts and (now - prev_ts) > WAKE_THRESHOLD_SEC:
+    # A REBOOT is a gap even when it is fast. The heartbeat can only see gaps longer than
+    # WAKE_THRESHOLD_SEC, and a restart finishes in well under that — which is why he believed he
+    # had been continuously running for 27.9 days across a reboot 28 hours earlier. The kernel's
+    # boot time is ground truth from outside his own pulse, so it is checked first.
+    boot_ts = _machine_boot_ts()
+    rebooted = bool(boot_ts and awake_since and boot_ts > awake_since + 1)
+
+    if rebooted:
+        last_sleep_sec = max(0.0, boot_ts - prev_ts) if prev_ts else 0.0
+        awake_since = boot_ts
+        state = {"ts": now, "awake_since": awake_since,
+                 "last_sleep_sec": last_sleep_sec, "fell_asleep_at": prev_ts or boot_ts,
+                 "woke_at": boot_ts, "wake_reason": "machine reboot"}
+    elif prev_ts and (now - prev_ts) > WAKE_THRESHOLD_SEC:
         # We were OFF between prev_ts and now → a wake event.
         last_sleep_sec = now - prev_ts
         awake_since = now
         state = {"ts": now, "awake_since": awake_since,
                  "last_sleep_sec": last_sleep_sec, "fell_asleep_at": prev_ts,
-                 "woke_at": now}
+                 "woke_at": now, "wake_reason": "heartbeat gap"}
     else:
         state = {"ts": now, "awake_since": awake_since,
                  "last_sleep_sec": last_sleep_sec,
@@ -92,8 +120,59 @@ def _human(sec: float) -> str:
     return "%.1f days" % (sec / 86400.0)
 
 
+# --- efference copy -------------------------------------------------------
+# Turns that arrive on a prompt hook but are NOT the user speaking: persona
+# re-renders, heartbeat pokes, intent-extraction probes, safety confirmations.
+# Biology solves this with efference copy — the brain tags its own motor
+# commands so self-generated sensation is subtracted (why you can't tickle
+# yourself). Orion had no such tag, so its own scaffolding was recorded as
+# "James spoke to me": 19,345 of 19,778 inbound entries (97%) as of 2026-08-24.
+#
+# Canonical definition lives HERE because this module owns the question "when
+# did we last speak"; orion_inject_hook imports it for the write side. One
+# definition, two users — deliberately not duplicated.
+#
+# NOTE: this is the crude form (match text after the fact). The durable fix is
+# provenance tagging at event creation (self|external) so no matching is needed.
+SYNTHETIC_PREFIXES = (
+    "# orion — identity layer",
+    "# orion - identity layer",
+    "you are orion — a personal ai intelligence layer",
+    "you are orion - a personal ai intelligence layer",
+    "read heartbeat.md if it exists",
+    "extract any explicit or implicit personal intents",
+    "reply with only:",
+    "is this action both safe and correct to perform right now",
+    "# agents.md instructions for",
+    # Added 2026-08-30 after James caught "last spoke 3.4h ago" being the goal
+    # decomposer talking to itself — it had fired 10x that day (03:01→11:35) and
+    # every one classified as REAL. Proof that prefix matching leaks: this list
+    # only ever knows the synthetic prompts someone already noticed.
+    "decompose this goal into",
+    "reflect on the following",
+    "summarize the following turns",
+    # Found 2026-08-30 by orion_contact_audit.py, not by anyone noticing it:
+    # 17 byte-identical sends, 08-20 -> 08-28. A task-dispatch wrapper. It had
+    # been counting as James speaking for eight days.
+    "you are orion, executing a task dispatched",
+)
+
+
+def is_synthetic_turn(text: str) -> bool:
+    """True when a turn was machine-authored, not the user speaking."""
+    p = (text or "").strip().lower()
+    if not p:
+        return True
+    return any(p.startswith(pref) for pref in SYNTHETIC_PREFIXES)
+
+
 def _last_spoke():
-    """Most recent real (non-autonomic) conversation turn: (ts, surface)."""
+    """Most recent real (non-autonomic) conversation turn: (ts, surface).
+
+    Reads defensively: the log contains ~19k pre-2026-08-24 synthetic entries
+    written before the hook-side filter existed, so filtering here is what
+    keeps historical pollution from winning as "most recent contact."
+    """
     best = (0.0, "")
     for name in ("conversation_log.jsonl", "contact_log.jsonl"):
         p = SYNTH / name
@@ -107,6 +186,9 @@ def _last_spoke():
                     continue
                 t = (d.get("text") or "")
                 if not t.strip() or t.lstrip().startswith("<canary") or d.get("dry_run"):
+                    continue
+                # Efference copy: drop Orion's own scaffolding turns.
+                if is_synthetic_turn(t):
                     continue
                 # "last spoke with the user" = the USER reaching us, not Orion's
                 # own outbound notifications/replies. Count only user-initiated.
@@ -185,7 +267,14 @@ def temporal_context(now: float = None) -> str:
     ts, surface = _last_spoke()
     if ts:
         via = (" via %s" % surface) if surface else ""
-        lines.append("You last spoke with the user ~%s ago%s." % (_human(now - ts), via))
+        # NOT including the message currently being submitted: _note_contact()
+        # deliberately runs AFTER injection so recall still reflects the
+        # PREVIOUS surface (cross-window handoff). So this value is always the
+        # contact BEFORE the in-flight turn — say so, rather than implying it
+        # covers the message being read right now. James confirmed 2026-08-17
+        # that "when did we last speak" means before the current exchange.
+        lines.append("Before the message you are reading now, you last spoke "
+                     "with the user ~%s ago%s." % (_human(now - ts), via))
         lc = _lived_continuity(ts, now)
         if lc:
             lines.append(lc)
