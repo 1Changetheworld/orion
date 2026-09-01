@@ -655,6 +655,28 @@ def tick(dry=True):
                             stats["questions"] = stats.get("questions", 0) + len(qs)
                     except Exception:
                         pass
+        # Did he ADDRESS an open correction in this episode? Closure is judged on what he
+        # actually said, not on "understood" — and only closes with a stated change. Without
+        # this, nothing ever closes and the hook re-shows the same correction forever, which is
+        # the nagging James specifically did not want.
+        if not dry and d["decision"] in ("consolidate", "reinforce"):
+            try:
+                import orion_corrections as _C
+                _open = _C.open_items()
+                if _open:
+                    _said = " ".join(e.get("content", "") for e in ep["events"]
+                                     if e.get("provenance") == "self")
+                    if _said.strip() and cfg["allow_model"] and _budget_left(cfg) > 0:
+                        def _ask(p):
+                            import orion_fuel
+                            _spend(1)
+                            r, _e = orion_fuel.get_fuel(p, interface="correction-closure")
+                            return r
+                        for cid, change in _C.adjudicate_closure(_open, _said, _ask):
+                            if _C.mark_addressed(cid, change):
+                                d.setdefault("closed", []).append(change[:80])
+            except Exception:
+                pass
         if not dry:
             _log(d)
         else:

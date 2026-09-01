@@ -164,6 +164,49 @@ def block():
     return "\n".join(lines)
 
 
+def adjudicate_closure(open_items, orion_said, ask_model):
+    """Did he actually address any open correction, and what did he say he would change?
+
+    Judged on his words, never on his claim to understand — he has demonstrated that
+    acknowledging and adjusting are different things. ask_model(prompt) -> str is injected so this
+    module stays free of fuel imports and is testable without spending anything.
+    Returns [(correction_id, stated_change)]."""
+    if not open_items or not (orion_said or "").strip():
+        return []
+    nl = chr(10)
+    listing = nl.join("%d. %s" % (i + 1, (c.get("content") or "")[:200])
+                      for i, c in enumerate(open_items[:4]))
+    prompt = (
+        "James corrected Orion about the things below. Here is what Orion actually SAID "
+        "afterwards." + nl + nl +
+        "For each correction, decide whether Orion ADDRESSED it — meaning he stated what he is "
+        "doing DIFFERENTLY. Merely acknowledging it (\"understood\", \"noted\", \"won't happen "
+        "again\") is NOT addressing it." + nl + nl +
+        "Answer one line per addressed correction, exactly: <number>|<the change he committed to>"
+        + nl + "If none were addressed, answer NONE." + nl + nl +
+        "CORRECTIONS:" + nl + listing + nl + nl +
+        "WHAT ORION SAID:" + nl + (orion_said or "")[:2500])
+    try:
+        reply = ask_model(prompt) or ""
+    except Exception:
+        return []
+    if "none" in reply.strip().lower()[:8]:
+        return []
+    out = []
+    for line in reply.splitlines():
+        if "|" not in line:
+            continue
+        num, _, change = line.partition("|")
+        digits = "".join(ch for ch in num if ch.isdigit())
+        change = change.strip()
+        if not digits or len(change) < 8:
+            continue
+        idx = int(digits) - 1
+        if 0 <= idx < len(open_items[:4]):
+            out.append((open_items[idx]["id"], change[:220]))
+    return out
+
+
 if __name__ == "__main__":
     arg = sys.argv[1] if len(sys.argv) > 1 else "--list"
     if arg == "--list":
