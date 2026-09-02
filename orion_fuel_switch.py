@@ -99,13 +99,44 @@ INTENT_RE = re.compile(
 )
 
 
+# Phrases that SCOPE a model to some other use — research, background, spare cycles — rather than
+# asking Orion to speak on it. James said "use codex some as well" about his research and it
+# repinned his whole voice; he then said "switch back" twice and was ignored.
+SCOPE_QUALIFIERS = (
+    "as well", "some as", "for research", "for the research", "your research", "in your free",
+    "free time", "spare", "background", "idle", "when you", "if you", "maybe", "sometimes",
+    "conserve", "usage limit", "usage limits", "save claude", "don't use all", "dont use all",
+    "instead of using all", "for that", "for those",
+)
+
+# He asked for this twice and nothing happened, because "back" is not the name of a model.
+REVERT_RE = re.compile(
+    r"\b(?:switch|go|change|put\s+it|set\s+it|revert)\s+(?:it\s+)?back\b"
+    r"|\brevert\b|\bundo\s+that\b|\bback\s+to\s+(?:normal|default|auto)\b",
+    re.IGNORECASE,
+)
+
+
 def _detect_intent(text: str) -> tuple[str, str | None] | None:
-    """Returns (fuel, model_hint) if the message contains a fuel-switch
-    intent, else None."""
+    """Returns (fuel, model_hint) if the message is actually ASKING to change the model Orion
+    speaks on, else None.
+
+    A mention is not an instruction. "use codex some as well" scopes a model to research; it does
+    not ask him to answer James on it. Getting this wrong left him unable to reply at all."""
     if not text:
         return None
+    low = text.lower()
+    if REVERT_RE.search(low):
+        return FUEL_KEYWORDS.get("auto")
     m = INTENT_RE.search(text)
     if not m:
+        return None
+    # An explicit refusal always wins over a match earlier in the same message.
+    if "don't want" in low or "dont want" in low or "not for" in low:
+        return None
+    if any(q in low for q in SCOPE_QUALIFIERS):
+        logger.info("fuel mention SCOPED, not a switch (%r) — leaving preference alone",
+                    text[:90])
         return None
     keyword = m.group(1).lower().strip()
     return FUEL_KEYWORDS.get(keyword)
