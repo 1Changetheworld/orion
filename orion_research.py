@@ -314,19 +314,54 @@ def _get_claude_fuel() -> of.FuelAdapter | None:
     return adapter
 
 
+# Research is the biggest single consumer of fuel Orion has. Pinning it to
+# Claude burns the one subscription the interactive window also needs, so
+# unattended runs pick a different engine (usually codex) and leave Claude
+# for live work. (2026-09-01)
+_FUEL_CLASSES = {
+    "claude": "ClaudeCLIFuel",
+    "codex": "CodexCLIFuel",
+    "gemini": "GeminiCLIFuel",
+}
+FUEL_CHOICES = ("auto", "claude", "codex", "gemini")
+
+
+def get_fuel_adapter(name: str = "auto") -> of.FuelAdapter | None:
+    """Return a detected adapter for `name`, or None.
+
+    "auto" tries codex first, then gemini, then claude — cheapest-to-Orion
+    first, so autonomous research never starves the interactive window.
+    """
+    order = ["codex", "gemini", "claude"] if name == "auto" else [name]
+    for key in order:
+        cls_name = _FUEL_CLASSES.get(key)
+        if not cls_name or not hasattr(of, cls_name):
+            continue
+        adapter = getattr(of, cls_name)()
+        try:
+            if adapter.detect():
+                return adapter
+        except Exception:
+            continue
+    return None
+
+
 # ----------------------------------------------------------------------
 # Research loop
 # ----------------------------------------------------------------------
 
 def run_research(persona_key: str, topic: str, rounds: int = 3,
-                 progress=lambda s: None) -> list[Finding]:
+                 progress=lambda s: None, fuel: str = "claude",
+                 adapter: of.FuelAdapter | None = None) -> list[Finding]:
     if persona_key not in PERSONAS:
         raise ValueError(f"Unknown persona: {persona_key}. "
                          f"Known: {sorted(PERSONAS.keys())}")
 
-    adapter = _get_claude_fuel()
+    if adapter is None:
+        adapter = get_fuel_adapter(fuel)
     if not adapter:
-        raise RuntimeError("Claude CLI fuel not available — install claude and try again.")
+        raise RuntimeError(f"No fuel available for '{fuel}' — install the CLI and try again.")
+    progress(f"[{persona_key}] fuel: {adapter.name}")
 
     findings: list[Finding] = []
     for round_num in range(1, rounds + 1):
@@ -434,12 +469,14 @@ DEFAULT_TEAM = [
 
 
 def run_team(entries: list[tuple[str, str]], rounds: int = 3,
-             progress=print) -> list[tuple[str, str, list[Finding], tuple[Path, Path] | None]]:
+             progress=print, fuel: str = "claude",
+             ) -> list[tuple[str, str, list[Finding], tuple[Path, Path] | None]]:
     results = []
     for persona, topic in entries:
         progress(f"\n=== dispatching {persona} on: {topic[:80]} ===")
         try:
-            findings = run_research(persona, topic, rounds=rounds, progress=progress)
+            findings = run_research(persona, topic, rounds=rounds, progress=progress,
+                                    fuel=fuel)
         except Exception as e:
             progress(f"[{persona}] FAILED: {e.__class__.__name__}: {e}")
             results.append((persona, topic, [], None))
@@ -462,6 +499,9 @@ def main():
     p.add_argument("--team", action="store_true",
                    help="run the default three-persona team sequentially")
     p.add_argument("--list-personas", action="store_true")
+    p.add_argument("--fuel", default="claude", choices=list(FUEL_CHOICES),
+                   help="which engine fuels the research (default claude; "
+                        "auto = codex, then gemini, then claude)")
     args = p.parse_args()
 
     if args.list_personas:
@@ -472,7 +512,7 @@ def main():
     if args.team:
         def log(s: str):
             print(s, flush=True)
-        run_team(DEFAULT_TEAM, rounds=args.rounds, progress=log)
+        run_team(DEFAULT_TEAM, rounds=args.rounds, progress=log, fuel=args.fuel)
         return 0
 
     if not args.persona or not args.topic:
@@ -481,7 +521,8 @@ def main():
     def log(s: str):
         print(s, flush=True)
 
-    findings = run_research(args.persona, args.topic, rounds=args.rounds, progress=log)
+    findings = run_research(args.persona, args.topic, rounds=args.rounds, progress=log,
+                            fuel=args.fuel)
     md, jl = save_report(args.persona, args.topic, findings)
     print(f"\nReport: {md}")
     print(f"Raw:    {jl}")

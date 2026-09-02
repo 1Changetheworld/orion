@@ -150,9 +150,14 @@ class ClaudeCLIFuel(FuelAdapter):
 class CodexCLIFuel(FuelAdapter):
     name = "codex-cli"
     tier = 2
+    # Long-form unattended work (research rounds) needs far more than the
+    # interactive default; callers raise it per-instance. (2026-09-01)
+    timeout = 120
 
-    def __init__(self):
+    def __init__(self, timeout=None):
         self._path = None
+        if timeout:
+            self.timeout = timeout
 
     def detect(self):
         self._path = shutil.which("codex")
@@ -168,7 +173,7 @@ class CodexCLIFuel(FuelAdapter):
             # session 2026-04-21 MCP proof-of-life.
             result = subprocess.run(
                 [self._path, "exec", "--skip-git-repo-check", prompt],
-                capture_output=True, text=True, timeout=120
+                capture_output=True, text=True, timeout=self.timeout
             )
             if result.returncode == 0 and result.stdout.strip() and not _is_error_response(result.stdout):
                 return result.stdout.strip()

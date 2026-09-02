@@ -614,6 +614,45 @@ TOOLS = [
             "required": []
         }
     },
+    {
+        "name": "orion_sense_camera",
+        "description": (
+            "Capture a single frame from the host's webcam. Returns the image "
+            "as base64-encoded JPEG so the multimodal model can SEE. This is "
+            "Orion's first sensory input — a voluntary act of looking. Call "
+            "this when Orion wants to see what's happening in the physical "
+            "space, when the user asks 'what do you see', or when Orion is "
+            "curious about the environment. The capture is local-only; the "
+            "image never leaves the host machine except as context to the "
+            "model processing it."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "warmup": {
+                    "type": "number",
+                    "description": (
+                        "Seconds to let the camera auto-expose before capturing. "
+                        "Default 1.5. Increase in low light."
+                    ),
+                    "default": 1.5
+                },
+                "device": {
+                    "type": "string",
+                    "description": (
+                        "Camera device name. Leave empty for default camera. "
+                        "Use orion_sense_camera with list_devices=true to see options."
+                    )
+                },
+                "list_devices": {
+                    "type": "boolean",
+                    "description": "If true, list available cameras instead of capturing.",
+                    "default": False
+                }
+            },
+            "required": []
+        }
+    },
 ]
 
 
@@ -1349,6 +1388,52 @@ def _handle_orion_reach(args: dict) -> list:
                      f"message will arrive shortly."}]
 
 
+# ── orion_sense_camera handler ──────────────────────────────────
+def _handle_orion_sense_camera(args: dict):
+    """Capture a frame from the webcam using imagesnap, return as base64 JPEG."""
+    import subprocess, base64, tempfile, os, time
+
+    # List devices mode
+    if args.get("list_devices"):
+        result = subprocess.run(
+            ["imagesnap", "-l"], capture_output=True, text=True, timeout=10
+        )
+        return [{"type": "text", "text": result.stdout.strip() or result.stderr.strip()}]
+
+    warmup = args.get("warmup", 1.5)
+    device = args.get("device")
+
+    captures_dir = os.path.join(os.path.dirname(__file__), "senses", "captures")
+    os.makedirs(captures_dir, exist_ok=True)
+
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    filepath = os.path.join(captures_dir, f"frame_{timestamp}.jpg")
+
+    cmd = ["imagesnap", "-w", str(warmup), filepath]
+    if device:
+        cmd.extend(["-d", device])
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0 or not os.path.isfile(filepath):
+            return [{"type": "text",
+                     "text": f"Capture failed: {result.stderr.strip() or 'no output file produced'}"}]
+
+        with open(filepath, "rb") as f:
+            img_bytes = f.read()
+
+        img_b64 = base64.b64encode(img_bytes).decode("ascii")
+
+        return [
+            {"type": "text", "text": f"Captured frame saved to {filepath} ({len(img_bytes)} bytes)"},
+            {"type": "image", "data": img_b64, "mimeType": "image/jpeg"}
+        ]
+    except subprocess.TimeoutExpired:
+        return [{"type": "text", "text": "Capture timed out after 30s. Is the camera available?"}]
+    except Exception as e:
+        return [{"type": "text", "text": f"Capture error: {e}"}]
+
+
 # Handler dispatch table
 _HANDLERS = {
     # Unified tool surface (matches orion_tools.py)
@@ -1370,6 +1455,8 @@ _HANDLERS = {
     "orion_reach": _handle_orion_reach,
     "orion_empathy_explain": _handle_orion_empathy_explain,
     "orion_federation_identity": _handle_orion_federation_identity,
+    # Senses
+    "orion_sense_camera": _handle_orion_sense_camera,
 }
 
 
