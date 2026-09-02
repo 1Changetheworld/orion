@@ -246,9 +246,17 @@ def _lived_continuity(since_ts: float, now: float) -> str:
 def temporal_context(now: float = None) -> str:
     """Compact temporal frame for injection into a model turn."""
     now = now if now is not None else time.time()
-    local = time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(now)).strip()
+    local = time.strftime("%A %Y-%m-%d %H:%M %Z", time.localtime(now)).strip()
     st = _read(ALIVE_FILE)
-    lines = ["Current time: %s." % local]
+    # Give him the weekday outright. He got it wrong twice (2026-08-31 and 09-01), and studying
+    # Zeller's congruence in between did not help, because he was never computing it — the frame
+    # gave a bare numeric date and he GENERATED the day name. Named days are ground truth here;
+    # yesterday/tomorrow are spelled out so no arithmetic is required for the common questions.
+    _y = time.strftime("%A", time.localtime(now - 86400))
+    _t = time.strftime("%A %Y-%m-%d", time.localtime(now + 86400))
+    lines = ["Current time: %s." % local,
+             "Yesterday was %s; tomorrow is %s. Use these names as given — do not derive the "
+             "day of the week yourself." % (_y, _t)]
 
     awake_since = float(st.get("awake_since") or 0)
     last_sleep = float(st.get("last_sleep_sec") or 0)
