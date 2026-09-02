@@ -257,6 +257,13 @@ _probe_state: dict[str, dict] = {}
 # from the FIRST failure: 5min, 30min, 2hr, 24hr. After that, silent.
 _BACKOFF_SCHEDULE_SEC = [300, 1800, 7200, 86400]
 
+# A failure must PERSIST this long before James hears about it. Self-heal repairs most transient
+# faults in 60-80s; on 2026-09-02 alerting on the first failed probe sent him six messages about
+# three blips that were already fixed, each carrying a 4-step SSH procedure. Silence is the
+# correct output for a problem that resolves itself.
+ALERT_GRACE_SEC = float(os.environ.get("ORION_CANARY_ALERT_GRACE", "180"))
+
+
 
 def _should_alert(name: str, ok: bool, now: float) -> tuple[bool, str]:
     """Returns (should_emit_alert, transition_kind).
@@ -269,18 +276,34 @@ def _should_alert(name: str, ok: bool, now: float) -> tuple[bool, str]:
 
     if ok:
         if last is False:
-            transition = "fail_to_ok"
-            emit = True
+            # Only worth mentioning a recovery if the failure was ever announced. Self-heal
+            # repairs most blips in ~60-80s; telling James it is fixed when he was never told it
+            # broke is two messages about nothing.
+            if state.get("alerted"):
+                transition = "fail_to_ok"
+                emit = True
             state["fail_count"] = 0
             state["alert_idx"] = 0
             state["first_fail_ts"] = 0.0
+            state["alerted"] = False
     else:
         if last is not False:
-            transition = "ok_to_fail"
-            emit = True
+            # FIRST failure: start the clock, say NOTHING yet. Alerting here is what produced six
+            # messages on 2026-09-02 about three blips that self-healed inside 81 seconds, each
+            # with a 4-step SSH procedure attached. A problem that fixes itself before he can read
+            # the message was never his to act on.
+            transition = "none"
+            emit = False
             state["first_fail_ts"] = now
             state["fail_count"] = 1
             state["alert_idx"] = 0
+            state["alerted"] = False
+        elif not state.get("alerted") and (now - state.get("first_fail_ts", now)) >= ALERT_GRACE_SEC:
+            # Still broken after the grace window — now it is real, and worth his attention.
+            transition = "ok_to_fail"
+            emit = True
+            state["alerted"] = True
+            state["fail_count"] += 1
         else:
             state["fail_count"] += 1
             # Sustained — only emit if we've hit the next backoff threshold
