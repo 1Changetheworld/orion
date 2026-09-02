@@ -260,6 +260,16 @@ def main() -> int:
                 blocks.append(_sb)
         except Exception:
             pass
+        # What he can actually DO right now, learned from acting. A mirror, never a gate: it
+        # forbids nothing, it only stops him claiming capabilities from memory ("I don't have
+        # Blackboard access" -> twelve minutes -> "already verified, full access").
+        try:
+            import orion_capabilities
+            _cb = orion_capabilities.block()
+            if _cb:
+                blocks.append(_cb)
+        except Exception:
+            pass
         try:
             import orion_corrections
             _cb = orion_corrections.block()

@@ -79,10 +79,21 @@ def _conn(_tries=3):
     last = None
     for i in range(_tries):
         try:
-            return sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
+            conn = sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
+            try:
+                import orion_capabilities
+                orion_capabilities.record("imessage_read", True, "chat.db opened")
+            except Exception:
+                pass
+            return conn
         except Exception as e:
             last = e
             time.sleep(0.4 * (i + 1))
+    try:
+        import orion_capabilities
+        orion_capabilities.record("imessage_read", False, str(last)[:90])
+    except Exception:
+        pass
     raise last
 
 

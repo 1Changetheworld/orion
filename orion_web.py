@@ -170,6 +170,13 @@ def fetch(url, _depth=0, want_raw=False):
         except Exception:
             pass
     text = _strip_html(raw)[:MAX_TEXT]
+    # The fetch already knows whether the web is reachable — record it instead of discarding it.
+    try:
+        import orion_capabilities
+        orion_capabilities.record("web", True, "fetched %s" %
+                                  (urllib.parse.urlparse(url).hostname or "")[:40])
+    except Exception:
+        pass
     flags = _scan_injection(text)
     quarantined = len(flags) >= QUARANTINE_AT
     _capture(url, text, quarantined, flags)

@@ -91,6 +91,18 @@ def push(question, source="conversation", why=""):
     d["open"].append({"q": q, "source": source, "why": why[:200], "ts": time.time()})
     d["open"] = d["open"][-MAX_OPEN:]
     _save(d)
+    # THE QUESTION IS THE TRIGGER. Study used to run on a 20-minute timer and mostly find nothing;
+    # now it fires because something was actually asked. Detached and fire-and-forget: raising a
+    # question must never block on answering it, and a failure to launch must never lose the
+    # question — it stays queued either way.
+    try:
+        import subprocess as _sp
+        _log = open(os.path.expanduser("~/.orion/study.out"), "a")
+        _sp.Popen(["/usr/bin/python3", os.path.expanduser("~/orion-code/orion_study.py"),
+                   "--auto"], cwd=os.path.expanduser("~/orion-code"),
+                  stdout=_log, stderr=_log, start_new_session=True)
+    except Exception:
+        pass
     return True
 
 

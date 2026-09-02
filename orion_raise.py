@@ -191,6 +191,13 @@ def confirm_or_retry(now=None):
         if x.get("raised") or not x.get("sent_at"):
             continue
         if _sent_outbound_since(x["text"], x["sent_at"] - 60):
+            # Proof from Apple's own record that he can reach James — the strongest capability
+            # evidence available, and it costs nothing because we already looked.
+            try:
+                import orion_capabilities
+                orion_capabilities.record("imessage_send", True, "delivery confirmed in chat.db")
+            except Exception:
+                pass
             x["raised"] = True
             x["how"] = "reach-confirmed"
             x["raised_ts"] = now
