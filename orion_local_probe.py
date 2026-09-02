@@ -27,6 +27,8 @@ Claude all along. Both answers are worth having, and nobody has run this.
                                            measurable value of the graph. Judge it yourself.
   --ask "<question>" [--model ...]         one answer, with his brain
   --compare "<question>"                   same context, every local model, side by side
+  --chat [--model ...]                     TALK to him, brain loaded
+  --chat --nobrain [--model ...]           talk to the SAME model with nothing loaded
   --models                                 what is installed
 """
 from __future__ import annotations
@@ -87,6 +89,54 @@ def compose(question):
     return "\n\n".join(parts)
 
 
+def chat(model=DEFAULT_MODEL, use_brain=True):
+    """A real back-and-forth conversation with a local model, brain on or off.
+
+    Same harness both ways so the ONLY variable is the brain. History is kept so it is an actual
+    conversation rather than a series of one-shots, and with the brain on, memory is re-recalled
+    against each new question — recall should follow the conversation, not be frozen at the start.
+    """
+    nl = chr(10)
+    banner = "WITH HIS BRAIN" if use_brain else "WITHOUT HIS BRAIN (bare model)"
+    print("=" * 70)
+    print("  %s   model: %s" % (banner, model))
+    print("  type your message and press enter.  'exit' to quit.")
+    print("=" * 70)
+    history = []
+    while True:
+        try:
+            q = input(nl + "you> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if not q:
+            continue
+        if q.lower() in ("exit", "quit", ":q"):
+            return
+        if use_brain:
+            prompt = compose(q)
+            if history:
+                prompt = (prompt + nl + nl + "Earlier in this conversation:" + nl
+                          + nl.join(history[-6:]))
+        else:
+            prompt = (nl.join(history[-6:]) + nl + q) if history else q
+        body = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
+        req = urllib.request.Request(OLLAMA + "/api/generate", data=body,
+                                     headers={"Content-Type": "application/json"})
+        t0 = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                d = json.loads(resp.read())
+        except Exception as e:
+            print("  [model error: %s]" % str(e)[:90])
+            continue
+        reply = (d.get("response") or "").strip()
+        print(nl + "orion> " + reply if use_brain else nl + "model> " + reply)
+        print("  [%.0fs, %d chars sent]" % (time.time() - t0, len(prompt)))
+        history.append("James: " + q)
+        history.append("Reply: " + reply[:400])
+
+
 def bare(question, model=DEFAULT_MODEL, timeout=180):
     """The SAME model with NO brain — no identity, no memory, no self-facts. The control arm.
     Whatever the brain is worth shows up as the difference between this and ask()."""
@@ -125,13 +175,17 @@ def _models():
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if not args or args[0] not in ("--ask", "--compare", "--ab", "--models"):
+    if not args or args[0] not in ("--ask", "--compare", "--ab", "--models", "--chat"):
         print(__doc__)
         sys.exit(0)
     q = args[1] if len(args) > 1 else "Who are you?"
     model = DEFAULT_MODEL
     if "--model" in args:
         model = args[args.index("--model") + 1]
+
+    if args[0] == "--chat":
+        chat(model, use_brain=("--nobrain" not in args))
+        sys.exit(0)
 
     if args[0] == "--models":
         for m in _models():
