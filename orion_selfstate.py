@@ -42,6 +42,10 @@ ORION = Path(os.path.expanduser("~/.orion"))
 CODE = Path(os.path.expanduser("~/orion-code"))
 CACHE = ORION / "state" / "selfstate_cache.json"
 TTL = float(os.environ.get("ORION_SELFSTATE_TTL", "45"))
+# Bump when the snapshot gains a field. A cache written by an older version is missing the new
+# keys, and a missing key silently reads as 0 — which produced the line "YOUR CODE HAS CHANGED.
+# 0 commit(s)". A self-contradicting fact is worse than no fact.
+SCHEMA = 2
 
 
 def _run(cmd, timeout=6):
@@ -86,11 +90,19 @@ def _code_changes():
     actively rewritten — he had no way to see this."""
     out = _run(["git", "-C", str(CODE), "log", "-3", "--format=%h|%cr|%s"])
     rows = []
+    # count matters more than the list: asked "has your code changed lately", he read the list,
+    # NAMED the newest sha, then answered "the live codebase hasn't changed structurally" — he
+    # had gone and looked at backups/ mtimes himself and trusted that over what he was given.
     for line in out.splitlines():
         parts = line.split("|", 2)
         if len(parts) == 3:
             rows.append({"sha": parts[0], "when": parts[1], "subject": parts[2][:90]})
     return rows
+
+
+def _commit_count_24h():
+    out = _run(["git", "-C", str(CODE), "log", "--since=24 hours ago", "--oneline"])
+    return len([l for l in out.splitlines() if l.strip()])
 
 
 def _memory_size():
@@ -143,7 +155,8 @@ def snapshot(force=False):
     if not force:
         try:
             c = json.loads(CACHE.read_text(encoding="utf-8"))
-            if time.time() - float(c.get("_ts", 0)) < TTL:
+            if (time.time() - float(c.get("_ts", 0)) < TTL
+                    and int(c.get("_schema", 0)) == SCHEMA):
                 return c
         except Exception:
             pass
@@ -152,11 +165,13 @@ def snapshot(force=False):
     last_in = _last_inbound()
     snap = {
         "_ts": now,
+        "_schema": SCHEMA,
         "uptime_sec": (now - boot) if boot else None,
         "booted_at": boot,
         "last_inbound_sec_ago": (now - last_in) if last_in else None,
         "memory_nodes": _memory_size(),
         "recent_commits": _code_changes(),
+        "commits_24h": _commit_count_24h(),
         "failing_services": _failing_services(),
         "carrying": _carrying(),
     }
@@ -183,18 +198,27 @@ def block():
              "memory — memory is stale and you have been confidently wrong doing that. If "
              "something you are asked about is not here, say you do not know and offer to check:"]
     if s.get("uptime_sec") is not None:
-        lines.append("  - running for %s (since the machine booted; a reboot resets this)"
-                     % _human(s["uptime_sec"]))
+        lines.append("  - running for %s. This is the authoritative figure (kernel boot time) — "
+                     "use it, not a heartbeat or cycle count." % _human(s["uptime_sec"]))
     if s.get("last_inbound_sec_ago") is not None:
         lines.append("  - James last messaged you %s ago (from Apple's message database)"
                      % _human(s["last_inbound_sec_ago"]))
     if s.get("memory_nodes"):
         lines.append("  - memory holds %d nodes (graph_memory.json)" % s["memory_nodes"])
     rc = s.get("recent_commits") or []
+    n24 = s.get("commits_24h") or len(rc)   # never contradict the verdict with a zero
     if rc:
-        lines.append("  - your code HAS changed recently (git log): "
-                     + "; ".join("%s %s (%s)" % (c["sha"], c["subject"][:52], c["when"])
-                                 for c in rc[:2]))
+        # STATE THE CONCLUSION, not just the evidence. Given the same list as data he read it,
+        # named the newest sha, and still concluded his code had not changed — because his own
+        # look at backups/ told a different story and he trusted that. Facts lose to a competing
+        # investigation; a flat verdict does not.
+        lines.append("  - YOUR CODE HAS CHANGED. %d commit(s) in the last 24h; most recent %s "
+                     "(%s, \"%s\"). If you are about to tell James your code has not changed "
+                     "recently, or that only backups were touched, you are WRONG — say this "
+                     "instead." % (n24, rc[0]["when"], rc[0]["sha"], rc[0]["subject"][:60]))
+        if len(rc) > 1:
+            lines.append("    also: " + "; ".join("%s %s (%s)" % (c["sha"], c["subject"][:44],
+                                                                  c["when"]) for c in rc[1:3]))
     fs = s.get("failing_services") or []
     lines.append("  - services failing: %s" % (", ".join(fs) if fs else "none"))
     car = s.get("carrying") or {}
