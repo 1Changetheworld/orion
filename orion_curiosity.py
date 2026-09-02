@@ -244,6 +244,35 @@ def _bounds(topic):
     return DELTA_BOUNDS.get(topic, (1e-3, 1e6))
 
 
+def _feed_metacog(row, topic):
+    """Hand a resolved prediction to the calibration ledger.
+
+    Metacognition had 3,350 lived decisions with ZERO failures and 94% of calibration_delta None,
+    because callers rarely pass conf_before and nothing ever reports failing. Curiosity has been
+    generating the missing pairs all along — a prior, and a verdict settled by reality — and
+    discarding them. A refuted prediction is a genuine, automatic, unarguable failure signal.
+
+    symptom_class groups by topic FAMILY (james / graph / svc / mod) so the ledger's similarity
+    match can accumulate a calibration history per kind of claim rather than per individual bet.
+    Never raises: calibration is a nice-to-have, and it must not break the learning loop it feeds."""
+    try:
+        import orion_metacognition as _mc
+        prior = row.get("prior")
+        if not isinstance(prior, (int, float)):
+            return
+        family = topic.split(":", 1)[0]
+        _mc.record_outcome(
+            "predict %s" % topic,
+            "succeeded" if row.get("status") == "confirmed" else "failed",
+            symptom="prediction:%s" % family,
+            conf_before=float(prior),
+            fuel="native",
+            decision_id="curio-%s" % str(row.get("id") or row.get("made_ts") or "")[:24],
+        )
+    except Exception:
+        pass
+
+
 def learn(model):
     """Ingest predictions resolved since last learn into per-topic hit-windows, THEN nudge each
     touched topic's delta ONCE (based on its recent hit-rate) — not once per outcome (that
@@ -272,6 +301,7 @@ def learn(model):
             continue
         newmax = max(newmax, rts)
         topic = str(r["key"])[len(KEY_PREFIX):]
+        _feed_metacog(r, topic)
         m = model.setdefault(topic, {"delta": 1.0, "hits": [], "n": 0})
         m["hits"] = (m.get("hits", []) + [1 if r["status"] == "confirmed" else 0])[-20:]
         m["n"] = m.get("n", 0) + 1
