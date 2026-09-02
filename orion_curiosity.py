@@ -104,6 +104,58 @@ def _commit(topic, label, claim, obs, check, horizon, prior):
     return (topic, check)
 
 
+# ── James's world ─────────────────────────────────────────────────────────────────────────────
+_STOP = set(("about", "after", "again", "could", "would", "should", "there", "their", "these",
+             "those", "which", "while", "where", "still", "thing", "things", "right", "going",
+             "doing", "being", "because", "before", "between", "everything", "something",
+             "anything", "orion", "sir", "please", "thanks", "today", "tomorrow", "yesterday",
+             "tonight", "morning", "night", "know", "think", "want", "need", "make", "made",
+             "have", "here", "what", "when", "your", "with", "that", "this", "from", "just",
+             "like", "does", "isnt", "dont", "cant", "wont", "didnt", "youre", "thats"))
+
+
+def _james_recent(hours=72, limit=60):
+    """His actual words, from Apple's database. Never his own — only what James wrote."""
+    import sqlite3
+    out = []
+    try:
+        db = os.path.expanduser("~/Library/Messages/chat.db")
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+        apple = (time.time() - hours * 3600 - 978307200) * 1e9
+        rows = con.execute("SELECT text, attributedBody FROM message WHERE is_from_me=0 "
+                           "AND date >= ? ORDER BY ROWID DESC LIMIT ?", (apple, limit))
+        for r in rows:
+            t = r[0]
+            if not t and r[1] is not None:
+                try:
+                    sys.path.insert(0, os.path.expanduser("~/server_data/agents"))
+                    from imessage_monitor import _decode_attributed
+                    t = _decode_attributed(r[1])
+                except Exception:
+                    t = None
+            if t:
+                out.append(t)
+        con.close()
+    except Exception:
+        return []
+    return out
+
+
+def _james_topics(k=2):
+    """Words he is actually using — the candidates for 'will he come back to this?'. Frequency
+    alone, deliberately: a cleverer selector would be another thing to be wrong about, and the
+    prediction being wrong is the point."""
+    import collections
+    import re as _re
+    counts = collections.Counter()
+    for msg in _james_recent():
+        for w in _re.findall(r"[a-zA-Z]{5,}", msg.lower()):
+            if w not in _STOP:
+                counts[w] += 1
+    # something he said more than once, but not so constant it is a certainty
+    return [w for w, n in counts.most_common(12) if 2 <= n <= 8][:k]
+
+
 def predict(model, horizon_hours: float = 2.0):
     h = _snap()
     made = []
@@ -151,6 +203,29 @@ def predict(model, horizon_hours: float = 2.0):
                     ["neuromod", m], f"neuromod:{m} {op} {thr}", horizon_hours, prior=0.4)
         if r: made.append(r)
 
+    # ── JAMES'S WORLD — the only genuinely uncertain, genuinely learnable thing he has ──
+    now_ts = time.time()
+    try:
+        d = _topic_delta(model, "james:contact", 6.0)      # delta is HOURS here, not magnitude
+        r = _commit("james:contact",
+                    "James will message me within %.0fh" % d,
+                    "James sends at least one message in the next %.0fh (learned window)." % d,
+                    ["james", "contact"],
+                    "james:msgs_since:%f >= 1" % now_ts, d, prior=0.5)
+        if r:
+            made.append(r)
+        for w in _james_topics(2):
+            dw = _topic_delta(model, "james:topic:%s" % w, 24.0)
+            r = _commit("james:topic:%s" % w,
+                        "James will bring up '%s' again within %.0fh" % (w, dw),
+                        "James mentions '%s' at least once in the next %.0fh." % (w, dw),
+                        ["james", "topic", w],
+                        "james:mentions:%s:since:%f >= 1" % (w, now_ts), dw, prior=0.4)
+            if r:
+                made.append(r)
+    except Exception:
+        pass
+
     _save(MODEL, model)
     return made
 
@@ -164,6 +239,8 @@ def _bounds(topic):
         return DELTA_BOUNDS["mod"]
     if topic.startswith("svc:"):
         return DELTA_BOUNDS["svc"]
+    if topic.startswith("james:"):
+        return (0.5, 168.0)          # hours: half an hour to a week
     return DELTA_BOUNDS.get(topic, (1e-3, 1e6))
 
 
@@ -207,10 +284,15 @@ def learn(model):
         rate = sum(hits) / len(hits)
         lo, hi = _bounds(topic)
         d = min(hi, max(lo, float(m.get("delta", lo))))
+        # For a machine topic delta is a MAGNITUDE (missing = bet too big -> shrink). For a
+        # james: topic it is a HORIZON (missing = did not wait long enough -> GROW). Same loop,
+        # opposite sign; getting this backwards would train the window toward zero and guarantee
+        # he is always wrong.
+        horizon = topic.startswith("james:")
         if rate < TARGET_HIT - 0.05:
-            d = max(lo, d * 0.85)          # missing -> easier bet
+            d = min(hi, d * 1.25) if horizon else max(lo, d * 0.85)
         elif rate > TARGET_HIT + 0.05:
-            d = min(hi, d * 1.15)          # too easy -> harder bet
+            d = max(lo, d * 0.85) if horizon else min(hi, d * 1.15)
         m["delta"] = d
         # deterministic / unlearnable? (stuck at a rail despite calibration) -> abandon it
         m["mastered"] = (len(hits) >= 8 and (rate >= 0.92 or rate <= 0.08))

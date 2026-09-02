@@ -50,6 +50,58 @@ def _now() -> float:
 
 
 # ───────────────────────── PROBES (causally-independent reality) ─────────────────────────
+# ── James's world: live, model-independent, settled by Apple's own database ────────────────
+_CHATDB = os.path.expanduser("~/Library/Messages/chat.db")
+
+
+def _james_probe(expr):
+    """Readings about James rather than about Orion's own machine. Returns None (not 0) when the
+    database cannot be read, so an unreadable source is never mistaken for 'nothing happened' —
+    a failed read that scored as zero would teach him a lie."""
+    import sqlite3
+    con = sqlite3.connect("file:%s?mode=ro" % _CHATDB, uri=True)
+    try:
+        if expr == "james:hours_since_contact":
+            row = con.execute("SELECT MAX(date) FROM message WHERE is_from_me=0").fetchone()
+            if not row or not row[0]:
+                return None
+            last = row[0] / 1e9 + 978307200
+            return (time.time() - last) / 3600.0
+        if expr.startswith("james:msgs_since:"):
+            since = float(expr.split(":", 2)[2])
+            apple = (since - 978307200) * 1e9
+            row = con.execute("SELECT COUNT(*) FROM message WHERE is_from_me=0 AND date >= ?",
+                              (apple,)).fetchone()
+            return float(row[0]) if row else None
+        if expr.startswith("james:mentions:"):
+            # james:mentions:<word>:since:<ts>
+            rest = expr[len("james:mentions:"):]
+            word, _, tail = rest.partition(":since:")
+            since = float(tail)
+            apple = (since - 978307200) * 1e9
+            n = 0
+            for r in con.execute("SELECT text, attributedBody FROM message "
+                                 "WHERE is_from_me=0 AND date >= ?", (apple,)):
+                t = r[0]
+                if not t and r[1] is not None:
+                    try:
+                        import sys as _s
+                        _s.path.insert(0, os.path.expanduser("~/server_data/agents"))
+                        from imessage_monitor import _decode_attributed
+                        t = _decode_attributed(r[1])
+                    except Exception:
+                        t = None
+                if t and word.lower() in t.lower():
+                    n += 1
+            return float(n)
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    return None
+
+
 def _probe(expr: str):
     """Return a float reading of one live, model-independent stream, or None if unavailable.
     Vocabulary:
@@ -60,6 +112,8 @@ def _probe(expr: str):
       service:<launchd-label>:running   -> 1.0 if state==running else 0.0
     """
     try:
+        if expr.startswith("james:"):
+            return _james_probe(expr)
         if expr == "graph:nodes":
             n = json.load(GRAPH_FILE.open())["nodes"]
             return float(len(n if isinstance(n, list) else n.values()))
