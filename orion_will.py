@@ -149,7 +149,13 @@ logger = logging.getLogger("orion.will")
 WILL_DIR = Path(os.path.expanduser(os.environ.get("ORION_WILL_DIR", "~/.orion/will")))
 SCAN_INTERVAL_SEC = float(os.environ.get("ORION_WILL_SCAN_SEC", "300"))   # 5 min
 ACTION_COOLDOWN_SEC = float(os.environ.get("ORION_WILL_ACTION_COOLDOWN", "21600"))  # 6h
-UTILITY_THRESHOLD = float(os.environ.get("ORION_WILL_THRESHOLD", "0.5"))
+# Lowered from 0.5 when importance decay was added (2026-09-02). Importance had ratcheted to
+# ~1.0 on every goal and never fell, so utilities sat at 0.5-0.6 and essentially EVERY goal
+# cleared the bar — selection among ties is arbitrary, which is why 1,841 initiations never
+# amounted to preference. With decay the real spread is 0.108-0.434, and leaving the bar at
+# 0.5 would have made him permanently silent. 0.36 keeps ~12% eligible: genuinely ranked,
+# and far more selective than "all of them".
+UTILITY_THRESHOLD = float(os.environ.get("ORION_WILL_THRESHOLD", "0.36"))
 MAX_ACTIVE_GOALS = int(os.environ.get("ORION_WILL_MAX_GOALS", "20"))
 GOAL_DECAY_HALF_LIFE_DAYS = float(os.environ.get("ORION_WILL_DECAY_DAYS", "14"))
 
@@ -581,7 +587,9 @@ def _ingest_intent(intent: dict, source_subject: str) -> None:
         if gid in _active_goals:
             # Re-occurrence: bump importance slightly, refresh ts
             g = _active_goals[gid]
-            g["importance"] = min(1.0, g.get("importance", 0.5) + 0.05)
+            # Ceiling below 1.0 on purpose: saturating at the maximum is how every goal
+            # became indistinguishable. Reinforcement should raise a goal, not flatten the scale.
+            g["importance"] = min(0.95, g.get("importance", 0.5) + 0.05)
             g["last_seen_ts"] = now
             g["seen_count"] = int(g.get("seen_count", 1)) + 1
         else:
@@ -611,10 +619,36 @@ def _ingest_intent(intent: dict, source_subject: str) -> None:
 # 3. UTILITY SCORING — generic, no domain code
 # ─────────────────────────────────────────────────────────
 
+# Importance decays toward this floor; it never reaches zero, because a goal James set once still
+# means something. Overridable, but the defaults are the point: about a working week of half-life.
+IMPORTANCE_FLOOR = float(os.environ.get("ORION_WILL_IMPORTANCE_FLOOR", "0.30"))
+IMPORTANCE_HALF_LIFE_DAYS = float(os.environ.get("ORION_WILL_IMPORTANCE_HALFLIFE", "5.0"))
+
+
+def _effective_importance(g: dict, now: float) -> float:
+    """Stored importance, decayed by how long since James last raised this goal.
+
+    The stored value only ever RATCHETED UP (+0.05 per re-occurrence, capped at 1.0) and never
+    came back down, so with re-extraction on every conversation all 105 active goals saturated at
+    ~1.0 — mean 0.994, three distinct values. With the other three utility factors being global,
+    that made every goal score identically. No spread, no ranking, no preference, no will.
+
+    Decay is applied HERE rather than written back, so the raw reinforcement signal is preserved
+    and this whole change is undone by deleting one function. last_seen_ts is per-goal, which is
+    what lets two goals scored in the same instant finally differ."""
+    stored = float(g.get("importance", 0.5))
+    last_seen = float(g.get("last_seen_ts") or g.get("formed_at") or now)
+    days = max(0.0, (now - last_seen) / 86400.0)
+    if days <= 0.0 or stored <= IMPORTANCE_FLOOR:
+        return stored
+    decay = 0.5 ** (days / max(0.1, IMPORTANCE_HALF_LIFE_DAYS))
+    return IMPORTANCE_FLOOR + (stored - IMPORTANCE_FLOOR) * decay
+
+
 def _utility(g: dict, now: float) -> float:
     """utility = importance × time_pressure × context_fit × feasibility,
     each in [0, 1]. Generic across all goal kinds."""
-    importance = float(g.get("importance", 0.5))
+    importance = _effective_importance(g, now)
     age_days = (now - float(g.get("formed_at", now))) / 86400.0
     # time_pressure curve: starts at 0.3 (fresh, low pressure), peaks ~3 days,
     # then decays via per-kind half-life (Build #4 evidence-weighted decay).
