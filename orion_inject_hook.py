@@ -249,6 +249,17 @@ def main() -> int:
     # the correction sitting in his graph the whole time. Storage is not steering; being in front
     # of him at the moment he speaks is. Only when JAMES is talking, never for his own scaffolding.
     if _prov == "external":
+        # VERIFIED SELF-FACTS FIRST. He generates answers about himself and has been confidently
+        # wrong — 27.9 days uptime across a reboot 28h earlier, "no code changes since 8/20" while
+        # being rewritten, a detailed stale-timestamp bug that was not happening. Ground truth has
+        # to be present before he composes, not discovered afterwards.
+        try:
+            import orion_selfstate
+            _sb = orion_selfstate.block()
+            if _sb:
+                blocks.append(_sb)
+        except Exception:
+            pass
         try:
             import orion_corrections
             _cb = orion_corrections.block()
