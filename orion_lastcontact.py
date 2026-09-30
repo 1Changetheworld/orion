@@ -163,59 +163,55 @@ def _flush_to_graph() -> None:
     if not GRAPH_PATH.exists():
         return
 
-    try:
-        graph = json.loads(GRAPH_PATH.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.warning("graph read failed: %s", e)
-        return
-
-    nodes = graph.setdefault("nodes", {})
-    existing_id = None
-    for nid, n in nodes.items():
-        if (n.get("type") == CONTACT_NODE_TYPE
-                and "last_seen" in (n.get("tags") or [])):
-            existing_id = nid
-            break
-
     content = (
         f"Last cross-interface contact: {event['iso']} "
         f"via {event['channel']} ({event['direction']})."
         + (f" Sender/recipient: {event['sender']}" if event['sender'] else "")
         + (f" Excerpt: {event['text'][:140]!r}" if event['text'] else "")
     )
-
     now = time.time()
-    if existing_id is not None:
-        n = nodes[existing_id]
-        n["content"] = content
-        n["last_confirmed_at"] = now
-        n["last_seen"] = now
-        n["confidence"] = 1.0
-        n["recall_count"] = int(n.get("recall_count", 0))
-    else:
-        new_id = str(graph.get("next_id", len(nodes)))
-        graph["next_id"] = int(new_id) + 1
-        nodes[new_id] = {
-            "content": content,
-            "type": CONTACT_NODE_TYPE,
-            "confidence": 1.0,
-            "tags": list(CONTACT_NODE_TAGS),
-            "created": now,
-            "last_confirmed_at": now,
-            "aliases": [],
-            "summary": "tracks the most recent cross-interface contact",
-            "last_seen": now,
-        }
 
-    try:                                        # write recorder: observe, never block
-        import orion_graph_io
-        orion_graph_io.record_write(GRAPH_PATH, graph, reason="lastcontact: contact node")
-    except Exception:
-        pass
+    # Find-or-create INSIDE the graph lock on a fresh read, then an atomic replace.
+    # The old read-whole-file / write_text() pattern erased any write that landed between
+    # its read and write, and truncated the file first — readers saw an empty brain in
+    # that instant. (2026-09-30)
+    def _upsert(graph):
+        nodes = graph.setdefault("nodes", {})
+        existing_id = None
+        for nid, n in nodes.items():
+            if (n.get("type") == CONTACT_NODE_TYPE
+                    and "last_seen" in (n.get("tags") or [])):
+                existing_id = nid
+                break
+        if existing_id is not None:
+            n = nodes[existing_id]
+            n["content"] = content
+            n["last_confirmed_at"] = now
+            n["last_seen"] = now
+            n["confidence"] = 1.0
+            n["recall_count"] = int(n.get("recall_count", 0))
+        else:
+            new_id = str(graph.get("next_id", len(nodes)))
+            graph["next_id"] = int(new_id) + 1
+            nodes[new_id] = {
+                "content": content,
+                "type": CONTACT_NODE_TYPE,
+                "confidence": 1.0,
+                "tags": list(CONTACT_NODE_TAGS),
+                "created": now,
+                "last_confirmed_at": now,
+                "aliases": [],
+                "summary": "tracks the most recent cross-interface contact",
+                "last_seen": now,
+            }
+        return True
+
     try:
-        GRAPH_PATH.write_text(
-            json.dumps(graph, indent=2, default=str), encoding="utf-8"
-        )
+        import orion_graph_io
+        if not orion_graph_io.update_graph(_upsert, reason="lastcontact: contact node",
+                                           path=GRAPH_PATH):
+            logger.warning("graph write skipped: graph unreadable or update failed")
+            return
         _last_graph_flush = now
         logger.info("graph node updated: %s", content[:100])
         # Ring the bell so the brain service (:5556) + every per-CLI MCP cache

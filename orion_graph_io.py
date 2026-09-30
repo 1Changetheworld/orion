@@ -98,6 +98,49 @@ def record_write(path, new_data, reason=None):
         pass
 
 
+def update_graph(mutate, reason=None, path=None):
+    """The safe way to change a few nodes: lock, read FRESH inside the lock, mutate, record,
+    atomic replace. `mutate(graph)` edits the dict in place and returns True if it changed
+    anything. Returns True if a write happened; never raises into the caller.
+
+    Replaces the read-whole-file / write-whole-file pattern wonder and lastcontact used without
+    the lock (2026-09-30): a write landing between their read and their write was erased, and
+    lastcontact's write_text() truncated the file first, so any reader in that instant saw an
+    empty or half-written brain. Uses the same lock file as orion_brain_portable._atomic_dump.
+    Refuses to write over a file it cannot parse — that is orion_integrity's call, not ours."""
+    import fcntl
+    path = str(path or os.path.expanduser("~/.orion/brain/" + GRAPH_NAME))
+    lockf = None
+    tmp = "%s.tmp.%d" % (path, os.getpid())
+    try:
+        lockf = open(path + ".lock", "w")
+        fcntl.flock(lockf.fileno(), fcntl.LOCK_EX)
+        with open(path, encoding="utf-8") as f:
+            graph = json.load(f)
+        if not mutate(graph):
+            return False
+        record_write(path, graph, reason=reason)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(graph, f, indent=2, default=str)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    finally:
+        if lockf is not None:
+            try:
+                fcntl.flock(lockf.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lockf.close()
+
+
 def _tail(n):
     try:
         with open(WRITE_LOG, encoding="utf-8") as f:

@@ -136,8 +136,9 @@ def _read_json(path: Path, default):
 
 def _write_json(path: Path, obj) -> None:
     try:                                        # write recorder: observe, never block
-        import orion_graph_io
-        orion_graph_io.record_write(path, obj, reason="wonder: last-contact node reconcile")
+        import orion_graph_io                   # (graph writes now go via update_graph; this
+        orion_graph_io.record_write(path, obj,  #  stays so any stray one is still seen)
+                                    reason="wonder: _write_json")
     except Exception:
         pass
     try:
@@ -501,10 +502,23 @@ def inv_contact():
                         % (truth.get("iso", ""), truth.get("channel", "unknown"),
                            truth.get("direction", ""), excerpt))
         n["last_confirmed_at"] = _now()
-        graph = _read_json(GRAPH_PATH, {})
-        if nid in (graph.get("nodes") or {}):
-            graph["nodes"][nid] = n
-            _write_json(GRAPH_PATH, graph)
+
+        # Locked, fresh-read, atomic — and only the two fields this fix owns, so it can never
+        # write back a stale copy of the rest of the node (or of the graph). 2026-09-30.
+        def _set_contact(graph):
+            node = (graph.get("nodes") or {}).get(nid)
+            if node is None:
+                return False
+            node["content"] = n["content"]
+            node["last_confirmed_at"] = n["last_confirmed_at"]
+            return True
+        try:
+            import orion_graph_io
+            orion_graph_io.update_graph(_set_contact,
+                                        reason="wonder: last-contact node reconcile",
+                                        path=GRAPH_PATH)
+        except Exception as e:
+            logger.warning("contact node update failed: %s", e)
         st = CONSCIOUSNESS_DIR / "state.json"
         cur = _read_json(st, None)
         if isinstance(cur, dict):
