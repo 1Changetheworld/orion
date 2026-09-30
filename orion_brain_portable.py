@@ -1069,17 +1069,104 @@ class GraphMemory:
             self.tag_index[tag.lower()].discard(node_id)
         return True
 
+    @staticmethod
+    def _fingerprint(v) -> str:
+        """Stable identity of a node's full content (tags order-insensitive)."""
+        return json.dumps({**v, "tags": sorted(v.get("tags") or [])}, sort_keys=True, default=str)
+
     def save(self, filepath: Path = None):
-        """Persist graph to disk."""
+        """Persist graph to disk — MERGE-SAFE (2026-09-30).
+
+        The old save wrote this process's WHOLE in-memory graph over the file. Any process that
+        loaded earlier therefore erased everything written since (the 9-21..9-29 rollback), and
+        even a milliseconds-old copy reverted concurrent edits to existing nodes (proven in a
+        sandbox: lastcontact's contact-node updates were undone by this save).
+
+        Now: diff this process's nodes against what it loaded (the baseline) to find what IT
+        created / changed / deleted, then — under the graph lock, on a FRESH read of the file —
+        apply only those changes on top of whatever is on disk. Nodes this process never touched
+        are never rewritten. A created id that someone else also took gets a new id instead of
+        overwriting theirs. Afterwards this copy is refreshed from the merged result.
+        A graph that was never loaded merges too (everything it holds counts as created), so it
+        can add to an existing file but never delete from it. Only a missing file gets a full write."""
         filepath = filepath or GRAPH_PATH
-        data = {
-            "next_id": self._next_id,
-            "nodes": {
-                str(k): {**v, "tags": list(v["tags"])}
-                for k, v in self.nodes.items()
+        baseline = getattr(self, "_baseline", None)
+        if baseline is None and Path(filepath).exists():
+            baseline, self._baseline_next = {}, 0
+        if not Path(filepath).exists():
+            data = {
+                "next_id": self._next_id,
+                "nodes": {
+                    str(k): {**v, "tags": list(v["tags"])}
+                    for k, v in self.nodes.items()
+                }
             }
-        }
-        _atomic_dump(data, filepath, indent=2, do_fsync=True)
+            _atomic_dump(data, filepath, indent=2, do_fsync=True)
+            self._set_baseline()
+            return
+
+        mine = {nid: self._fingerprint(v) for nid, v in self.nodes.items()}
+        created = [nid for nid in self.nodes if nid not in baseline]
+        changed = [nid for nid in self.nodes if nid in baseline and mine[nid] != baseline[nid]]
+        deleted = [nid for nid in baseline if nid not in self.nodes]
+        if not (created or changed or deleted) and self._next_id <= getattr(self, "_baseline_next", 0):
+            return                                   # nothing of ours to write
+
+        holder = {}
+
+        def _merge(disk):
+            nodes = disk.setdefault("nodes", {})
+            next_id = max(int(disk.get("next_id") or 0), int(self._next_id))
+            for nid in changed:
+                nodes[str(nid)] = {**self.nodes[nid], "tags": list(self.nodes[nid]["tags"])}
+            for nid in created:
+                key = str(nid)
+                ours = {**self.nodes[nid], "tags": list(self.nodes[nid]["tags"])}
+                if key in nodes and self._fingerprint(nodes[key]) != mine[nid]:
+                    key = str(next_id)               # id collision: never overwrite theirs
+                    next_id += 1
+                nodes[key] = ours
+                next_id = max(next_id, int(key) + 1)
+            for nid in deleted:
+                nodes.pop(str(nid), None)
+            disk["next_id"] = next_id
+            holder["merged"] = disk
+            return True
+
+        try:
+            import orion_graph_io
+            ok = orion_graph_io.update_graph(_merge, reason="brain: merge-save", path=filepath)
+        except Exception:
+            ok = False
+        if ok and holder.get("merged") is not None:
+            self._load_dict(holder["merged"])
+            return
+        raise OSError("merge-save failed: graph file unreadable or lock/write error; "
+                      "nothing was written over it (orion_integrity decides repairs)")
+
+    def _set_baseline(self):
+        self._baseline = {nid: self._fingerprint(v) for nid, v in self.nodes.items()}
+        self._baseline_next = self._next_id
+
+    def _load_dict(self, data: dict):
+        """(Re)build this copy from a graph dict, replacing whatever it held."""
+        self.nodes = {}
+        self.tag_index = defaultdict(set)
+        self.type_index = defaultdict(set)
+        self._content_index = None
+        self._next_id = data.get("next_id", 0)
+        for k, v in (data.get("nodes") or {}).items():
+            nid = int(k)
+            v = dict(v)
+            v["tags"] = set(v.get("tags") or [])
+            # Forward-migrate nodes from pre-temporal schema
+            if "last_confirmed_at" not in v:
+                v["last_confirmed_at"] = v.get("created", time.time())
+            self.nodes[nid] = v
+            self.type_index[v["type"]].add(nid)
+            for tag in v["tags"]:
+                self.tag_index[tag.lower()].add(nid)
+        self._set_baseline()
 
     def load(self, filepath: Path = None):
         """Load graph from disk. Forward-migrates older nodes to the temporal schema."""
@@ -1088,17 +1175,7 @@ class GraphMemory:
             return
         with open(filepath, encoding='utf-8') as f:
             data = json.load(f)
-        self._next_id = data.get("next_id", 0)
-        for k, v in data.get("nodes", {}).items():
-            nid = int(k)
-            v["tags"] = set(v["tags"])
-            # Forward-migrate nodes from pre-temporal schema
-            if "last_confirmed_at" not in v:
-                v["last_confirmed_at"] = v.get("created", time.time())
-            self.nodes[nid] = v
-            self.type_index[v["type"]].add(nid)
-            for tag in v["tags"]:
-                self.tag_index[tag.lower()].add(nid)
+        self._load_dict(data)
 
 
 # ═══════════════════════════════════════════════════════════════
