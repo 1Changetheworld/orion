@@ -48,6 +48,13 @@ _FUEL_ERROR_MARKERS = (
     "rate limit reached", "rate-limit", "rate limit",
     "usage limit", "quota exceeded", "exceeded your",
     "you've reached your", "you have reached your",
+    # 2026-09-22: the exact strings Claude Code emits on quota exhaustion matched
+    # NOTHING above, so the router forwarded them to James as if they were an
+    # answer and never fell through to codex. He was left unable to reach Orion
+    # on iMessage at all. These are the literal phrases observed in chat.db.
+    "out of extra usage", "out of usage", "hit your limit",
+    "hit your usage limit", "usage limit reached",
+    "upgrade to increase your usage",
     "overloaded", "too many requests", "try again later",
     "service unavailable", "service is unavailable",
     "temporarily unavailable", "529 ", "503 ",
@@ -188,7 +195,10 @@ class CodexCLIFuel(FuelAdapter):
 
 class GeminiCLIFuel(FuelAdapter):
     name = "gemini-cli"
-    tier = 2
+    # 2026-09-22 (James): "codex is second best than claude always". Codex owns
+    # tier 2 alone; a tie made the order between them incidental to list append
+    # order. Gemini also reports IneligibleTierError on this account.
+    tier = 3
 
     def __init__(self):
         self._path = None
@@ -201,10 +211,21 @@ class GeminiCLIFuel(FuelAdapter):
         if not self._path:
             return None
         try:
+            # 2026-09-22: gemini refuses to run headless in an "untrusted"
+            # directory and exits without answering. That made a live, authed
+            # tier-2 fuel look dead, so the cascade fell past it to ollama and
+            # James got the weakest model when claude ran out of quota.
+            env = dict(os.environ, GEMINI_CLI_TRUST_WORKSPACE="true")
             result = subprocess.run(
-                [self._path, "-p", prompt],
-                capture_output=True, text=True, timeout=120
+                [self._path, "--skip-trust", "-p", prompt],
+                capture_output=True, text=True, timeout=120, env=env
             )
+            if result.returncode != 0 or not result.stdout.strip():
+                # older builds lack --skip-trust; the env var alone covers them
+                result = subprocess.run(
+                    [self._path, "-p", prompt],
+                    capture_output=True, text=True, timeout=120, env=env
+                )
             if result.returncode == 0 and result.stdout.strip() and not _is_error_response(result.stdout):
                 return result.stdout.strip()
         except Exception:
@@ -589,7 +610,7 @@ class FuelSystem:
             lines.append(f"{marker} [{a.tier}] {a.name}")
         return "\n".join(lines)
 
-    def query(self, prompt, max_turns=15, prefer_tier=None, tags=None):
+    def query(self, prompt, max_turns=15, prefer_tier=None, tags=None, min_tier=None):
         """
         Query the best available fuel. Auto-fallback on failure.
         Returns (response, engine_name) or (None, "none").
@@ -641,7 +662,21 @@ class FuelSystem:
                     # the failover for audit.
                     break
 
-        if not os.environ.get("ORION_FUEL_PREF_LOCKED"):
+        # A numeric floor means the CALLER has judged this work not to need strong fuel.
+        # Build the cascade it is allowed to use. Falling back to the full list when nothing
+        # qualifies is intentional: the floor says "this doesn't need the good stuff", never
+        # "refuse to answer".
+        cascade = self.available
+        if min_tier:
+            try:
+                cascade = [a for a in self.available
+                           if getattr(a, "tier", 99) >= int(min_tier)] or self.available
+            except Exception:
+                cascade = self.available
+
+        # The pinned-preference file is skipped under a floor — a preference of "claude-cli"
+        # would otherwise drag a background ponder straight back to tier 1 and undo this.
+        if not min_tier and not os.environ.get("ORION_FUEL_PREF_LOCKED"):
             try:
                 pref_path = os.path.expanduser("~/.orion/fuel_preference.json")
                 if os.path.exists(pref_path):
@@ -659,7 +694,7 @@ class FuelSystem:
                                 break
             except Exception:
                 pass  # preference is advisory; never block on read failure
-        for adapter in self.available:
+        for adapter in cascade:
             try:
                 result = adapter.query(prompt, max_turns)
                 if result:
@@ -720,12 +755,55 @@ def _surface_fuel_degraded(primary, used, interface):
 
 
 def get_fuel(prompt, interface="cli", max_turns=15):
-    """Query best available fuel. Used by the brain."""
+    """Query best available fuel. Used by the brain.
+
+    ROUTED since 2026-09-22: the task is classified BEFORE a model is chosen. Work that is an exact
+    read of live state is answered in code and never reaches a model; everything else falls through
+    to the cascade unchanged. See orion_router — the classifier is ordinary Python and consults no
+    model to decide what a task is."""
+    plan = None
+    try:
+        import orion_router
+        plan = orion_router.route(prompt, interface)
+        if plan.get("native"):
+            # A check PASSED, so this is answerable without renting cognition. This is the only
+            # branch that lowers the model-call rate, and the rate is the Axis A scoreboard.
+            orion_router.log_action({
+                "interface": interface, "class": plan["class"],
+                "confidence": plan["confidence"], "why": plan["why"],
+                "routed_to": "code", "engine": "native", "ok": True,
+                "evidence": plan.get("evidence"), "mode": plan.get("mode"),
+                "prompt_head": (prompt or "")[:160],
+            })
+            return plan["native"], "native"
+    except Exception:
+        plan = None      # router is advisory — never let it break the fuel path
+
     if not fuel.available:
         fuel.scan()
     primary_name = fuel.available[0].name if fuel.available else None
-    response, engine = fuel.query(prompt, max_turns)
+    # Apply the router's floor only when it is running live. In shadow mode the floor is
+    # recorded in the action ledger and NOT imposed, so the effect can be measured from real
+    # traffic before it changes what any of the 21 daemons actually get.
+    _floor = None
+    if plan is not None and (plan.get("mode") == "live"):
+        _floor = plan.get("tier_floor")
+    response, engine = fuel.query(prompt, max_turns, min_tier=_floor)
     _log_fuel_call(interface, engine, bool(response))   # ledger every model call (Independence Index)
+    if plan is not None:
+        # Logged even when a model served it: a procedure can only compile from repeated shapes,
+        # and the ones that needed a model are exactly the ones worth learning to do without one.
+        try:
+            import orion_router
+            orion_router.log_action({
+                "interface": interface, "class": plan["class"],
+                "confidence": plan["confidence"], "why": plan["why"],
+                "routed_to": "model", "engine": engine, "ok": bool(response),
+                "tier_floor": plan.get("shadow_tier_floor", plan.get("tier_floor")),
+                "mode": plan.get("mode"), "prompt_head": (prompt or "")[:160],
+            })
+        except Exception:
+            pass
     # If we got an answer but NOT from the primary, the primary failed and we
     # rode the failover reflex to a backup — surface it so Orion knows.
     if response and engine and engine != "none" and primary_name and engine != primary_name:

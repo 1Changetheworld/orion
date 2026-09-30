@@ -424,10 +424,37 @@ def save_compiled_knowledge(articles, graph, date=None):
 # Global graph instance
 _graph = GraphMemory()
 _graph_path = os.path.expanduser("~/.orion/brain/graph_memory.json")
+# mtime of the graph file when _graph was last loaded or saved by THIS process.
+# 2026-09-30 ROLLBACK INCIDENT: the long-lived webhook (orion_server.py) imported
+# this module once, froze its copy of the graph, and orion_brain.think() saved that
+# copy over the live file on every request — erasing every memory formed since the
+# webhook's first request (Sep 21 22:31 → Sep 29). The other writers go through the
+# brain service; this in-process copy must never be authoritative.
+_graph_mtime = 0.0
+
+
+def _disk_mtime():
+    try:
+        return os.path.getmtime(_graph_path)
+    except OSError:
+        return 0.0
+
+
+def _refresh_if_stale():
+    """Reload in place if another process advanced the file since we loaded it."""
+    global _graph_mtime
+    m = _disk_mtime()
+    if m and m > _graph_mtime:
+        _graph.__init__()
+        _graph.load(_graph_path)
+        _graph_mtime = m
+
 
 def init():
     """Initialize memory system. Load graph from disk."""
+    global _graph_mtime
     _graph.load(_graph_path)
+    _graph_mtime = _disk_mtime()
     return _graph
 
 
@@ -440,7 +467,8 @@ def remember(query, limit=5):
     """
     results = []
 
-    # Layer 1: Graph (fast, tag-based)
+    # Layer 1: Graph (fast, tag-based) — never recall from a frozen copy
+    _refresh_if_stale()
     query_words = query.lower().split()
     graph_results = _graph.recall(query=query, limit=3)
     for node in graph_results:
@@ -465,8 +493,25 @@ def memorize(message, response, interface="unknown"):
 
 
 def save():
-    """Persist graph memory to disk."""
+    """Persist graph memory to disk — but NEVER over a newer file.
+
+    If any other process wrote the graph after we loaded it, our copy is stale and
+    writing it would erase their memories (the 2026-09-30 rollback incident). Refuse,
+    surface it, and return False. Returns True when the save happened."""
+    global _graph_mtime
+    if _disk_mtime() > _graph_mtime:
+        try:
+            from orion_substrate import publish as _publish
+            _publish("brain.storage.stale_write_refused", {
+                "path": _graph_path, "pid": os.getpid(),
+                "loaded_mtime": _graph_mtime, "disk_mtime": _disk_mtime(),
+            })
+        except Exception:
+            pass
+        return False
     _graph.save(_graph_path)
+    _graph_mtime = _disk_mtime()
+    return True
 
 
 # ═══════════════════════════════════════════════════════════════

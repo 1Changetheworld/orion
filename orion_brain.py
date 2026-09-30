@@ -248,10 +248,26 @@ def think(message, interface="cli", user_id="orion"):
                     "interface": interface,
                 }
 
-    # ── GREETINGS: Fast local ──
+    # ── GREETINGS: fast local FIRST, but never a dead end ──
+    # 2026-09-22: this branch called fuel_local() directly — hardwired to
+    # phi3:mini with a 75-char identity and no history. It could not escalate
+    # to ANY other fuel, because it never touched the cascade at all. When
+    # claude ran out of quota James got phi3 impersonating Orion, or the
+    # literal string "How may I help?". Cheap-first is right; a dead end is not.
     if task == "greeting":
         prompt = f"{IDENTITY}\n\nUser says: {message}\n\nRespond briefly as Orion."
-        response = fuel_local(prompt) or "How may I help?"
+        response = fuel_local(prompt)
+        if not response or not response.strip():
+            # local fuel gave nothing — escalate through the real cascade
+            # (claude -> codex -> gemini -> ollama -> tgpt) instead of
+            # falling back to a canned string.
+            try:
+                escalated, _eng = get_fuel(prompt, interface=interface)
+                if escalated and escalated.strip():
+                    response = escalated
+            except Exception:
+                pass
+        response = response or "How may I help?"
         memory.memorize(message, response, interface)
         return {
             "response": response,
@@ -301,8 +317,11 @@ Respond concisely as Orion. Follow the form-of-address rule in your identity abo
     # Save to memory
     memory.memorize(message, response[:300], interface)
 
-    # Save graph state periodically
-    memory.save()
+    # NO graph save here (2026-09-30). think() never adds to the graph — it only
+    # reads it for context — so saving wrote this process's frozen copy over the live
+    # file on every request. From the webhook that erased every memory formed since
+    # its first request (Sep 21 22:31 → Sep 29). Memories are written through the
+    # brain service; this path only logs the turn (memorize above).
 
     return {
         "response": response,

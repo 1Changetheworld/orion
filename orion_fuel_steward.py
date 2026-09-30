@@ -87,7 +87,8 @@ def assess():
     cascade_ok = bool(resp) and engine and engine != "none" and not F._is_error_response(resp)
     primary_ok = bool(cascade_ok and engine == primary)
     return {"primary": primary, "engine": engine,
-            "cascade_ok": cascade_ok, "primary_ok": primary_ok}
+            "cascade_ok": cascade_ok, "primary_ok": primary_ok,
+            "detail": (resp or "")[:400]}
 
 
 def classify(a):
@@ -98,7 +99,29 @@ def classify(a):
     return "DOWN"                         # no fuel answered
 
 
-def _recovery_command(primary):
+_QUOTA_SIGNS = ("out of extra usage", "usage limit", "rate limit", "rate_limit",
+                "quota", "resets at", "resets ", "billing", "insufficient credit",
+                "429", "too many requests")
+
+
+def _is_quota(detail):
+    """Quota/billing exhaustion is not an authentication failure. Telling James to
+    re-authenticate when he actually needs to wait or top up sends him in circles."""
+    d = (detail or "").lower()
+    return any(k in d for k in _QUOTA_SIGNS)
+
+
+def _recovery_command(primary, detail=""):
+    if _is_quota(detail):
+        p = (primary or "the primary fuel").lower()
+        which = "Claude" if "claude" in p else ("Codex" if "codex" in p else
+                ("Gemini" if "gemini" in p else primary))
+        return ("wait for the %s quota to reset, or top up the plan. No re-login "
+                "needed — the credential is fine." % which)
+    return _recovery_command_auth(primary)
+
+
+def _recovery_command_auth(primary):
     p = (primary or "the primary fuel").lower()
     if "claude" in p:
         return ("re-authenticate the Claude CLI on COMMAND: open a Terminal and run "
@@ -111,12 +134,23 @@ def _recovery_command(primary):
 
 
 def _alert_text(status, a):
-    fix = _recovery_command(a["primary"])
+    fix = _recovery_command(a["primary"], a.get("detail", ""))
+    quota = _is_quota(a.get("detail", ""))
     if status == "DEGRADED_FUNCTIONAL":
+        if quota:
+            return ("Sir — fuel note: my primary fuel (%s) is out of quota, not "
+                    "broken. I'm still thinking — running on backup (%s). To "
+                    "restore full power, %s"
+                    % (a["primary"], a["engine"], fix))
         return ("Sir — fuel note: my primary fuel (%s) is failing to authenticate. "
                 "I'm still thinking — running on backup (%s) — so nothing is broken. "
                 "To restore full power, %s"
                 % (a["primary"], a["engine"], fix))
+    if quota:
+        return ("Sir — URGENT: all fuel exhausted (primary %s out of quota; no "
+                "backup answered). I can't reason until it resets. To fix, %s "
+                "Details in ~/.orion/fuel_steward.err."
+                % (a["primary"], fix))
     return ("Sir — URGENT: all my fuel sources are failing (primary %s; no backup "
             "answered). I can't reason until fuel is restored. To fix, %s "
             "Details in ~/.orion/fuel_steward.err."
