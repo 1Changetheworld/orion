@@ -121,6 +121,11 @@ class GraphMemory:
                 for k, v in self.nodes.items()
             }
         }
+        try:                                    # write recorder: observe, never block
+            import orion_graph_io
+            orion_graph_io.record_write(filepath, data)
+        except Exception:
+            pass
         try:
             # Durable atomic write (2026-06-06): temp file -> flush -> fsync ->
             # atomic os.replace. The brain is the one irreplaceable asset; a

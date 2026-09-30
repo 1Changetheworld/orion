@@ -207,6 +207,11 @@ def _flush_to_graph() -> None:
             "last_seen": now,
         }
 
+    try:                                        # write recorder: observe, never block
+        import orion_graph_io
+        orion_graph_io.record_write(GRAPH_PATH, graph, reason="lastcontact: contact node")
+    except Exception:
+        pass
     try:
         GRAPH_PATH.write_text(
             json.dumps(graph, indent=2, default=str), encoding="utf-8"

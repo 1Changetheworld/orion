@@ -385,6 +385,11 @@ def _atomic_dump(data, filepath, indent=None, do_fsync=True):
         except Exception:
             lockf = None
     try:
+        try:                                    # write recorder: observe, never block
+            import orion_graph_io
+            orion_graph_io.record_write(filepath, data)
+        except Exception:
+            pass
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=indent)
             f.flush()

@@ -135,6 +135,11 @@ def _read_json(path: Path, default):
 
 
 def _write_json(path: Path, obj) -> None:
+    try:                                        # write recorder: observe, never block
+        import orion_graph_io
+        orion_graph_io.record_write(path, obj, reason="wonder: last-contact node reconcile")
+    except Exception:
+        pass
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(json.dumps(obj, indent=2, default=str), encoding="utf-8")

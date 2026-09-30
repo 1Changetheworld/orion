@@ -104,6 +104,12 @@ def _backup(path, tag):
 
 
 def _atomic_write(obj, path):
+    try:                                        # write recorder: observe, never block
+        sys.path.insert(0, os.path.expanduser("~/orion-code"))
+        import orion_graph_io
+        orion_graph_io.record_write(path, obj, reason="integrity: trailing-garbage repair")
+    except Exception:
+        pass
     tmp = path.with_suffix(path.suffix + ".integrity.tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False)
@@ -157,10 +163,15 @@ def failing_organs(state):
         parts = line.split()
         if len(parts) < 3 or not parts[2].startswith("com.orion."):
             continue
-        label, code = parts[2], parts[1]
+        label, pid, code = parts[2], parts[0], parts[1]
         try:
             code = int(code)
         except Exception:
+            continue
+        # A RUNNING service is not failing, whatever its LAST exit code says. On 2026-09-30 a
+        # restart that had to SIGKILL learning-sync left "last exit -9" on a healthy, running
+        # daemon, and this raised a false "failed 3 checks in a row" alarm to James.
+        if pid != "-":
             continue
         if code != 0 and code != -15:          # -15 is a normal SIGTERM from a restart
             now_failing[label] = code
@@ -173,6 +184,79 @@ def failing_organs(state):
         if label not in now_failing:
             streak.pop(label, None)             # recovered
     return alarms, streak
+
+
+WRITE_LOG = Path(os.path.expanduser("~/.orion/state/graph_writes.jsonl"))
+ARCHIVE = Path(os.path.expanduser("~/.orion/brain/graph_memory.archive.json"))
+UNRECORDED_SLACK = 15.0        # seconds between a recorded write and the file's mtime
+UNRECORDED_ALARM_EVERY = 86400 # at most one "unknown writer" alarm a day
+
+
+def check_writes(st):
+    """Did anything erase memories? Reads the write recorder's log (orion_graph_io) — no brain.
+
+    THE INCIDENT (2026-09-30): a stale in-process copy was saved over the live graph on every
+    webhook request for eight days; everything formed since 9-21 was erased repeatedly and
+    nothing noticed. Two signals would have caught it on the first write:
+      - a write that drops ids which are neither archived nor still present, or that moves
+        the id counter backwards (a stale copy overwriting a newer file);
+      - the graph file changing with NO recorded write (a writer the recorder does not cover).
+    Returns (alarms, unrecorded) and advances the read offset in `st`."""
+    alarms, unrecorded = [], None
+    offset = int(st.get("writes_offset") or 0)
+    recs = []
+    try:
+        size = WRITE_LOG.stat().st_size
+        if size < offset:                       # rotated/truncated
+            offset = 0
+        with WRITE_LOG.open(encoding="utf-8") as f:
+            f.seek(offset)
+            for line in f:
+                try:
+                    recs.append(json.loads(line))
+                except Exception:
+                    pass
+            st["writes_offset"] = f.tell()
+    except FileNotFoundError:
+        pass
+
+    live, archived = set(), set()
+    if recs:
+        try:
+            live = set((json.loads(GRAPH.read_text(encoding="utf-8")).get("nodes") or {}).keys())
+        except Exception:
+            pass
+        try:
+            archived = set((json.loads(ARCHIVE.read_text(encoding="utf-8")).get("nodes") or {}).keys())
+        except Exception:
+            pass
+
+    for r in recs:
+        st["last_write_ts"] = max(float(st.get("last_write_ts") or 0), float(r.get("ts") or 0))
+        lost = [i for i in (r.get("vanished_ids") or []) if i not in archived and i not in live]
+        if r.get("counter_backwards") or lost:
+            alarms.append({
+                "when": time.strftime("%m-%d %H:%M:%S", time.localtime(r.get("ts") or 0)),
+                "proc": r.get("proc"), "caller": r.get("caller"), "pid": r.get("pid"),
+                "disk_nodes": r.get("disk_nodes"), "new_nodes": r.get("new_nodes"),
+                "vanished": r.get("vanished"), "lost_sample": lost[:10],
+                "counter_backwards": r.get("counter_backwards"),
+            })
+
+    # A graph change that no recorded write explains = a writer we do not know about.
+    try:
+        mtime = GRAPH.stat().st_mtime
+    except Exception:
+        mtime = None
+    if mtime:
+        if not st.get("writes_baseline"):
+            st["writes_baseline"] = time.time()          # first run after deploy: no history yet
+            st["last_seen_mtime"] = mtime
+        elif (mtime != st.get("last_seen_mtime")
+              and mtime > float(st.get("last_write_ts") or 0) + UNRECORDED_SLACK):
+            unrecorded = {"mtime": time.strftime("%m-%d %H:%M:%S", time.localtime(mtime))}
+        st["last_seen_mtime"] = mtime
+    return alarms, unrecorded
 
 
 def run(repair=True):
@@ -241,6 +325,28 @@ def run(repair=True):
         _escalate("My %s service has failed %d checks in a row (exit %s). It has been failing "
                   "quietly and I would rather tell you than let it sit." % (label, n, code),
                   priority="high")
+
+    # what is being done to his memory — the write recorder's log (orion_graph_io)
+    walarms, unrecorded = check_writes(st)
+    for a in walarms:
+        what = ("the id counter went BACKWARDS (%s → a stale copy overwrote a newer file)"
+                % a["proc"]) if a["counter_backwards"] else "memories vanished that were never archived"
+        actions.append("MEMORY ERASED at %s by %s (%s): %s nodes on disk, %s written, %s vanished; "
+                       "lost e.g. %s" % (a["when"], a["proc"], a["caller"], a["disk_nodes"],
+                                         a["new_nodes"], a["vanished"], a["lost_sample"]))
+        _escalate("Some of my memories were just erased: at %s, %s (%s) saved my graph with %s "
+                  "nodes over a file that had %s — %s. I have not changed anything. Evidence is in "
+                  "~/.orion/state/graph_writes.jsonl." % (a["when"], a["proc"], a["caller"],
+                                                          a["new_nodes"], a["disk_nodes"], what),
+                  priority="high")
+    if unrecorded:
+        actions.append("UNRECORDED WRITE: graph changed at %s with no recorded writer"
+                       % unrecorded["mtime"])
+        if time.time() - float(st.get("unrecorded_alarm_ts") or 0) > UNRECORDED_ALARM_EVERY:
+            st["unrecorded_alarm_ts"] = time.time()
+            _escalate("Something changed my memory file at %s without going through my write "
+                      "recorder, so I cannot tell what it was or whether anything was lost. "
+                      "Worth a look." % unrecorded["mtime"], priority="medium")
 
     st["counts"] = known
     st["last_run"] = time.time()
