@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """ORION PRESENCE BATTERY RUNNER — the Phase 0 judge, launched by JAMES.
 
 Hard rule (2026-10-02): James runs every test that involves talking to Orion.
@@ -27,10 +27,25 @@ E1 (local_only) is skipped with a reason until fuel pinning exists.
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+# The battery must run on the SAME interpreter as Orion's daemons (every
+# com.orion.* plist uses /usr/bin/python3; it has PyYAML and the brain's
+# deps). James's interactive shell puts a bare homebrew 3.14 first on PATH,
+# so a plain `python3 eval/run_battery.py` lands on the wrong Python.
+# Re-exec once onto the brain's interpreter instead of failing.
+BRAIN_PYTHON = "/usr/bin/python3"
+if (os.path.exists(BRAIN_PYTHON)
+        and not os.environ.get("ORION_BATTERY_REEXEC")):
+    try:
+        import yaml  # noqa: F401 — probe only
+    except ImportError:
+        os.environ["ORION_BATTERY_REEXEC"] = "1"
+        os.execv(BRAIN_PYTHON, [BRAIN_PYTHON, os.path.abspath(__file__)] + sys.argv[1:])
 
 BATTERY_PATH = Path(__file__).resolve().parent / "battery_v0.yaml"
 RESULTS_DIR = Path.home() / ".orion" / "battery"
