@@ -105,6 +105,11 @@ AUTO_FIX = os.environ.get("ORION_WONDER_AUTOFIX", "1") == "1"
 SEND_CHANNEL = os.environ.get("ORION_WONDER_SEND_CHANNEL", "0") == "1"
 SURFACE_COOLDOWN_SEC = float(os.environ.get("ORION_WONDER_SURFACE_COOLDOWN", "3600"))   # 1h/code
 SHARE_INTERVAL_SEC = float(os.environ.get("ORION_WONDER_SHARE_SEC", "86400"))           # eternal: 1/day
+# 2026-10-02: eternal pondering was UNGATED — one model call per 10-min scan, forever
+# (136 calls/day, 34% of all fuel), to feed a share that fires at most once a day.
+# That is rumination, James's #1 fuel complaint. Holding a question costs nothing;
+# reflecting on it is budgeted to once per interval.
+PONDER_INTERVAL_SEC = float(os.environ.get("ORION_WONDER_PONDER_SEC", "86400"))         # eternal: reflect 1/day
 GRAPH_GROWTH_SURPRISE = int(os.environ.get("ORION_WONDER_GRAPH_GROWTH", "200"))
 
 _stop = threading.Event()
@@ -637,6 +642,15 @@ def _ponder_eternal() -> None:
     """Pick one open/eternal thread and reflect on it via fuel. Reflections
     accumulate on the thread; occasionally one is offered to James for shared
     wondering. This is the part that doesn't resolve — and shouldn't."""
+    # Budget gate: the questions are HELD continuously (that costs nothing);
+    # a fuel-burning reflection happens at most once per PONDER_INTERVAL_SEC.
+    # The timestamp is set BEFORE the model call so even a failed call cannot
+    # retry into a loop.
+    if (_now() - float(_state.get("last_ponder_ts", 0))) < PONDER_INTERVAL_SEC:
+        return
+    _state["last_ponder_ts"] = _now()
+    _save_state()
+
     threads = _load_open()
     # ensure eternal threads exist
     for q in ETERNAL:
@@ -712,6 +726,15 @@ def _narrate(thread: dict, fixed: bool) -> str:
     return voiced or (base + "\n\n" + verb)
 
 
+def _surface_would_fire(code: str) -> bool:
+    """True when _surface() would not drop this code on cooldown. Checked
+    BEFORE _narrate so a model call is never spent voicing a message the
+    cooldown immediately discards (that waste was 119 narrate calls/day,
+    30% of all fuel, on 2026-10-02)."""
+    cools = _state.get("surface_cooldowns", {})
+    return (_now() - float(cools.get(code, 0))) >= SURFACE_COOLDOWN_SEC
+
+
 def _handle(finding: dict) -> None:
     thread = _upsert_thread(finding)
     code = thread["code"]
@@ -730,12 +753,14 @@ def _handle(finding: dict) -> None:
             if ok:
                 _resolve_thread(code, "auto-fix: traced cause and reconciled")
                 # tell James what was wrong and that it's handled (journal+publish)
-                _surface(thread, _narrate(thread, fixed=True), reason="autofixed_fyi")
+                if _surface_would_fire(code):
+                    _surface(thread, _narrate(thread, fixed=True), reason="autofixed_fyi")
                 return
 
     # not fixable (or fix failed) → bring it to James
     if finding.get("severity") == "critical" or not finding.get("fixable"):
-        _surface(thread, _narrate(thread, fixed=False), reason="needs_james")
+        if _surface_would_fire(code):
+            _surface(thread, _narrate(thread, fixed=False), reason="needs_james")
 
 
 # ══════════════════════════════════════════════════════════════════
