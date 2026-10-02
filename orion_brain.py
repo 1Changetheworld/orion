@@ -173,9 +173,9 @@ def fuel_local(prompt, model="phi3:mini"):
         return None
 
 
-def get_fuel(prompt, interface="cli"):
+def get_fuel(prompt, interface="cli", user_message=None):
     """Use the fuel system."""
-    return orion_fuel.get_fuel(prompt, interface)
+    return orion_fuel.get_fuel(prompt, interface, user_message=user_message)
 
 
 
@@ -221,7 +221,9 @@ STAGED PIPELINE:
 
 Respond concisely as Orion. Follow the form-of-address rule in your identity above exactly."""
 
-    response, engine = get_fuel(prompt, interface)
+    # Route on the user's words, not the composed prompt (2026-10-02: the
+    # memory context was hijacking the router's class).
+    response, engine = get_fuel(prompt, interface, user_message=message)
     return response, engine
 
 
@@ -262,7 +264,7 @@ def think(message, interface="cli", user_id="orion"):
             # (claude -> codex -> gemini -> ollama -> tgpt) instead of
             # falling back to a canned string.
             try:
-                escalated, _eng = get_fuel(prompt, interface=interface)
+                escalated, _eng = get_fuel(prompt, interface=interface, user_message=message)
                 if escalated and escalated.strip():
                     response = escalated
             except Exception:
@@ -304,7 +306,7 @@ def think(message, interface="cli", user_id="orion"):
 USER QUESTION ({interface}): {message}
 
 Respond concisely as Orion. Follow the form-of-address rule in your identity above exactly."""
-        response, engine = get_fuel(prompt, interface)
+        response, engine = get_fuel(prompt, interface, user_message=message)
 
     # Safety net
     if not response or response.strip() == "":

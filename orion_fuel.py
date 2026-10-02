@@ -754,17 +754,24 @@ def _surface_fuel_degraded(primary, used, interface):
         pass
 
 
-def get_fuel(prompt, interface="cli", max_turns=15):
+def get_fuel(prompt, interface="cli", max_turns=15, user_message=None):
     """Query best available fuel. Used by the brain.
 
     ROUTED since 2026-09-22: the task is classified BEFORE a model is chosen. Work that is an exact
     read of live state is answered in code and never reaches a model; everything else falls through
     to the cascade unchanged. See orion_router — the classifier is ordinary Python and consults no
-    model to decide what a task is."""
+    model to decide what a task is.
+
+    user_message (2026-10-02): the RAW user text, when the caller has one. The router classifies
+    THIS, never the composed prompt — classifying the full prompt let whatever recall injected
+    ("is X running", "last ... contact") hijack the class. Proven live: "What's the newest iPhone?"
+    was answered natively with the last-contact template, twice, because the memory context — not
+    the question — matched a state probe."""
     plan = None
+    route_text = user_message if (user_message and user_message.strip()) else prompt
     try:
         import orion_router
-        plan = orion_router.route(prompt, interface)
+        plan = orion_router.route(route_text, interface)
         if plan.get("native"):
             # A check PASSED, so this is answerable without renting cognition. This is the only
             # branch that lowers the model-call rate, and the rate is the Axis A scoreboard.
@@ -773,7 +780,7 @@ def get_fuel(prompt, interface="cli", max_turns=15):
                 "confidence": plan["confidence"], "why": plan["why"],
                 "routed_to": "code", "engine": "native", "ok": True,
                 "evidence": plan.get("evidence"), "mode": plan.get("mode"),
-                "prompt_head": (prompt or "")[:160],
+                "prompt_head": (route_text or "")[:160],
             })
             return plan["native"], "native"
     except Exception:
