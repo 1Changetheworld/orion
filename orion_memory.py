@@ -13,6 +13,8 @@ The combination: fast deterministic recall + deep semantic search + continuous l
 from __future__ import annotations   # PEP 604 'X | None' compat on Python 3.9
                                      # (macOS 13 ships 3.9; required for OUTPOST onboarding 2026-05-29)
 import json
+import math
+import re
 import time
 import hashlib
 import os
@@ -463,27 +465,159 @@ def init():
     return _graph
 
 
-def remember(query, limit=5):
-    """
-    Multi-layer recall:
-    1. Graph memory first (microseconds, deterministic)
-    2. Vector memory second (milliseconds, semantic)
-    Combine and deduplicate.
-    """
-    results = []
+# ═══════════════════════════════════════════════════════════════
+# FUSED RECALL (2026-10-02) — lexical + semantic, reciprocal-rank fused
+# Replaces stopword-overlap recall: on 2026-09-25 the old path failed 5 of 6
+# real questions about James's life because "my"/"where"/"is" counted as
+# relevance, letting chatter outrank facts.
+# ═══════════════════════════════════════════════════════════════
 
-    # Layer 1: Graph (fast, tag-based) — never recall from a frozen copy
+_STOPWORDS = frozenset(
+    "a about an and any are as at be been but by can could did do does for from "
+    "get got had has have he her him his how i if in into is it its just like me "
+    "my of on or our out she should so some than that the their them then there "
+    "these they this to up us was we were what when where which who whose why "
+    "will with would you your whats im dont doesnt isnt".split())
+
+
+def _content_tokens(text):
+    return [w for w in re.findall(r"[a-z0-9:']+", text.lower())
+            if w not in _STOPWORDS and len(w) > 1]
+
+
+def _lexical_candidates(query, k=8):
+    """BM25 over graph nodes, with a mild recency boost so this week's life
+    outranks months-old chatter on ties. Length normalization matters: without
+    it, long token-rich web-study documents outrank short personal facts just
+    by matching many words (measured 2026-10-02: fusion regressed 6/7 -> 5/7
+    until BM25's b term was added)."""
+    q = set(_content_tokens(query))
+    if not q:
+        return [], 0.0
+    nodes = _graph.nodes
+    n_total = max(len(nodes), 1)
+    df = defaultdict(int)
+    node_tf = {}
+    node_len = {}
+    total_len = 0
+    for nid, node in nodes.items():
+        toks = _content_tokens(node.get("content", ""))
+        node_len[nid] = len(toks)
+        total_len += len(toks)
+        tf = {}
+        for w in toks:
+            if w in q:
+                tf[w] = tf.get(w, 0) + 1
+        if tf:
+            node_tf[nid] = tf
+            for w in tf:
+                df[w] += 1
+    avg_len = (total_len / n_total) if n_total else 1.0
+    k1, b = 1.2, 0.75
+    now = time.time()
+
+    # Query informativeness: every query token's idf, with ABSENT tokens at
+    # max idf. A candidate is only "strong" if it covers a real share of the
+    # query's informative mass — so a trap like "my dog's name" (dog absent
+    # everywhere) can never look strong by matching the common word "name".
+    def _idf(w):
+        d = df.get(w, 0)
+        return math.log(1 + (n_total - d + 0.5) / (d + 0.5))
+    q_mass = sum(_idf(w) for w in q) or 1.0
+
+    scored = []
+    best_cover = 0.0
+    for nid, tf in node_tf.items():
+        norm = 1.0 - b + b * (node_len[nid] / max(avg_len, 1.0))
+        score = 0.0
+        for w, f in tf.items():
+            score += _idf(w) * (f * (k1 + 1)) / (f + k1 * norm)
+        cover = sum(_idf(w) for w in tf) / q_mass
+        best_cover = max(best_cover, cover)
+        age_days = (now - float(nodes[nid].get("created", 0) or 0)) / 86400.0
+        if 0 <= age_days <= 14:
+            score *= 1.15
+        scored.append((score, nid))
+    scored.sort(reverse=True)
+    return scored[:k], best_cover
+
+
+def _vector_candidates(query, k=8):
+    """Semantic candidates from Qdrant with scores, both collections."""
+    if not QDRANT_AVAILABLE:
+        return []
+    try:
+        vector = embed(query)
+    except Exception:
+        return []
+    client = get_qdrant()
+    if client is None:
+        return []
+    out = []
+    for collection in ("orion_brain", "server_knowledge"):
+        try:
+            hits = client.query_points(collection_name=collection,
+                                       query=vector, limit=k)
+            for hit in hits.points:
+                payload = hit.payload or {}
+                content = payload.get("content", "") or payload.get("data", "")
+                if content and hit.score >= 0.3:
+                    out.append((float(hit.score), content[:500]))
+        except Exception:
+            continue
+    out.sort(reverse=True)
+    return out[:k]
+
+
+def remember(query, limit=8):
+    """Fused recall: lexical graph candidates + semantic vector candidates,
+    reciprocal-rank fused, content-deduped, with an HONESTY FLOOR — weak
+    evidence returns "" so the brain says "I don't know" instead of being
+    handed noise to confabulate from.
+
+    Returns plain ranked lines; think() adds its own <memory-context> fence
+    (the old inner fence double-wrapped)."""
     _refresh_if_stale()
-    query_words = query.lower().split()
+    lex, lex_cover = _lexical_candidates(query, k=8)
+    vec = _vector_candidates(query, k=10)
+
+    # SAFETY FLOOR, not trap-silence. Measured 2026-10-02: nomic-embed cosine
+    # runs ~0.64-0.83 even for never-happened topics, and trap queries overlap
+    # real facts on both axes — so "no memory of X" CANNOT be decided here at
+    # the ranker. This floor only catches truly-empty evidence (offline vector
+    # layer + no informative lexical match). Honest "I don't know" on traps
+    # needs a downstream verification step; eval/recall_eval.py documents the
+    # open problem (trap-quiet 0/3 on both old and new paths).
+    best_vec = vec[0][0] if vec else 0.0
+    if lex_cover < 0.5 and best_vec < 0.45:
+        return ""
+
+    K = 60.0
+    fused = {}  # dedupe key -> [rrf_score, label, text]
+    for rank, (_s, nid) in enumerate(lex):
+        text = _graph.nodes[nid]["content"]
+        key = re.sub(r"\s+", " ", text[:120].lower())
+        fused.setdefault(key, [0.0, "graph", text])[0] += 1.0 / (K + rank + 1)
+    for rank, (s, text) in enumerate(vec):
+        key = re.sub(r"\s+", " ", text[:120].lower())
+        entry = fused.setdefault(key, [0.0, "vector %.2f" % s, text])
+        entry[0] += 1.0 / (K + rank + 1)
+
+    ranked = sorted(fused.values(), key=lambda e: -e[0])[:limit]
+    return "\n".join("[%s] %s" % (label, text) for _rrf, label, text in ranked)
+
+
+def remember_legacy(query, limit=5):
+    """The pre-2026-10-02 recall, kept ONLY for A/B measurement in
+    eval/recall_eval.py. Do not wire anything to this."""
+    results = []
+    _refresh_if_stale()
     graph_results = _graph.recall(query=query, limit=3)
     for node in graph_results:
         results.append(f"[graph] {node['content']}")
-
-    # Layer 2: Vector (semantic search)
     vector_context = vector_search(query, limit=limit)
     if vector_context:
         results.append(vector_context)
-
     return "\n".join(results) if results else ""
 
 
